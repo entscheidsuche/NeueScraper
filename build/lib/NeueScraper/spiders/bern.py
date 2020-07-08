@@ -98,12 +98,14 @@ class BernSpider(scrapy.Spider):
 				publikationsdatum=""
 
 			if brauchbar:
+				urteil = {'Kanton':'Bern', 'Num':num , 'Kammer':kammer, 'EDateum': entscheiddatum, 'PDatum': publikationsdatum, 'Titel': titel, 'Leitsatz': leitsatz, 'Rechtsgebiet': rechtsgebiet, 'id':id_}
 				numstr = num.replace(" ", "_")
 				path_ = 'E:\\webapps\\a2j\\a2j-www-trbpub100web\\pdf_temp'
 				href = "{}{}_{}.pdf?path={}\\{}.pdf&dossiernummer={}".format(BernSpider.DOWNLOAD_URL, numstr, id_,path_, id_, numstr)
 				request = scrapy.Request(href, callback=self.download_doc)
-				request.meta['number'] = numstr
-				yield request		 
+				request.meta['urteil'] = urteil
+				yield request
+				yield urteil
 			next_request=next(self.request_gen, False)
 			if next_request!=False:
 				yield next_request
@@ -117,9 +119,10 @@ class BernSpider(scrapy.Spider):
 	def download_doc(self, response):
 		""" Downloads and saves a single document
 		"""
+		urteil=response.meta['urteil']
+		urteil['PDF']=response.body
 		self.log("Download document "+response.url)
-		filename = "ergebnisse/{}.pdf".format(response.meta['number'])
-		with open(filename, 'wb') as f:
-			f.write(response.body)
+		
+		yield urteil
 
  

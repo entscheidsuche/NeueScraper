@@ -103,9 +103,9 @@ class BernSpider(scrapy.Spider):
 				path_ = 'E:\\webapps\\a2j\\a2j-www-trbpub100web\\pdf_temp'
 				href = "{}{}_{}.pdf?path={}\\{}.pdf&dossiernummer={}".format(BernSpider.DOWNLOAD_URL, numstr, id_,path_, id_, numstr)
 				request = scrapy.Request(href, callback=self.download_doc)
-				request.meta['number'] = numstr
+				request.meta['urteil'] = urteil
+				yield request
 				yield urteil
-				yield request		 
 			next_request=next(self.request_gen, False)
 			if next_request!=False:
 				yield next_request
@@ -119,10 +119,10 @@ class BernSpider(scrapy.Spider):
 	def download_doc(self, response):
 		""" Downloads and saves a single document
 		"""
+		urteil=response.meta['urteil']
+		urteil['PDF']=response.body
 		self.log("Download document "+response.url)
 		
-		filename = "{}.pdf".format(response.meta['number'])
-		with open(filename, 'wb') as f:
-			f.write(response.body)
+		yield urteil
 
  
