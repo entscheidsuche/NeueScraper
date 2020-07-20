@@ -1,9 +1,0 @@
-2020-07-08 02:33:33 [scrapy.utils.log] INFO: Scrapy 2.1.0 started (bot: NeueScraper)
-2020-07-08 02:33:33 [scrapy.utils.log] INFO: Versions: lxml 4.5.1.0, libxml2 2.9.10, cssselect 1.1.0, parsel 1.6.0, w3lib 1.22.0, Twisted 20.3.0, Python 3.7.1 (v3.7.1:260ec2c36a, Oct 20 2018, 03:13:28) - [Clang 6.0 (clang-600.0.57)], pyOpenSSL 19.1.0 (OpenSSL 1.1.1g  21 Apr 2020), cryptography 2.9.2, Platform Darwin-19.5.0-x86_64-i386-64bit
-2020-07-08 02:33:33 [scrapy.utils.log] DEBUG: Using reactor: twisted.internet.selectreactor.SelectReactor
-Usage
-=====
-  scrapy runspider [options] <spider_file>
-
-runspider: error: File not found: bern
-

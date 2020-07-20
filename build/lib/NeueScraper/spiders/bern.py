@@ -16,7 +16,7 @@ class BernSpider(scrapy.Spider):
 			  , 'X-GWT-Module-Base': 'https://www.zsg-entscheide.apps.be.ch/tribunapublikation/tribunavtplus/'
 			  }
 	MINIMUM_PAGE_LEN = 148
-	DOWNLOAD_URL = 'http://www.zsg-entscheide.apps.be.ch/tribunapublikation/tribunavtplus/ServletDownload/'
+	DOWNLOAD_URL = 'https://www.zsg-entscheide.apps.be.ch/tribunapublikation/tribunavtplus/ServletDownload/'
 	MAX_PAGES = 5
 	reVor=re.compile('//OK\\[[0-9,\\.]+\\[')
 	reAll=re.compile('(?<=,\\")[^\\"]*(?:\\\\\\"[^\\"]*)*(?=\\",)')
@@ -50,16 +50,16 @@ class BernSpider(scrapy.Spider):
 	
 		if response.status == 200 and len(response.body) > BernSpider.MINIMUM_PAGE_LEN:
 			# construct and download document links
-			self.log("Rohergebnis: "+response.body_as_unicode())
+			self.logger.debug("Rohergebnis: "+response.body_as_unicode())
 			
 			content = self.reVor.sub('',response.body_as_unicode())
 			
-			self.log("Ergebnisseite: "+content)
+			self.logger.debug("Ergebnisseite: "+content)
 
 			werte=self.reAll.findall(content)
 			i=0
 			for wert in werte:
-				self.log("Wert " +str(i)+": "+ wert)
+				self.logger.debug("Wert " +str(i)+": "+ wert)
 				i=i+1
 
 			brauchbar=True
@@ -73,34 +73,34 @@ class BernSpider(scrapy.Spider):
 			publikationsdatum=werte[len(werte)-1]
 			
 			if len(kammer)<11:
-				self.log("Type mismatch keine Kammer '"+kammer+"'")
+				self.logger.debug("Type mismatch keine Kammer '"+kammer+"'")
 				kammer=""
 			if self.reID.fullmatch(id_)==None:
-				self.log("Type mismatch keine ID '"+id_+"'")	
+				self.logger.debug("Type mismatch keine ID '"+id_+"'")	
 				brauchbar=False
 			if len(titel)<11:
-				self.log("Type mismatch keine Titel '"+titel+"'")
+				self.logger.debug("Type mismatch keine Titel '"+titel+"'")
 				titel=""	 
 			if self.reNum.fullmatch(num)==None:
-				self.log("Type mismatch keine Geschäftsnummer '"+num+"'")
+				self.logger.debug("Type mismatch keine Geschäftsnummer '"+num+"'")
 				brauchbar=False
 			if self.reDatum.fullmatch(entscheiddatum)==None:
-				self.log("Type mismatch keine Entscheiddatum '"+entscheiddatum+"'")
+				self.logger.debug("Type mismatch keine Entscheiddatum '"+entscheiddatum+"'")
 				brauchbar=False
 			if len(leitsatz)<11:
-				self.log("Type mismatch kein Leitsatz '"+leitsatz+"'")
+				self.logger.debug("Type mismatch kein Leitsatz '"+leitsatz+"'")
 				leitsatz=""
 			if self.reRG.fullmatch(rechtsgebiet)==None:
-				self.log("Type mismatch kein Rechtsgebiet '"+rechtsgebiet+"'")
+				self.logger.debug("Type mismatch kein Rechtsgebiet '"+rechtsgebiet+"'")
 				rechtsgebiet=""			   
 			if self.reDatum.fullmatch(publikationsdatum)==None:
-				self.log("Type mismatch letzter Eintrag kein Publikationsdatum '"+publikationsdatum+"'")
+				self.logger.debug("Type mismatch letzter Eintrag kein Publikationsdatum '"+publikationsdatum+"'")
 				publikationsdatum=""
 
 			if brauchbar:
 				urteil = {'Kanton':'Bern', 'Num':num , 'Kammer':kammer, 'EDateum': entscheiddatum, 'PDatum': publikationsdatum, 'Titel': titel, 'Leitsatz': leitsatz, 'Rechtsgebiet': rechtsgebiet, 'id':id_}
 				numstr = num.replace(" ", "_")
-				path_ = 'E:\\webapps\\a2j\\a2j-www-trbpub100web\\pdf_temp'
+				path_ = 'E%3A%5C%5Cwebapps%5C%5Ca2y%5C%5Ca2ya-www-trbpub100web%5C%5Cpdf%5C'
 				href = "{}{}_{}.pdf?path={}\\{}.pdf&dossiernummer={}".format(BernSpider.DOWNLOAD_URL, numstr, id_,path_, id_, numstr)
 				request = scrapy.Request(href, callback=self.download_doc)
 				request.meta['urteil'] = urteil
@@ -110,7 +110,7 @@ class BernSpider(scrapy.Spider):
 			if next_request!=False:
 				yield next_request
 			else:
-				self.log("Normal beendet")
+				self.logger.debug("Normal beendet")
 				pass
 		else:
 			# base urls are depleted, let the download queue finish and then stop the spider
@@ -121,7 +121,7 @@ class BernSpider(scrapy.Spider):
 		"""
 		urteil=response.meta['urteil']
 		urteil['PDF']=response.body
-		self.log("Download document "+response.url)
+		self.logger.debug("Download document ("+str(len(response.body))+" Bytes) "+response.url)
 		
 		yield urteil
 

@@ -14,6 +14,7 @@ BOT_NAME = 'NeueScraper'
 SPIDER_MODULES = ['NeueScraper.spiders']
 NEWSPIDER_MODULE = 'NeueScraper.spiders'
 
+LOG_ENABLED = True
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
 #USER_AGENT = 'NeueScraper (+http://www.yourdomain.com)'
