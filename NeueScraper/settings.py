@@ -65,10 +65,12 @@ ROBOTSTXT_OBEY = True
 
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
-ITEM_PIPELINES = {'scrapy.pipelines.files.FilesPipeline': 1}
-FILES_STORE = ftp://entscheidsuche.ch
-FTP_USER = Scraper@entscheidsuche.ch
-FTP_PASSWORD = PG4NUQuGDjrxRts
+ITEM_PIPELINES = {'NeueScraper.pipelines.MyFilesPipeline': 1}
+FILES_STORE = 'ftp://entscheidsuche.ch'
+FTP_USER = 'Scraper@entscheidsuche.ch'
+FTP_PASSWORD = 'PG4NUQuGDjrxRts'
+FILES_URLS_FIELD = "PDFUrl"
+FILES_RESULT_FIELD = "PDFFile"
 
 #ITEM_PIPELINES = {
 #    'NeueScraper.pipelines.NeuescraperPipeline': 300,

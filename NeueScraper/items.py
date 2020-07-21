@@ -11,4 +11,20 @@ import scrapy
 class NeuescraperItem(scrapy.Item):
     # define the fields for your item here like:
     # name = scrapy.Field()
-    pass
+    Kanton = scrapy.Field()
+    Num = scrapy.Field()
+    Kammer = scrapy.Field()
+    EDatum = scrapy.Field()
+    PDatum = scrapy.Field()
+    Titel = scrapy.Field()
+    Leitsatz = scrapy.Field()
+    Rechtsgebiet = scrapy.Field()
+    DocID = scrapy.Field()
+    PDFUrl = scrapy.Field()
+    HTMLUrl = scrapy.Field()
+    PDFFile = scrapy.Field()
+    HTML = scrapy.Field()
+    Raw = scrapy.Field()
+
+    # pass
+    
