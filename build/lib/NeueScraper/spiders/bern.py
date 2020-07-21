@@ -27,44 +27,26 @@ class BernSpider(scrapy.Spider):
 	reDatum=re.compile('\d{4}-\d{2}-\d{2}')
 	reRG=re.compile('[^0-9\\.:-]{3}.{3,}')
 	reTreffer=re.compile('(?<=^//OK\\[)[0-9]+')
+	page_nr=0
+	trefferzahl=0
+	
+	def get_next_request(self):
+		if self.ab is None:
+			body = BernSpider.RESULT_QUERY_TPL.format(page_nr=self.page_nr)
+		else:
+			body = BernSpider.RESULT_QUERY_TPL_AB.format(page_nr=self.page_nr, datum=self.ab)
+		self.page_nr=self.page_nr+1
+		return body	
 	
 	def request_generator(self):
 		""" Generates scrapy frist request
 		"""
-		if self.ab is NONE:
-			body = BernSpider.RESULT_QUERY_TPL.format(page_nr=0)
-		else:
-			body = BernSpider.RESULT_QUERY_TPL_AB.format(page_nr=0, datum=self.ab)
-		
-		yield scrapy.Request(url=BernSpider.RESULT_PAGE_URL, method="POST", body=body, headers=BernSpider.HEADERS, callback=self.gen_requests, errback=self.errback_httpbin)
+		body=self.get_next_request()
+		return [scrapy.Request(url=BernSpider.RESULT_PAGE_URL, method="POST", body=body, headers=BernSpider.HEADERS, callback=self.parse_page, errback=self.errback_httpbin)]
 
-	def gen_requests(self,response):
-		""" Generates number of requests
-		"""
-		if response.status == 200 and len(response.body) > BernSpider.MINIMUM_PAGE_LEN:
-			# construct and download document links
-			logging.info("Rohergebnis: "+response.body_as_unicode())
-			treffer=self.reTreffer.search(response.body_as_unicode())
-			if treffer:
-				logging.info("Trefferzahl: "+treffer.group())
-				maxpages=int(treffer.group())
-				if maxpages > BernSpider.MAX_PAGES:
-					logging.warning("Von "+str(maxpages)+" werden nur "+str(BernSpider.MAX_PAGES)+" gescraped.")
-					maxpages=BernSpider.MAX_PAGES
-				page_nr = 0
-				while page_nr < maxpages:
-					if self.ab is NONE:
-						body = BernSpider.RESULT_QUERY_TPL.format(page_nr=page_nr)
-					else:
-						body = BernSpider.RESULT_QUERY_TPL_AB.format(page_nr=page_nr, datum=self.ab)
-					yield scrapy.Request(url=BernSpider.RESULT_PAGE_URL, method="POST", body=body, headers=BernSpider.HEADERS, callback=self.parse_page, errback=self.errback_httpbin)
-					page_nr += 1
-		else:
-			logging.error("Initialer Request fehlgeschlagen")
-
-	def __init__(self):
+	def __init__(self,ab=None):
 		super().__init__()
-		self.ab = getattr(self, 'ab', None)
+		self.ab = ab
 		self.request_gen = self.request_generator()
 
 	def start_requests(self):
@@ -81,6 +63,11 @@ class BernSpider(scrapy.Spider):
 		if response.status == 200 and len(response.body) > BernSpider.MINIMUM_PAGE_LEN:
 			# construct and download document links
 			logging.info("Rohergebnis: "+response.body_as_unicode())
+			if self.page_nr==1:
+				treffer=self.reTreffer.search(response.body_as_unicode())
+				if treffer:
+					logging.info("Trefferzahl: "+treffer.group())
+					self.trefferzahl=int(treffer.group())
 			
 			content = self.reVor.sub('',response.body_as_unicode())
 			
@@ -146,7 +133,13 @@ class BernSpider(scrapy.Spider):
 					'PDFUrl': [href],
 					'Raw': content
 				}
-			pass			
+
+				if self.page_nr < min(self.trefferzahl, self.MAX_PAGES):
+					body = self.get_next_request()
+					yield scrapy.Request(url=BernSpider.RESULT_PAGE_URL, method="POST", body=body, headers=BernSpider.HEADERS, callback=self.parse_page, errback=self.errback_httpbin)
+		else:
+			logging.error("ungültige Antwort")
+			
 			
 	def errback_httpbin(self, failure):
 		# log all errback failures,
