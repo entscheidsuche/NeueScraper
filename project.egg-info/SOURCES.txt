@@ -6,6 +6,11 @@ NeueScraper/pipelines.py
 NeueScraper/settings.py
 NeueScraper/spiders/__init__.py
 NeueScraper/spiders/bern.py
+NeueScraper/spiders/bern_anwaltsaufsicht.py
+NeueScraper/spiders/bern_steuerrekurs.py
+NeueScraper/spiders/bern_verwaltungsgericht.py
+NeueScraper/spiders/bern_zivil_straf.py
+NeueScraper/spiders/fribourg.py
 project.egg-info/PKG-INFO
 project.egg-info/SOURCES.txt
 project.egg-info/dependency_links.txt

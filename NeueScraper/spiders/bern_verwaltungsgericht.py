@@ -5,7 +5,7 @@ import logging
 
 
 class BernSpider(scrapy.Spider):
-	name = 'bern'
+	name = 'bern/verwaltungsgericht'
 	allowed_domains = ['www.zsg-entscheide.apps.be.ch']
 	start_urls = ['https://www.zsg-entscheide.apps.be.ch/tribunapublikation/tribunavtplus/loadTable']
 	
@@ -85,7 +85,7 @@ class BernSpider(scrapy.Spider):
 			titel=werte[6]
 			num=werte[7]
 			entscheiddatum=werte[8]
-			leitsatz=werte[16]
+			leitsatz=werte[9]
 			rechtsgebiet=werte[13]
 			publikationsdatum=werte[len(werte)-1]
 			if self.reDatum.fullmatch(publikationsdatum)==None: publikationsdatum=werte[len(werte)-2]

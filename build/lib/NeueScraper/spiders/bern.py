@@ -85,7 +85,7 @@ class BernSpider(scrapy.Spider):
 			titel=werte[6]
 			num=werte[7]
 			entscheiddatum=werte[8]
-			leitsatz=werte[9]
+			leitsatz=werte[16]
 			rechtsgebiet=werte[13]
 			publikationsdatum=werte[len(werte)-1]
 			if self.reDatum.fullmatch(publikationsdatum)==None: publikationsdatum=werte[len(werte)-2]
