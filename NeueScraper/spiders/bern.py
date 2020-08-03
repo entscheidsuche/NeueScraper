@@ -10,7 +10,7 @@ class BernSpider(scrapy.Spider):
 	MAX_PAGES = 10000
 	reVor=re.compile('//OK\\[[0-9,\\.]+\\[')
 	reAll=re.compile('(?<=,\\")[^\\"]*(?:\\\\\\"[^\\"]*)*(?=\\",)')
-	reID=re.compile('[0-9a-f]{32}')
+	reID=re.compile('[0-9a-f]{32}|[0-9]{15,17}')
 	reDatum=re.compile('\d{4}-\d{2}-\d{2}')
 	reRG=re.compile('[^0-9\\.:-]{3}.{3,}')
 	reTreffer=re.compile('(?<=^//OK\\[)[0-9]+')
@@ -67,13 +67,15 @@ class BernSpider(scrapy.Spider):
 				i=i+1
 
 			brauchbar=True
+			korrektur=0
 			kammer=werte[3]
-			id_=werte[5]
-			titel=werte[6]
-			num=werte[7]
-			entscheiddatum=werte[8]
-			leitsatz=werte[9]
-			rechtsgebiet=werte[13]
+			if werte[4]!="": korrektur=-1
+			id_=werte[5+korrektur]
+			titel=werte[6+korrektur]
+			num=werte[7+korrektur]
+			entscheiddatum=werte[8+korrektur]
+			leitsatz=werte[9+korrektur]
+			rechtsgebiet=werte[13+korrektur]
 			publikationsdatum=werte[len(werte)-1]
 			if self.reDatum.fullmatch(publikationsdatum)==None: publikationsdatum=werte[len(werte)-2]
 			
@@ -81,16 +83,16 @@ class BernSpider(scrapy.Spider):
 				logging.warning("Type mismatch keine Kammer '"+kammer+"'")
 				kammer=""
 			if self.reID.fullmatch(id_)==None:
-				logging.warning("Type mismatch keine ID '"+id_+"'")	
+				logging.error("Type mismatch keine ID '"+id_+"'")	
 				brauchbar=False
 			if len(titel)<11:
 				logging.warning("Type mismatch keine Titel '"+titel+"'")
 				titel=""	 
 			if self.reNum.fullmatch(num)==None:
-				logging.warning("Type mismatch keine Geschäftsnummer '"+num+"'")
+				logging.error("Type mismatch keine Geschäftsnummer '"+num+"'")
 				brauchbar=False
 			if self.reDatum.fullmatch(entscheiddatum)==None:
-				logging.warning("Type mismatch keine Entscheiddatum '"+entscheiddatum+"'")
+				logging.error("Type mismatch kein Entscheiddatum '"+entscheiddatum+"'")
 				brauchbar=False
 			if len(leitsatz)<11:
 				if leitsatz != '-':
@@ -121,9 +123,12 @@ class BernSpider(scrapy.Spider):
 					'Raw': content
 				}
 
-				if self.page_nr < min(self.trefferzahl, self.MAX_PAGES):
-					body = self.get_next_request()
-					yield scrapy.Request(url=self.RESULT_PAGE_URL, method="POST", body=body, headers=self.HEADERS, callback=self.parse_page, errback=self.errback_httpbin)
+			else:
+				logging.error("Parse Fehler bei Treffer "+str(self.page_nr)+" String: "+content)
+
+			if self.page_nr < min(self.trefferzahl, self.MAX_PAGES):
+				body = self.get_next_request()
+				yield scrapy.Request(url=self.RESULT_PAGE_URL, method="POST", body=body, headers=self.HEADERS, callback=self.parse_page, errback=self.errback_httpbin)
 		else:
 			logging.error("ungültige Antwort")
 			
