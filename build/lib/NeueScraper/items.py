@@ -25,6 +25,9 @@ class NeuescraperItem(scrapy.Item):
     PDFFile = scrapy.Field()
     HTML = scrapy.Field()
     Raw = scrapy.Field()
+    Gerichtsbarkeit = scrapy.Field()
+    Weiterzug = scrapy.Field()
+    Entscheidart = scrapy.Field()
 
     # pass
     

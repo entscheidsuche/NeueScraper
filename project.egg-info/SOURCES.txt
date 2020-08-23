@@ -7,6 +7,10 @@ NeueScraper/settings.py
 NeueScraper/spiders/__init__.py
 NeueScraper/spiders/bern.py
 NeueScraper/spiders/fribourg.py
+NeueScraper/spiders/jura.py
+NeueScraper/spiders/tribuna.py
+NeueScraper/spiders/zurich_og.py
+NeueScraper/spiders/zurich_sozvers.py
 project.egg-info/PKG-INFO
 project.egg-info/SOURCES.txt
 project.egg-info/dependency_links.txt

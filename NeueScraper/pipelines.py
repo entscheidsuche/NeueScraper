@@ -11,9 +11,9 @@ import re
 import sys
 import traceback
 import hashlib
+import scrapy
 from scrapy.utils.python import to_bytes
 
-geschaeftsnummer=re.compile("(?<=dossiernummer=)[^=]+$")
 filenamechars=re.compile("(?u)[^-\\w.]")
 
 from urllib.parse import urlparse
@@ -31,13 +31,11 @@ class MyFilesPipeline(FilesPipeline):
 	def file_path(self, request, response=None, info=None):
 		try:
 			logging.info('Pipeline-Request: '+request.url)
-			match=geschaeftsnummer.search(request.url)
-			num="<unknown>"
-			if match:
-				num=filenamechars.sub('',match.group())
-			
+			item=request.meta['item']
+			num=item['Num']
 			logging.info('Geschäftsnummer: '+num)
-			filename=num+"___"+hashlib.sha1(to_bytes(request.url)).hexdigest()+".pdf"
+			num_=filenamechars.sub('_',num)
+			filename=num_+"___"+hashlib.sha1(to_bytes(request.url)).hexdigest()+".pdf"
 			dir = "undefined"
 			if info.spider:
 				dir=info.spider.name
@@ -50,5 +48,7 @@ class MyFilesPipeline(FilesPipeline):
 			logging.error("Unexpected error: " + repr(traceback.format_exception(exc_type, exc_value, exc_traceback)))
 			raise 
 
-
+	def get_media_requests(self, item, info):
+		urls = item[self.files_urls_field]
+		return [scrapy.Request(url=u, meta={"item":item}) for u in urls]
 
