@@ -34,7 +34,8 @@ ROBOTSTXT_OBEY = False
 #CONCURRENT_REQUESTS_PER_IP = 16
 
 # Disable cookies (enabled by default)
-#COOKIES_ENABLED = False
+COOKIES_ENABLED = False
+COOKIES_DEBUG = True
 
 # Disable Telnet Console (enabled by default)
 #TELNETCONSOLE_ENABLED = False
@@ -70,8 +71,8 @@ ITEM_PIPELINES = {'NeueScraper.pipelines.MyFilesPipeline': 1}
 FILES_STORE = 'ftp://entscheidsuche.ch'
 FTP_USER = 'Scraper@entscheidsuche.ch'
 FTP_PASSWORD = 'PG4NUQuGDjrxRts'
-FILES_URLS_FIELD = "PDFUrl"
-FILES_RESULT_FIELD = "PDFFile"
+FILES_URLS_FIELD = "PDFUrls"
+FILES_RESULT_FIELD = "PDFFiles"
 
 #ITEM_PIPELINES = {
 #    'NeueScraper.pipelines.NeuescraperPipeline': 300,

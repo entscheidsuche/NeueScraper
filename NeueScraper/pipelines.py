@@ -25,21 +25,28 @@ class NeuescraperPipeline:
     def process_item(self, item, spider):
         return item
 
-
-class MyFilesPipeline(FilesPipeline):
-
-	def file_path(self, request, response=None, info=None):
+class PipelineHelper:
+	def file_path(self, request, response, spider=None):
 		try:
 			logging.info('Pipeline-Request: '+request.url)
 			item=request.meta['item']
+			if 'PDFUrls' in item and request.url in item['PDFUrls']:
+				typ="pdf"
+			elif 'HTMLUrls' in item and request.url in item['HTMLUrls']:
+				typ="html"
+			else:
+				logging.error("Filetyp unbekannt für "+request.url)
+				typ="xxx" 	
 			num=item['Num']
 			logging.info('Geschäftsnummer: '+num)
-			num_=filenamechars.sub('_',num)
-			filename=num_+"___"+hashlib.sha1(to_bytes(request.url)).hexdigest()+".pdf"
+			edatum=item['EDatum']
+			if edatum is None:
+				edatum='nodate'
+			filename=filenamechars.sub('_',num+"___"+edatum)+"."+typ
 			dir = "undefined"
-			if info.spider:
-				dir=info.spider.name
-				logging.info('Spider-Name: '+info.spider.name)	
+			if spider:
+				dir=spider.name
+				logging.info('Spider-Name: '+spider.name)	
 			pfad=dir+"/"+filename
 			logging.info('Pfad: '+pfad)
 			return pfad
@@ -48,7 +55,13 @@ class MyFilesPipeline(FilesPipeline):
 			logging.error("Unexpected error: " + repr(traceback.format_exception(exc_type, exc_value, exc_traceback)))
 			raise 
 
+
+
+class MyFilesPipeline(FilesPipeline):
+	def file_path(self, request, response=None, info=None):
+		return PipelineHelper.file_path(self, request, response, info.spider if info is not None else None)
+
 	def get_media_requests(self, item, info):
-		urls = item[self.files_urls_field]
+		urls = item[self.files_urls_field] if self.files_urls_field in item else []
 		return [scrapy.Request(url=u, meta={"item":item}) for u in urls]
 
