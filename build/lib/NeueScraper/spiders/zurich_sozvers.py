@@ -194,8 +194,7 @@ class ZurichSozversSpider(scrapy.Spider):
 		item=response.meta['item']
 		path=PipelineHelper.file_path(response.url, response, self)
 
-		yield self.store.persist_file(path, response.body_as_unicode(), info=self, meta=response.meta, headers=None)
-
+		#yield store.persist_file(path, response.body_as_unicode(), info=self, meta=response.meta, headers=None)
 		#checksum = md5sum(buf)
 		item['html']=response.body_as_unicode()
 		yield(item)								

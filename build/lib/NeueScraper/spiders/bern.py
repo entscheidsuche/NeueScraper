@@ -5,8 +5,8 @@ import logging
 from NeueScraper.spiders.tribuna import TribunaSpider
 
 
-class BernStrkSpider(TribunaSpider):
-	name = 'bern_steuerrekurs'
+class BE_Steuerrekurs_Spider(TribunaSpider):
+	name = 'BE_Steuerrekurs'
 	allowed_domains = ['www.strk-entscheide.apps.be.ch']
 	
 	RESULT_PAGE_URL = 'https://www.strk-entscheide.apps.be.ch/tribunapublikation/tribunavtplus/loadTable'
@@ -26,7 +26,7 @@ class BernStrkSpider(TribunaSpider):
 	KANTON = 'Bern'
 		
 class BernZsgSpider(TribunaSpider):
-	name = 'bern_zivil_straf'
+	name = 'BE_ZivilStraf'
 	allowed_domains = ['www.zsg-entscheide.apps.be.ch']
 	
 	RESULT_PAGE_URL = 'https://www.zsg-entscheide.apps.be.ch/tribunapublikation/tribunavtplus/loadTable'
@@ -47,7 +47,7 @@ class BernZsgSpider(TribunaSpider):
 	KANTON = 'Bern'
 	
 class BernAaSpider(TribunaSpider):
-	name = 'bern_anwaltsaufsicht'
+	name = 'BE_Anwaltsaufsicht'
 	allowed_domains = ['www.aa-entscheide.apps.be.ch']
 	
 	RESULT_PAGE_URL = 'https://www.aa-entscheide.apps.be.ch/tribunapublikation/tribunavtplus/loadTable'

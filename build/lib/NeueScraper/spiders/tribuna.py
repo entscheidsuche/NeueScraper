@@ -2,9 +2,11 @@
 import scrapy
 import re
 import logging
+from NeueScraper.spiders.basis import BasisSpider
 
-class TribunaSpider(scrapy.Spider):
-	name = 'tribuna_virtual'
+logger = logging.getLogger(__name__)
+
+class TribunaSpider(BasisSpider):
 	MINIMUM_PAGE_LEN = 148
 	MAX_PAGES = 10000
 	reVor=re.compile('//OK\\[[0-9,\\.]+\\[')
@@ -17,9 +19,10 @@ class TribunaSpider(scrapy.Spider):
 	page_nr=0
 	trefferzahl=0
 	ENCRYPTED=False
+	name = 'Tribuna, virtuell'
 	
 	def get_next_request(self):
-		logging.info("Hole Treffer Nr. "+str(self.page_nr))
+		logger.info("Hole Treffer Nr. "+str(self.page_nr))
 		if self.ab is None:
 			body = self.RESULT_QUERY_TPL.format(page_nr=self.page_nr)
 		else:
@@ -36,13 +39,7 @@ class TribunaSpider(scrapy.Spider):
 	def __init__(self,ab=None):
 		super().__init__()
 		self.ab = ab
-		self.request_gen = self.request_generator()
-
-	def start_requests(self):
-		# treat the first request, subsequent ones are generated and processed inside the callback
-		for request in self.request_gen:
-			yield request
-		logging.info("Normal beendet")
+		self.request_gen=self.request_generator()
 
 	def parse_page(self, response):	
 		""" Parses the current search result page, downloads documents and yields the request for the next search
@@ -50,26 +47,26 @@ class TribunaSpider(scrapy.Spider):
 		"""
 		if response.status == 200 and len(response.body) > self.MINIMUM_PAGE_LEN:
 			# construct and download document links
-			logging.info("Rohergebnis: "+response.body_as_unicode())
+			logger.info("Rohergebnis: "+response.body_as_unicode())
 			if self.page_nr==1:
 				treffer=self.reTreffer.search(response.body_as_unicode())
 				if treffer:
-					logging.info("Trefferzahl: "+treffer.group())
+					logger.info("Trefferzahl: "+treffer.group())
 					self.trefferzahl=int(treffer.group())
 			
 			content = self.reVor.sub('',response.body_as_unicode())
 			
-			logging.info("Ergebnisseite: "+content)
+			logger.info("Ergebnisseite: "+content)
 
 			werte=self.reAll.findall(content)
 			i=0
 			for wert in werte:
-				logging.info("Wert " +str(i)+": "+ wert)
+				logger.info("Wert " +str(i)+": "+ wert)
 				i=i+1
 
 			brauchbar=True
 			korrektur=0
-			kammer=werte[3]
+			vkammer=werte[3]
 			if werte[4]!="": korrektur=-1
 			id_=werte[5+korrektur]
 			titel=werte[6+korrektur]
@@ -81,34 +78,73 @@ class TribunaSpider(scrapy.Spider):
 			publikationsdatum=werte[len(werte)-1]
 			if self.reDatum.fullmatch(publikationsdatum)==None: publikationsdatum=werte[len(werte)-2]
 			
-			if len(kammer)<11:
-				logging.warning("Type mismatch keine Kammer '"+kammer+"'")
-				kammer=""
+			if len(vkammer)<11:
+				logger.warning("Type mismatch keine Kammer '"+vkammer+"'")
+				vkammer=""
 			if self.reID.fullmatch(id_)==None:
-				logging.error("Type mismatch keine ID '"+id_+"'")	
+				logger.error("Type mismatch keine ID '"+id_+"'")	
 				brauchbar=False
 			if len(titel)<11:
-				logging.warning("Type mismatch keine Titel '"+titel+"'")
+				logger.warning("Type mismatch keine Titel '"+titel+"'")
 				titel=""	 
 			if self.reNum.fullmatch(num)==None:
-				logging.error("Type mismatch keine Geschäftsnummer '"+num+"'")
+				logger.error("Type mismatch keine Geschäftsnummer '"+num+"'")
 				brauchbar=False
 			if self.reDatum.fullmatch(entscheiddatum)==None:
-				logging.error("Type mismatch kein Entscheiddatum '"+entscheiddatum+"'")
+				logger.error("Type mismatch kein Entscheiddatum '"+entscheiddatum+"'")
 				brauchbar=False
 			if len(leitsatz)<11:
 				if leitsatz != '-':
-					logging.warning("Type mismatch kein Leitsatz '"+leitsatz+"'")
+					logger.warning("Type mismatch kein Leitsatz '"+leitsatz+"'")
 				leitsatz=""
 			if self.reRG.fullmatch(rechtsgebiet)==None:
-				logging.warning("Type mismatch kein Rechtsgebiet '"+rechtsgebiet+"'")
+				logger.warning("Type mismatch kein Rechtsgebiet '"+rechtsgebiet+"'")
 				rechtsgebiet=""			   
 			if self.reDatum.fullmatch(publikationsdatum)==None:
-				logging.warning("Type mismatch letzter und vorletzter Eintrag kein Publikationsdatum '"+publikationsdatum+"'")
+				logger.warning("Type mismatch letzter und vorletzter Eintrag kein Publikationsdatum '"+publikationsdatum+"'")
 				publikationsdatum=""
 
 			if brauchbar:
 				numstr = num.replace(" ", "_")
+				#Ist die Signatur nicht eindeutig, so muss hier differenziert werden
+				if self.mehrfachspider and self.zweite_ebene_fix:
+					kammermatch=-1
+					if vkammer:
+						for m in self.kammerwahl:
+							i=self.kammerwahl[m]
+							if m in vkammer:
+								logger.info("Match für "+str(i)+": "+m+" Eintrag "+self.gerichte[self.name][i]['Signatur'] )
+								if kammermatch==-1:
+									kammermatch=i
+								else:
+									logger.error(num+" mit "+vkammer+" hat doppelten match. Einmal mit Nummer "+str(kammermatch)+" und dann noch mit "+str(i))
+									kammermatch=-1
+									break
+					if kammermatch==-1:
+						if self.kammerfallback is not None:
+							kammermatch=self.kammerfallback
+							logger.warning(num+" mit "+vkammer+" führt zu Kammerfallback")
+				else:
+					kammermatch=0
+				signatur=self.gerichte[self.name][kammermatch]['Signatur']
+				gericht=''
+				if self.gerichte[self.name][kammermatch]['Stufe 2 DE']:
+					gericht=self.gerichte[self.name][kammermatch]['Stufe 2 DE']
+				elif self.gerichte[self.name][kammermatch]['Stufe 2 FR']:
+					gericht=self.gerichte[self.name][kammermatch]['Stufe 2 FR']
+				elif self.gerichte[self.name][kammermatch]['Stufe 2 FR']:
+					gericht=self.gerichte[self.name][kammermatch]['Stufe 2 IT']
+				vgericht=gericht
+				kammer=''
+				if self.gerichte[self.name][kammermatch]['Stufe 3 DE']:
+					kammer=self.gerichte[self.name][kammermatch]['Stufe 3 DE']
+				elif self.gerichte[self.name][kammermatch]['Stufe 3 FR']:
+					kammer=self.gerichte[self.name][kammermatch]['Stufe 3 FR']
+				elif self.gerichte[self.name][kammermatch]['Stufe 3 FR']:
+					kammer=self.gerichte[self.name][kammermatch]['Stufe 3 IT']
+				if vkammer=='':
+					vkammer=kammer
+				
 				item = {
 					'Kanton': self.KANTON,
 					'Gerichtsbarkeit': self.GERICHTSBARKEIT,
@@ -120,7 +156,11 @@ class TribunaSpider(scrapy.Spider):
 					'Leitsatz': leitsatz,
 					'Rechtsgebiet': rechtsgebiet,
 					'DocId':id_,
-					'Raw': content
+					'Raw': content,
+					'Signatur': signatur, 
+					'Gericht': gericht,
+					'VGericht': vgericht,
+					'VKammer': vkammer
 				}				
 						
 				if self.ENCRYPTED:
@@ -128,37 +168,30 @@ class TribunaSpider(scrapy.Spider):
 					yield scrapy.Request(url=self.DECRYPT_PAGE_URL, method="POST", body=body, headers=self.HEADERS, callback=self.decrypt_path, errback=self.errback_httpbin, meta={"item":item})
 				else:
 					href = self.PDF_PATTERN.format(self.DOWNLOAD_URL, numstr, id_,self.PDF_PATH, id_, numstr)
-					item['PDFUrl']=[href]
+					item['PDFUrls']=[href]
 					yield item
 			else:
-				logging.error("Parse Fehler bei Treffer "+str(self.page_nr)+" String: "+content)
+				logger.error("Parse Fehler bei Treffer "+str(self.page_nr)+" String: "+content)
 
 			if self.page_nr < min(self.trefferzahl, self.MAX_PAGES):
 				body = self.get_next_request()
 				yield scrapy.Request(url=self.RESULT_PAGE_URL, method="POST", body=body, headers=self.HEADERS, callback=self.parse_page, errback=self.errback_httpbin)
 		else:
-			logging.error("ungültige Antwort")
+			logger.error("ungültige Antwort")
 
 	def decrypt_path(self, response):
 		item=response.meta['item']
-		logging.info("Decrypt-Path für DocID "+item['DocId'])
+		logger.info("Decrypt-Path für DocID "+item['DocId'])
 		if response.status == 200:
-			logging.info("Rohergebnis Decrypt: "+response.body_as_unicode())
+			logger.info("Rohergebnis Decrypt: "+response.body_as_unicode())
 			code=self.reDecrypt.search(response.body_as_unicode())
 			if code:
 				numstr = item['Num'].replace(" ", "_")
 				href=self.PDF_PATTERN.format(self.DOWNLOAD_URL,numstr,item['DocId'],code.group(),numstr)
-				item['PDFUrl']=[href]
+				item['PDFUrls']=[href]
 				yield item
 			else:
-				logging.error("Gecrypteter Pfad konnte nicht geparst werden.")
+				logger.error("Gecrypteter Pfad konnte nicht geparst werden.")
 		else:
-			logging.error("Keine Antwort für gecrypteten Pfad")
-					
-			
-	def errback_httpbin(self, failure):
-		# log all errback failures,
-		# in case you want to do something special for some errors,
-		# you may need the failure's type
-		logging.error(repr(failure))
+			logger.error("Keine Antwort für gecrypteten Pfad")
 

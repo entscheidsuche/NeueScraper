@@ -6,6 +6,7 @@ NeueScraper/pipelines.py
 NeueScraper/settings.py
 NeueScraper/spiders/__init__.py
 NeueScraper/spiders/aargau.py
+NeueScraper/spiders/basis.py
 NeueScraper/spiders/bern.py
 NeueScraper/spiders/fribourg.py
 NeueScraper/spiders/jura.py
