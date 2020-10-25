@@ -16,7 +16,9 @@ class NeuescraperItem(scrapy.Item):
     Job = scrapy.Field()
     Kanton = scrapy.Field()
     Gericht = scrapy.Field()
+    VGericht = scrapy.Field()
     Kammer = scrapy.Field()
+    VKammer = scrapy.Field()
     Num = scrapy.Field()
     EDatum = scrapy.Field()
     Titel = scrapy.Field()
@@ -38,19 +40,25 @@ class NeuescraperItem(scrapy.Item):
 
 """
 <Entscheid>
-	<Meta>
+	<Metainfos>
 		<Signatur>...</Signatur>!
 		<Spider>...</Spider>!
 		<Job>...</Job>!
 		<Kanton>...</Kanton>!
 		<Gericht>...</Gericht>!
 		<Kammer>...</Kammer>?
-	</Meta>
+		<Geschaeftsnummer>...</Geschaeftsnummer>?
+		<EDatum>...</EDatum>?
+		<PDFFile>PDF-Dateiname</PDFFile>?
+		<HTMLFile>HTML-Dateiname</HTMLFile>?
+	</Metainfos>
 	<Treffer>
 		<Quelle>
 			<Gerichtsbarkeit>...</Gerichtsbarkeit>?
 			<Gericht>...</Gericht>!
 			<Kammer>...</Kammer>?
+			<Geschaeftsnummer>...</Geschaeftsnummer>?
+			<EDatum>...</EDatum>?
 		</Quelle>
 		<Kurz>
 			<Titel>...</Titel>?
@@ -65,9 +73,7 @@ class NeuescraperItem(scrapy.Item):
 		<Source>
 			<DocID>...</DocID>?
 			<PdfUrl>...</PdfUrl>*
-			<PdfFile>...</PdfFile>*
 			<HtmlUrl>...</HtmlUrl>*
-			<HtmlFile>...</HtmlFile>*
 			<Raw>...</Raw>?
 		</Source>
 	</Treffer>

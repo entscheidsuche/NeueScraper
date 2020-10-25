@@ -7,6 +7,14 @@ import json
 import inspect
 import os
 import json
+import re
+from lxml import etree
+
+from NeueScraper.pipelines import MyFilesPipeline
+from NeueScraper.pipelines import PipelineHelper
+
+elementchars=re.compile("[^-a-zA-Z0-9_]")
+elementre=re.compile("^[a-zA-Z][-a-zA-Z0-9_]+$")
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +31,6 @@ class BasisSpider(scrapy.Spider):
 	def __init__(self):
 		super().__init__()
 
-	def basis_request(self):
-		""" Generates scrapy frist request
-		"""
-		return [scrapy.Request(url=self.CSV_URL, callback=self.parse_gerichtsliste, errback=self.errback_httpbin)]
-
 	def start_requests(self):
 		# lese erst einmal die Spiderdaten und danach werden die Spider in der request_gen geladen.
 		yield scrapy.Request(url=self.CSV_URL, callback=self.parse_gerichtsliste, errback=self.errback_httpbin)
@@ -36,18 +39,58 @@ class BasisSpider(scrapy.Spider):
 		logger.info("parse_gerichtsliste response.status "+str(response.status))
 		logger.info("parse_gerichtsliste Rohergebnis "+str(len(response.body))+" Zeichen")
 		logger.info("parse_gerichtsliste Rohergebnis: "+response.body_as_unicode())
+
+		self.scrapy_job=os.environ['SCRAPY_JOB']
+		logger.info("SCRAPY_JOB: "+self.scrapy_job)
+
+		item= { 'Entscheidquellen': response.body_as_unicode() }
+		yield(item)
+
 		virtualFile = StringIO(response.body_as_unicode())
 		reader = csv.DictReader(virtualFile)
 		for row in reader:
-			logger.info('Zeile: '+json.dumps(row))
 			if 'Spider' in row:
 				spider=row['Spider']
 				if spider is not None and spider:
-					logger.info('gerichtsliste für spider '+spider+' eingelesen.')
+					logger.info('Zeile mit Eintrag für Spider '+spider+': '+json.dumps(row))
 					if spider in self.gerichte:
 						self.gerichte[spider].append(row)
 					else:
 						self.gerichte[spider]=[row]
+						
+		#XML daraus machen
+		root_e=etree.Element('Spiderliste')
+		kantone={}
+		for spidername in self.gerichte:
+			spidereintrag=self.gerichte[spidername]
+			kantonskurz=spidereintrag[0]['Signatur'][:2]
+			if kantonskurz in self.kantone_de:
+				if kantonskurz in kantone:
+					kanton_e=kantone[kantonskurz]
+				else:
+					kanton_e=etree.SubElement(root_e,'Kanton')
+					kanton_e.set('Name',self.kantone_de[kantonskurz])
+					kanton_e.set('Kurz',kantonskurz.lower())
+					kantone[kantonskurz]=kanton_e					
+				spider_e=etree.SubElement(kanton_e,'Spider')
+				spider_e.set('Name', spidername)
+				for signaturreihe in spidereintrag:
+					signatur_e=etree.SubElement(spider_e,'Eintrag')
+					signatur_e.set('Name', signaturreihe['Signatur'])
+					for spalte in signaturreihe:
+						wert=signaturreihe[spalte]
+						if(wert):
+							spaltenname=elementchars.sub('_',spalte)
+							if not elementre.match(spaltenname):
+								spaltenname='X_'+spaltenname
+							spalte_e=etree.SubElement(signatur_e,spaltenname)
+							spalte_e.text=wert
+		xml_content = '<?xml version="1.0" encoding="UTF-8"?><?xml-stylesheet type="text/xsl" href="/Spider.xsl"?>\n'
+		xml_content = xml_content+str(etree.tostring(root_e, pretty_print=True),"ascii")
+		item= { 'Spiderliste': xml_content }
+		yield(item)
+		#CSV auf S3 ablegen, da Google eine CORS-Exception gibt
+						
 		if self.name in self.gerichte:
 			if 'Signatur' in self.gerichte[self.name][0]:
 				signatur=self.gerichte[self.name][0]['Signatur']
@@ -63,19 +106,21 @@ class BasisSpider(scrapy.Spider):
 		else:
 			logger.error('Aktueller Spider '+self.name+' nicht in Konfigurationsexcel-Sheet gefunden.')
 		self.ebenen=1
+		if self.name not in self.gerichte:
+			logger.error('Spider '+self.name+' nicht im Excel Sheet gefunden.')
 		if len(self.gerichte[self.name])==1: #Es gibt nur einen Konfigurationseintrag für diesen Spider
 			self.mehrfachspider=False
-			logger.info("Einfacher Fall: Eindeutiger Eintrag")
+			logger.debug("Einfacher Fall: Eindeutiger Eintrag")
 		else:
 			self.mehrfachspider=True
-			logger.info("Es wird kompliziert: Mehrdeutig")
+			logger.debug("Es wird kompliziert: Mehrdeutig")
 		# Ist die zweite Stufe fix oder variabel?
 		if not self.mehrfachspider or (
 			'Stufe 2 DE' in self.gerichte[self.name][0] and all(self.gerichte[self.name][0]['Stufe 2 DE']==i['Stufe 2 DE'] for i in self.gerichte[self.name]) and
 			'Stufe 2 FR' in self.gerichte[self.name][0] and all(self.gerichte[self.name][0]['Stufe 2 FR']==i['Stufe 2 FR'] for i in self.gerichte[self.name]) and
 			'Stufe 2 IT' in self.gerichte[self.name][0] and all(self.gerichte[self.name][0]['Stufe 2 IT']==i['Stufe 2 IT'] for i in self.gerichte[self.name])):
 			self.zweite_ebene_fix=True
-			logger.info("aber 2. Ebene ist fix")
+			logger.debug("aber 2. Ebene ist fix")
 			
 			if 'Stufe 2 IT' in self.gerichte[self.name][0]:
 				self.stufe2_it=self.gerichte[self.name][0]['Stufe 2 IT']
@@ -103,13 +148,22 @@ class BasisSpider(scrapy.Spider):
 					self.ebenen=3
 		else: #Zweite Ebene ist variabel
 			self.zweite_ebene_fix=False
-			logger.info("Mehrfachspider, dessen 2. Ebene variabel ist")
+			logger.debug("Mehrfachspider, dessen 2. Ebene variabel ist")
 			for g in self.gerichte[self.name]:
 				if 'Stufe 3 DE' in g or 'Stufe 3 FR' in g or 'Stufe 3 IT' in g:
 					self.ebenen=3
-		# Wenn nur die 3. Ebene variabel ist, Standarderkennung vorbereiten (nur mit Strings)
-		if self.mehrfachspider and self.zweite_ebene_fix:
-			self.ebenen=3 #wenn mehrere Einträge und die 2. Ebene identisch ist, muss es eine 3. Ebene geben, die zu Unterschieden führt
+		# Wenn die 2. und/oder 3. Ebene variabel ist, Standarderkennung vorbereiten (nur mit Strings)
+		# In Kammerwahl steht dabei Kammer@Gericht wobei Kammer ein Begriff ist, der in der Kammer gefunden werden muss und Gericht im Gerichtsstring
+		# In Matching kann dabei sowohl nur die Kammer stehen als auch nur ein Wort des Gerichts (@Gericht)
+		if self.mehrfachspider:
+			if self.ebenen==3:
+				if self.zweite_ebene_fix:
+					self.compare="kammer"
+				else:
+					self.compare="kombiniert"
+			else:
+				self.compare="gericht"
+				
 			self.kammerwahl = {}
 			for i in range(len(self.gerichte[self.name])):
 				if self.gerichte[self.name][i]['Signatur'][-4:]=="_999":
@@ -118,16 +172,17 @@ class BasisSpider(scrapy.Spider):
 					matching=self.gerichte[self.name][i]['Matching'].split("|")
 					for m in matching:
 						if m in self.kammerwahl:
-							logger.error("Doppeltes Matching! Matchkey '"+m+"' bereits für "+str(self.kammerwahl[m])+"["+self.gerichte[self-name][self.kammerwahl[m]]['Signatur']+"] belegt und nun nochmal für "+str(i)+"["+self.gerichte[self-name][i]['Signatur']+"]!")
+							logger.error("Doppeltes Matching! Matchkey '"+m+"' bereits für "+str(self.kammerwahl[m])+"["+self.gerichte[self.name][self.kammerwahl[m]]['Signatur']+"] belegt und nun nochmal für "+str(i)+"["+self.gerichte[self-name][i]['Signatur']+"]!")
 						else:
 							self.kammerwahl[m]=i
 				else:
-					if 'Stufe 3 IT' in self.gerichte[self.name][i] and self.gerichte[self.name][i]['Stufe 3 IT']!='':
-						self.kammerwahl[self.gerichte[self.name][i]['Stufe 3 IT']]=i
-					if 'Stufe 3 FR' in self.gerichte[self.name][i] and self.gerichte[self.name][i]['Stufe 3 FR']!='':
-						self.kammerwahl[self.gerichte[self.name][i]['Stufe 3 FR']]=i
-					if 'Stufe 3 DE' in self.gerichte[self.name][i] and self.gerichte[self.name][i]['Stufe 3 DE']!='':
-						self.kammerwahl[self.gerichte[self.name][i]['Stufe 3 DE']]=i
+					for lang in {"DE", "FR", "IT"}:
+						gericht="";
+						if not self.zweite_ebene_fix: #Falls Gerichtsebene nicht fix, Gericht mit in das Matching einbeziehen
+							if 'Stufe 2 '+lang in self.gerichte[self.name][i] and self.gerichte[self.name][i]['Stufe 2 '+lang]!='':
+								gericht= "@"+self.gerichte[self.name][i]['Stufe 2 '+lang]
+						if 'Stufe 2 '+lang in self.gerichte[self.name][i] and self.gerichte[self.name][i]['Stufe 3 '+lang]!='':
+							self.kammerwahl[self.gerichte[self.name][i]['Stufe 3 '+lang]+gericht]=i	
 			logger.info("kammerwahl ist "+json.dumps(self.kammerwahl))
 		
 		if self.kammerfallback is None and self.mehrfachspider: #Wenn kein Default spider angegeben, baue selbst einen aus dem Eintrag 0
@@ -146,13 +201,47 @@ class BasisSpider(scrapy.Spider):
 			logger.info("Generiertes Kammerfallback "+str(self.kammerfallback)+": "+json.dumps(row))
 			self.gerichte[self.name].append(row)
 		
-		self.scrapy_job=os.environ['SCRAPY_JOB']
-		logger.info("SCRAPY_JOB: "+self.scrapy_job)
-		logger.info("Gerichtsliste verarbeitet")
+		logger.debug("Gerichtsliste verarbeitet")
 		for request in self.request_gen:
 			yield request
-		logger.info("Übrige Requests abgesendet")
-	
+
+	def detect(self,vgericht,vkammer,num):
+		if self.mehrfachspider:
+			kammermatch=-1
+			for m in self.kammerwahl:
+				i=self.kammerwahl[m]
+				tests=m.split("@")
+				if self.zweite_ebene_fix or (not vgericht) or len(tests)==1 or tests[1] in vgericht: # Entweder keine Gerichtsangabe oder Match ok
+					if (not vkammer) or not(tests[0]) or tests[0] in vkammer: 
+						logger.debug("Match für "+str(i)+": "+m+" Eintrag "+self.gerichte[self.name][i]['Signatur'] )
+						if kammermatch==-1:
+							kammermatch=i
+						else:
+							logger.error(num+" mit "+vkammer+" hat doppelten match. Einmal mit Nummer "+str(kammermatch)+" ["+self.gerichte[self.name][kammermatch]['Signatur']+"] und dann noch mit "+str(i)+" ["+self.gerichte[self.name][i]['Signatur']+"]")
+							kammermatch=-1
+							break
+			if kammermatch==-1:
+				if self.kammerfallback is not None:
+					kammermatch=self.kammerfallback
+					logger.warning(num+" mit "+vkammer+" führt zu Kammerfallback")
+		else:
+			kammermatch=0
+		signatur=self.gerichte[self.name][kammermatch]['Signatur']
+		gericht=''
+		if self.gerichte[self.name][kammermatch]['Stufe 2 DE']:
+			gericht=self.gerichte[self.name][kammermatch]['Stufe 2 DE']
+		elif self.gerichte[self.name][kammermatch]['Stufe 2 FR']:
+			gericht=self.gerichte[self.name][kammermatch]['Stufe 2 FR']
+		elif self.gerichte[self.name][kammermatch]['Stufe 2 FR']:
+			gericht=self.gerichte[self.name][kammermatch]['Stufe 2 IT']
+		kammer=''
+		if self.gerichte[self.name][kammermatch]['Stufe 3 DE']:
+			kammer=self.gerichte[self.name][kammermatch]['Stufe 3 DE']
+		elif self.gerichte[self.name][kammermatch]['Stufe 3 FR']:
+			kammer=self.gerichte[self.name][kammermatch]['Stufe 3 FR']
+		elif self.gerichte[self.name][kammermatch]['Stufe 3 FR']:
+			kammer=self.gerichte[self.name][kammermatch]['Stufe 3 IT']
+		return signatur,gericht,vkammer	
 		
 
 

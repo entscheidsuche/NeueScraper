@@ -2,10 +2,12 @@
 import scrapy
 import re
 import logging
+from NeueScraper.spiders.basis import BasisSpider
 
-class ZurichOGSpider(scrapy.Spider):
-	name = 'zurich_og'
-	KANTON = 'Zürich'
+logger = logging.getLogger(__name__)
+
+class ZH_OG(BasisSpider):
+	name = 'ZH_Obergericht'
 	MINIMUM_PAGE_LEN = 148
 	MAX_PAGES = 10000
 	#RESULT_PAGE_URL='https://www.gerichte-zh.ch/typo3conf/ext/frp_entscheidsammlung_extended/res/php/livesearch.php?q=&geschaeftsnummer=&gericht=gerichtTitel&kammer=kammerTitel&entscheiddatum_von={datum}&erweitert=1&usergroup=0&sysOrdnerPid=0&sucheErlass=Erlass&sucheArt=Art.&sucheAbs=Abs.&sucheZiff=Ziff./lit.&sucheErlass2=Erlass&sucheArt2=Art.&sucheAbs2=Abs.&sucheZiff2=Ziff./lit.&sucheErlass3=Erlass&sucheArt3=Art.&sucheAbs3=Abs.&sucheZiff3=Ziff./lit.&suchfilter=1'
@@ -22,12 +24,6 @@ class ZurichOGSpider(scrapy.Spider):
 		super().__init__()
 		self.ab = ab
 		self.request_gen = self.request_generator()
-
-	def start_requests(self):
-		# treat the first request, subsequent ones are generated and processed inside the callback
-		for request in self.request_gen:
-			yield request
-		logging.info("Normal beendet")
 
 	def parse_page(self, response):	
 		""" Parses the current search result page, downloads documents and yields the request for the next search
@@ -56,9 +52,9 @@ class ZurichOGSpider(scrapy.Spider):
 						if Num is None:
 							Num="undefined"
 							logging.warning("keine Geschäftsnummer gefunden für Dokument-ID: "+idE+" Raw: "+Raw)
-						Kammer = details.xpath(""".//p[span/text()="Abteilung/Kammer"]/span[2]/text()""").get()
-						if Kammer is None:
-							Kammer = ""
+						vkammer = details.xpath(""".//p[span/text()="Abteilung/Kammer"]/span[2]/text()""").get()
+						if vkammer is None:
+							vkammer = ""
 							logging.warning("keine Kammer gefunden für Dokument-ID: "+idE+" Geschäftsnummer: "+Num+" Raw: "+Raw)
 						EDatum = details.xpath(""".//p[span/text()="Entscheiddatum"]/span[2]/text()""").get()
 						if EDatum is None:
@@ -68,10 +64,10 @@ class ZurichOGSpider(scrapy.Spider):
 						if Titel is None:
 							Titel = ""
 							logging.warning("kein Titel gefunden für Dokument-ID: "+idE+" Geschäftsnummer: "+Num+" Raw: "+Raw)
-						Gerichtsbarkeit = details.xpath(""".//p[span/text()="Gericht/Behörde"]/span[2]/text()""").get()
-						if Gerichtsbarkeit is None:
-							Gerichtsbarkeit=""
-							logging.warning("keine Gerichtsbarkeit gefunden für Dokument-ID: "+idE+" Geschäftsnummer: "+Num+" Raw: "+Raw)
+						vgericht = details.xpath(""".//p[span/text()="Gericht/Behörde"]/span[2]/text()""").get()
+						if vgericht is None:
+							vgericht=""
+							logging.warning("kein Gericht / keine Gerichtsbarkeit gefunden für Dokument-ID: "+idE+" Geschäftsnummer: "+Num+" Raw: "+Raw)
 						Weiterzug = details.xpath(""".//p[span/text()="Verweise"]/span[2]/text()""").get()
 						if Weiterzug is None:
 							Weiterzug = ""
@@ -88,18 +84,30 @@ class ZurichOGSpider(scrapy.Spider):
 							PDFUrl=self.PDF_BASE+PDFUrl
 						
 						if brauchbar:
+							signatur, gericht, kammer=self.detect(vgericht,vkammer,Num)
+				
+							vgericht=gericht
+							if vkammer=='':
+								vkammer=kammer
+							if vgericht=='':
+								vgericht=kammer
+						
+
 							item = {
-								'Kanton': self.KANTON,
-								'Gerichtsbarkeit': Gerichtsbarkeit,
+								'Kanton': self.kanton_kurz,
 								'Num': Num ,
-								'Kammer': Kammer,
+								'Kammer': kammer,
+								'VKammer': vkammer,
+								'Gericht': gericht,
+								'VGericht': vgericht,
 								'EDatum': EDatum,
 								'Titel': Titel,
 								'DocId': idE,
 								'Weiterzug': Weiterzug,
 								'Entscheidart': Entscheidart,
 								'Raw': Raw,
-								'PDFUrl': [PDFUrl]
+								'PDFUrls': [PDFUrl],
+								'Signatur': signatur
 							}
 							yield(item)
 						else:

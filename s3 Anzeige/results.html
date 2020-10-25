@@ -1,0 +1,30 @@
+<html>
+<head>
+	<title>Scraping Ergebnisse</title>
+	<meta charset="UTF-8"/>
+	<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+
+	<script type="text/javascript">
+		var settings = 'http://entscheidsuche.ch.s3-eu-west-3.amazonaws.com/Entscheidquellen.csv';
+		
+		var xhttp = new XMLHttpRequest();
+		xhttp.onreadystatechange = function() {
+    		if (this.readyState == 4 && this.status == 200) {
+				alert("Datei gelesen");
+				s="";
+				s=s+this.responseText;
+				array = $.csv.toArray(s);
+				alert("Array konvertiert");
+				alert(len(array));
+			}
+		}
+
+		xhttp.open("GET", settings, true);
+		xhttp.send();
+	
+	</script>
+</head>
+<body>
+</body>
+
+

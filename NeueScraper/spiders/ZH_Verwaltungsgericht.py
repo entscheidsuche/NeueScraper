@@ -4,11 +4,15 @@ import re
 import logging
 from scrapy.http.cookies import CookieJar
 import datetime
+from NeueScraper.spiders.basis import BasisSpider
+from NeueScraper.pipelines import MyFilesPipeline
+from NeueScraper.pipelines import PipelineHelper
 
-class ZurichVerwgerSpider(scrapy.Spider):
-	name = 'zurich_verwger'
-	KANTON = 'Zürich'
-	GERICHT ="Verwaltungsgericht"
+
+logger = logging.getLogger(__name__)
+
+class ZurichVerwgerSpider(BasisSpider):
+	name = 'ZH_Verwaltungsgericht'
 	MINIMUM_PAGE_LEN = 148
 	MAX_PAGES = 10000
 	TREFFERLISTE_URL='https://vgrzh.djiktzh.ch/cgi-bin/nph-omniscgi.exe?OmnisPlatform=WINDOWS&WebServerUrl=https://vgrzh.djiktzh.ch&WebServerScript=/cgi-bin/nph-omniscgi.exe&OmnisLibrary=JURISWEB&OmnisClass=rtFindinfoWebHtmlService&OmnisServer=JURISWEB,127.0.0.1:7000&Parametername=WWW&Schema=ZH_VG_WEB&Source=&Aufruf=search&cTemplate=standard/results/resultpage.fiw&cTemplateSuchkriterien=standard/results/searchcriteriarow.fiw&cSprache=GER&W10_KEY=4004259&nSeite={page}'
@@ -32,13 +36,6 @@ class ZurichVerwgerSpider(scrapy.Spider):
 		self.ab=ab
 		self.request_gen = self.request_generator(self.ab, 1)
 
-	def start_requests(self):
-		# treat the first request, subsequent ones are generated and processed inside the callback
-		logging.info("Normal gestartet")
-		for request in self.request_gen:
-			yield request
-		logging.info("Normal beendet")
-
 	def parse_trefferliste(self, response):
 		logging.info("parse_trefferliste response.status "+str(response.status))
 		logging.info("parse_trefferliste Rohergebnis "+str(len(response.body))+" Zeichen")
@@ -54,12 +51,12 @@ class ZurichVerwgerSpider(scrapy.Spider):
 			logging.info("url: "+url)
 			num=entscheid.xpath(".//a/font/text()").get()
 			logging.info("num: "+num)
-			kammer=entscheid.xpath(".//tr[1]/td[4]/font/text()").get()
-			if kammer==None:
-				kammer=""
+			vkammer=entscheid.xpath(".//tr[1]/td[4]/font/text()").get()
+			if vkammer==None:
+				vkammer=""
 				logging.info("keine Kammer")
 			else:
-				logging.info("Kammer: "+kammer)
+				logging.info("Kammer: "+vkammer)
 			titel=entscheid.xpath(".//tr[2]/td[2]/b/text()").get()
 			logging.info("Titel: "+titel)
 			regesten=entscheid.xpath(".//tr[2]/td[2]/text()").getall()
@@ -77,18 +74,24 @@ class ZurichVerwgerSpider(scrapy.Spider):
 			else:
 				typ=""
 			id=entscheid.xpath(".//td[a]/text()").get()
-			logging.info("ID?: "+id)	
+			logging.info("ID?: "+id)
+			vgericht=''
+			signatur, gericht, kammer=self.detect(vgericht,vkammer,num)
+		
 			item = {
-				'Kanton': self.KANTON,
-				'Gericht' : self.GERICHT,
+				'Kanton': self.kanton_kurz,
+				'Gericht' : gericht,
+				'VGericht' : vgericht,
 				'EDatum': edatum,
 				'Titel': titel,
 				'Leitsatz': regeste.strip(),
 				'Num': num,
-				'HTMLUrl': [url],
-				'PDFUrl': [],
+				'HTMLUrls': [url],
+				'PDFUrls': [],
 				'Kammer': kammer,
-				'Entscheidart': typ
+				'VKammer': vkammer,
+				'Entscheidart': typ,
+				'Signatur': signatur
 			}
 			request=scrapy.Request(url=url, callback=self.parse_page, errback=self.errback_httpbin, meta = {'item':item})
 			yield(request)
@@ -110,6 +113,7 @@ class ZurichVerwgerSpider(scrapy.Spider):
 		logging.info("parse_page Rohergebnis: "+response.body_as_unicode())
 		item=response.meta['item']
 		item['html']=response.body_as_unicode()
+		item['HTMLFiles']=[{'url': item['HTMLUrls'][0]}]
 		yield(item)								
 
 

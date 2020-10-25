@@ -24,6 +24,7 @@ from scrapy.utils.misc import md5sum
 from lxml import etree
 
 filenamechars=re.compile("[^-a-zA-Z0-9]")
+logger = logging.getLogger(__name__)
 
 from urllib.parse import urlparse
 
@@ -32,6 +33,9 @@ from scrapy.pipelines.files import S3FilesStore
 from scrapy.pipelines.files import FSFilesStore
 from scrapy.pipelines.files import GCSFilesStore
 from scrapy.pipelines.files import FTPFilesStore
+
+logger = logging.getLogger(__name__)
+
 
 class MyWriterPipeline:
 	def open_spider(self,spider):
@@ -42,79 +46,35 @@ class MyWriterPipeline:
 
 	def process_item(self, item, spider):
 		logger.info("pipeline item")
-		if 'Num' in item:
-			logger.info("Geschäftsnummer: "+item['Num'])
-
-		if 'PDFFiles' in item and item['PDFFiles']:
-			logger.info("Files: "+json.dumps(item['PDFFiles'][0]))
-		else:
-			logger.warning("kein PDF geholt")
-			#Später wenn auch kein HTML ein DropItem
-
-		root = etree.Element('Entscheid')
-		meta = etree.Element('Meta')
-		root.append(meta)
-		PipelineHelper.xml_add_element(meta,'Signatur',item['Signatur'])
-		PipelineHelper.xml_add_element(meta,'Spider',spider.name)
-		PipelineHelper.xml_add_element(meta,'Job',spider.scrapy_job)
-		PipelineHelper.xml_add_element(meta,'Kanton',item['Signatur'][:2])
-		if spider.ebenen > 1 and 'Gericht' in item:
-			PipelineHelper.xml_add_element(meta,'Gericht',item['Gericht'])
-		if spider.ebenen > 2 and 'Kammer' in item:
-			PipelineHelper.xml_add_element(meta,'Kammer',item['Kammer'])
-		treffer = etree.Element('Treffer')
-		root.append(treffer)
-		quelle = etree.Element('Quelle')
-		treffer.append(quelle)
-		if 'Gerichtsbarkeit' in item:
-			PipelineHelper.xml_add_element(quelle,'Gerichtsbarkeit',item['Gerichtsbarkeit'])
-		if 'VGericht' in item:
-			PipelineHelper.xml_add_element(quelle,'Gericht',item['VGericht'])
-		elif 'Gericht' in item:
-			PipelineHelper.xml_add_element(quelle,'Gericht',item['Gericht'])	
-		if 'VKammer' in item:
-			PipelineHelper.xml_add_element(quelle,'Kammer',item['VKammer'])
-		elif 'Kammer' in item:
-			PipelineHelper.xml_add_element(quelle,'Kammer',item['Kammer'])
-		kurz = etree.Element('Kurz')
-		treffer.append(kurz)
-		if 'Titel' in item:
-			PipelineHelper.xml_add_element(kurz,'Titel',item['Titel'])
-		if 'Leitsatz' in item:
-			PipelineHelper.xml_add_element(kurz,'Leitsatz',item['Leitsatz'])
-		if 'Rechtsgebiet' in item:
-			PipelineHelper.xml_add_element(kurz,'Rechtsgebiet',item['Rechtsgebiet'])
-		if 'Entscheidart' in item:
-			PipelineHelper.xml_add_element(kurz,'Entscheidart',item['Entscheidart'])
-		sonst = etree.Element('Sonst')
-		treffer.append(sonst)
-		if 'PDatum' in item:
-			PipelineHelper.xml_add_element(sonst,'PDatum',item['PDatum'])
-		if 'Weiterzug' in item:
-			PipelineHelper.xml_add_element(sonst,'Weiterzug',item['Weiterzug'])
-		source = etree.Element('Source')
-		treffer.append(source)
-		if 'DocID' in item:
-			PipelineHelper.xml_add_element(source,'DocID',item['DocID'])
-		if 'PdfUrl' in item:
-			PipelineHelper.xml_add_element(source,'PdfUrl',item['PdfUrl'][0])
-		if 'HtmlUrl' in item:
-			PipelineHelper.xml_add_element(source,'HtmlUrl',item['HtmlUrl'][0])
-		if 'Raw' in item:
-			PipelineHelper.xml_add_element(source,'Raw',etree.CDATA(item['Raw']))
-		upload_file_content = etree.tostring(root, pretty_print=True)
-			
-		upload_file_key = MyS3FilesStore.shared_s3_prefix+PipelineHelper.file_path(self,item, spider)+".xml"
 		upload_file_meta={}
 		upload_file_meta['ScrapyJob']=spider.scrapy_job
 		upload_file_meta['Spider']=spider.name
 		upload_file_tags=PipelineHelper.get_tags(self, item, spider)
 
-		MyS3FilesStore.shared_s3_client.put_object(Body=upload_file_content, Bucket=MyS3FilesStore.shared_s3_bucket, Key=upload_file_key, ACL=MyS3FilesStore.POLICY, Metadata={k: str(v) for k, v in upload_file_meta.items()}, Tagging=upload_file_tags)
+		if 'Entscheidquellen' in item:
+			upload_file_key="Entscheidquellen.csv"
+			upload_file_content=item['Entscheidquellen']
+		elif 'Spiderliste' in item:
+			upload_file_key="Spiderliste.xml"
+			upload_file_content=item['Spiderliste']			
+		else:
+			#muss ich das HTML noch separat abspeichern?
+			if 'html' in item and item['html'] and 'HTMLFiles' in item and item['HTMLFiles']:
+				html_pfad=PipelineHelper.file_path(self,item, spider)+".html"
+				html_name=MyS3FilesStore.shared_s3_prefix+html_pfad
+				html_content=item['html']
+				MyS3FilesStore.shared_s3_client.put_object(Body=html_content, Bucket=MyS3FilesStore.shared_s3_bucket, Key=html_name, ACL=MyS3FilesStore.POLICY, Metadata={k: str(v) for k, v in upload_file_meta.items()}, Tagging=upload_file_tags, ContentType='text/html')
+				item['HTMLFiles'][0]['path']=html_pfad			
+						
+			upload_file_content=PipelineHelper.make_xml(item,spider)
+			
+			upload_file_key = MyS3FilesStore.shared_s3_prefix+PipelineHelper.file_path(self,item, spider)+".xml"
+
+
+		MyS3FilesStore.shared_s3_client.put_object(Body=upload_file_content, Bucket=MyS3FilesStore.shared_s3_bucket, Key=upload_file_key, ACL=MyS3FilesStore.POLICY, Metadata={k: str(v) for k, v in upload_file_meta.items()}, Tagging=upload_file_tags, ContentType='text/xml')
 		
 		return item
 		
-logger = logging.getLogger(__name__)
 
 class MyS3FilesStore(S3FilesStore):
 	AWS_ACCESS_KEY_ID = "AKIAXYG6RX7BKEZXJFZT"
@@ -182,13 +142,14 @@ class MyS3FilesStore(S3FilesStore):
 			return {'checksum': checksum, 'last_modified': modified_stamp}
 		return self._get_boto_key(path).addCallback(_onsuccess)
 
-	def persist_file(self, path, buf, info, meta=None, headers=None, item=None):
+	def persist_file(self, path, buf, info=None, meta=None, headers=None, item=None):
 		logger.info("persist_file called")
 		if meta==None:
 			meta={}
-		meta['scrapy_job']=info.spider.scrapy_job
-		meta['spider']=info.spider.name
-		upload_file_tags=PipelineHelper.get_tags(self, item, info.spider)
+		if info:
+			meta['scrapy_job']=info.spider.scrapy_job
+			meta['spider']=info.spider.name
+			upload_file_tags=PipelineHelper.get_tags(self, item, info.spider)
 
 		# Upload file to S3 storage
 		key_name = f'{self.prefix}{path}'
@@ -274,13 +235,18 @@ class PipelineHelper:
 			raise
 			
 	def get_tags(self, item, spider):
-		tags='Spider='+spider.name+'&ScrapyJob='+spider.scrapy_job+'&Signatur='+item['Signatur']+'&Kanton='+item['Signatur'][:2]
+	
+		tags='Spider='+spider.name+'&ScrapyJob='+spider.scrapy_job
+		if 'Signatur' in item:
+			tags=tags+'&Signatur='+item['Signatur']+'&Kanton='+item['Signatur'][:2]
 		if 'EDatum' in item:
 			tags=tags+'&Entscheiddatum='+item['EDatum']
 		if 'Num' in item:
 			tags=tags+'&Geschaeftsnummer='+item['Num']
-		if 'PDFFiles' in item:
+		if 'PDFFiles' in item and item['PDFFiles']:
 			tags=tags+'&Filetyp=PDF'
+		if 'HTMLFiles' in item and item['HTMLFiles']:
+			tags=tags+'&Filetyp=HTML'
 		logger.info("Tags: "+tags)
 		return tags
 
@@ -289,7 +255,93 @@ class PipelineHelper:
 		element.text=value
 		parent.append(element)
 
+	def make_xml(item,spider):	
+		if 'Num' in item:
+			logger.info("Geschäftsnummer: "+item['Num'])
 
+		if 'PDFFiles' in item and item['PDFFiles']:
+			logger.info("Files: "+json.dumps(item['PDFFiles'][0]))
+		if 'HTMLFiles' in item and item['HTMLFiles']:
+			logger.info("Files: "+json.dumps(item['HTMLFiles'][0]))
+		if not('PDFFiles' in item and item['PDFFiles']) and not('HTMLFiles' in item and item['HTMLFiles']):
+			logger.warning("weder PDF noch HTML geholt")
+			#DropItem später nur dann, wenn auch kein HTML geholt
+			raise DropItem(f"Missing File for {item['Num']}")
+
+		root = etree.Element('Entscheid')
+		meta = etree.Element('Metainfos')
+		root.append(meta)
+		PipelineHelper.xml_add_element(meta,'Signatur',item['Signatur'])
+		PipelineHelper.xml_add_element(meta,'Spider',spider.name)
+		PipelineHelper.xml_add_element(meta,'Job',spider.scrapy_job)
+		PipelineHelper.xml_add_element(meta,'Kanton',item['Signatur'][:2].lower())
+		if spider.ebenen > 1 and 'Gericht' in item:
+			PipelineHelper.xml_add_element(meta,'Gericht',item['Gericht'])
+		if spider.ebenen > 2 and 'Kammer' in item:
+			PipelineHelper.xml_add_element(meta,'Kammer',item['Kammer'])
+		if 'EDatum' in item:
+			PipelineHelper.xml_add_element(meta,'Geschaeftsnummer',item['Num'])
+		if 'Num' in item:
+			PipelineHelper.xml_add_element(meta,'EDatum',item['EDatum'])
+		if 'PDFFiles' in item and item['PDFFiles']:
+			PipelineHelper.xml_add_element(meta,'PDFFile',item['PDFFiles'][0]['path'])
+		if 'HTMLFiles' in item and item['HTMLFiles']:
+			PipelineHelper.xml_add_element(meta,'HTMLFile',item['HTMLFiles'][0]['path'])
+		
+
+		treffer = etree.Element('Treffer')
+		root.append(treffer)
+		quelle = etree.Element('Quelle')
+		treffer.append(quelle)
+		if 'Gerichtsbarkeit' in item:
+			PipelineHelper.xml_add_element(quelle,'Gerichtsbarkeit',item['Gerichtsbarkeit'])
+		if 'VGericht' in item:
+			PipelineHelper.xml_add_element(quelle,'Gericht',item['VGericht'])
+		elif 'Gericht' in item:
+			PipelineHelper.xml_add_element(quelle,'Gericht',item['Gericht'])	
+		if 'VKammer' in item:
+			PipelineHelper.xml_add_element(quelle,'Kammer',item['VKammer'])
+		elif 'Kammer' in item:
+			PipelineHelper.xml_add_element(quelle,'Kammer',item['Kammer'])
+		if 'EDatum' in item:
+			PipelineHelper.xml_add_element(quelle,'Geschaeftsnummer',item['Num'])
+		if 'Num' in item:
+			PipelineHelper.xml_add_element(quelle,'EDatum',item['EDatum'])
+		if 'PDFFiles' in item and item['PDFFiles']:
+			PipelineHelper.xml_add_element(quelle,'PDF','')
+		if 'HTMLFiles' in item and item['HTMLFiles']:
+			PipelineHelper.xml_add_element(quelle,'HTML','')
+		
+		kurz = etree.Element('Kurz')
+		treffer.append(kurz)
+		if 'Titel' in item:
+			PipelineHelper.xml_add_element(kurz,'Titel',item['Titel'])
+		if 'Leitsatz' in item:
+			PipelineHelper.xml_add_element(kurz,'Leitsatz',item['Leitsatz'])
+		if 'Rechtsgebiet' in item:
+			PipelineHelper.xml_add_element(kurz,'Rechtsgebiet',item['Rechtsgebiet'])
+		if 'Entscheidart' in item:
+			PipelineHelper.xml_add_element(kurz,'Entscheidart',item['Entscheidart'])
+		sonst = etree.Element('Sonst')
+		treffer.append(sonst)
+		if 'PDatum' in item:
+			PipelineHelper.xml_add_element(sonst,'PDatum',item['PDatum'])
+		if 'Weiterzug' in item:
+			PipelineHelper.xml_add_element(sonst,'Weiterzug',item['Weiterzug'])
+		source = etree.Element('Source')
+		treffer.append(source)
+		if 'DocID' in item:
+			PipelineHelper.xml_add_element(source,'DocID',item['DocID'])
+		if 'PdfUrl' in item:
+			PipelineHelper.xml_add_element(source,'PdfUrl',item['PdfUrl'][0])
+		if 'HtmlUrl' in item:
+			PipelineHelper.xml_add_element(source,'HtmlUrl',item['HtmlUrl'][0])
+		if 'Raw' in item:
+			PipelineHelper.xml_add_element(source,'Raw',etree.CDATA(item['Raw'].replace("<","(").replace(">",")")))
+	
+		xml_content = '<?xml version="1.0" encoding="UTF-8"?><?xml-stylesheet type="text/xsl" href="/Entscheid.xsl"?>\n'
+		xml_content = xml_content+str(etree.tostring(root, pretty_print=True),"ascii")
+		return xml_content
 
 
 class MyFilesPipeline(FilesPipeline):
@@ -303,12 +355,13 @@ class MyFilesPipeline(FilesPipeline):
 
 	def file_path(self, request, response=None, info=None, item=None):
 		if item is None:
-			item=request.meta['item']	
+			item=request.meta['item']
 		return PipelineHelper.file_path(self,item, info.spider if info is not None else None)+".pdf"
 
 	def get_media_requests(self, item, info):
 		urls = item[self.files_urls_field] if self.files_urls_field in item else []
 		return [scrapy.Request(url=u, meta={"item":item}) for u in urls]
+		
 
 	def file_downloaded(self, response, request, info=None, item=None):
 		if item is None:

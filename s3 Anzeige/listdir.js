@@ -208,7 +208,7 @@ function createS3QueryUrl(marker) {
   }
   if (prefix) {
     // make sure we end in /
-    var prefix = prefix.replace(/\/$/, '') + '/';
+    //JE var prefix = prefix.replace(/\/$/, '') + '/';
     s3_rest_url += '&prefix=' + prefix;
   }
   if (marker) {
@@ -272,17 +272,22 @@ function prepareTable(info, erster, letzter) {
   if(erster){
 	  // add ../ at the start of the dir listing, unless we are already at root dir
 	  if (prefix && prefix == 'scraper/') {
-    	content.push('<table><tr><th>Spider</th></tr>\n');
+    	content.push('<table><tbody><tr><th>Spider</th></tr>\n');
 	  }
 	  else if (prefix && prefix !== S3B_ROOT_DIR) {
-	    content.push('<table border="1"><tr><th>Kanton</th><th>Signatur</th><th>Gesch&auml;ftsnummer</th><th>Entscheiddatum</th><th>zuletzt modifiziert</th><th>Gr&ouml;sse</th><th>Datei</th></tr>\n');
+	    content.push('<table border="1"><tbody><tr><th>Kanton</th><th>Signatur</th><th>Gesch&auml;ftsnummer</th><th>Entscheiddatum</th><th>zuletzt modifiziert</th><th>Gr&ouml;sse</th><th>Datei</th></tr>\n');
+	  }
+	  else {
+    	content.push('<table><tbody>\n');
 	  }
   }
   
 
   jQuery.each(files, function(idx, item) {
     // strip off the prefix
-    item.keyText = item.Key.substring(prefix.length);
+    comp=item.Key.split("/");
+    item.keyText=comp[comp.length-1]
+    //JE item.keyText = item.Key.substring(prefix.length);
     if (item.Type === 'directory') {
       if (S3BL_IGNORE_PATH) {
         item.href = location.protocol + '//' + location.hostname +
@@ -299,7 +304,7 @@ function prepareTable(info, erster, letzter) {
   });
   if(letzter){
     var lastrow=renderRow();
-    content.push(lastrow+"</table>");
+    content.push(lastrow+"</tbody></table>");
   }
   return content.join('');
 }

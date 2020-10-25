@@ -1,0 +1,86 @@
+Source, Sonst, Signatur, Spider, Kanton, PDF, Meta HTML, Gerichtsbarkeit, Quelle Geschaeftsnummer, Quelle EDatum { display: none;}
+
+Entscheid {
+	display: block;
+}
+
+Job {
+	color: green;
+}
+
+Gericht {
+	font-weight: bold;
+}
+
+Kammer {
+	font-style: italic;
+}
+
+Metainfos EDatum {
+}
+
+Metainfos Geschaeftsnummer {
+	font-style: italic;
+}
+
+Quelle {
+	color: blue;
+	display: block;
+}
+
+Rechtsgebiet {
+	display: block;
+	font-weight: bold;	
+}
+
+Titel {
+	display: block;
+}
+
+Leitsatz {
+	display: block;
+	text-align: left;
+}
+
+PDFFile, HTMLFile {
+	display: none;
+}
+
+span[id="tooltip"] {
+  position: relative;
+  display: inline-block;
+  border-bottom: 1px dotted black; /* If you want dots under the hoverable text */
+}
+
+/* Tooltip container */
+.tooltip {
+  position: relative;
+  display: inline-block;
+  border-bottom: 1px dotted black; /* If you want dots under the hoverable text */
+}
+
+/* Tooltip text */
+.tooltip .tooltiptext {
+  visibility: hidden;
+  width: 400px;
+  background-color: grey;
+  color: #000000;
+  text-align: center;
+  padding: 5px 5px;
+  border-radius: 6px;
+ 
+  /* Position the tooltip text - see examples below! */
+  position: absolute;
+  z-index: 1;
+}
+
+/* Show the tooltip text when you mouse over the tooltip container */
+.tooltip:hover .tooltiptext {
+  visibility: visible;
+}
+
+/* Show the tooltip text when you mouse over the tooltip container */
+.tooltiptext {
+  visibility: visible;
+  opacity: 1;
+} 

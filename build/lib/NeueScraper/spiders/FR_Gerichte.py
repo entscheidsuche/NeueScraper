@@ -5,8 +5,8 @@ import logging
 from NeueScraper.spiders.tribuna import TribunaSpider
 
 
-class FribourgSpider(TribunaSpider):
-	name = 'fribourg'
+class FR_Gerichte(TribunaSpider):
+	name = 'FR_Gerichte'
 	allowed_domains = ['publicationtc.fr.ch']
 	
 	RESULT_PAGE_URL = 'https://publicationtc.fr.ch/tribunavtplus/loadTable'

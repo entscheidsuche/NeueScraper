@@ -69,13 +69,14 @@ class TribunaSpider(BasisSpider):
 			vkammer=werte[3]
 			if werte[4]!="": korrektur=-1
 			id_=werte[5+korrektur]
-			titel=werte[6+korrektur]
+			titel=werte[6+korrektur].replace("\\x27","'")
 			num=werte[7+korrektur]
 			entscheiddatum=werte[8+korrektur]
-			leitsatz=werte[9+korrektur]
+			leitsatz=werte[9+korrektur].replace("\\x27","'")
 			pfad=werte[12+korrektur]
 			rechtsgebiet=werte[13+korrektur]
 			publikationsdatum=werte[len(werte)-1]
+			vgericht=""
 			if self.reDatum.fullmatch(publikationsdatum)==None: publikationsdatum=werte[len(werte)-2]
 			
 			if len(vkammer)<11:
@@ -107,47 +108,15 @@ class TribunaSpider(BasisSpider):
 			if brauchbar:
 				numstr = num.replace(" ", "_")
 				#Ist die Signatur nicht eindeutig, so muss hier differenziert werden
-				if self.mehrfachspider and self.zweite_ebene_fix:
-					kammermatch=-1
-					if vkammer:
-						for m in self.kammerwahl:
-							i=self.kammerwahl[m]
-							if m in vkammer:
-								logger.info("Match für "+str(i)+": "+m+" Eintrag "+self.gerichte[self.name][i]['Signatur'] )
-								if kammermatch==-1:
-									kammermatch=i
-								else:
-									logger.error(num+" mit "+vkammer+" hat doppelten match. Einmal mit Nummer "+str(kammermatch)+" und dann noch mit "+str(i))
-									kammermatch=-1
-									break
-					if kammermatch==-1:
-						if self.kammerfallback is not None:
-							kammermatch=self.kammerfallback
-							logger.warning(num+" mit "+vkammer+" führt zu Kammerfallback")
-				else:
-					kammermatch=0
-				signatur=self.gerichte[self.name][kammermatch]['Signatur']
-				gericht=''
-				if self.gerichte[self.name][kammermatch]['Stufe 2 DE']:
-					gericht=self.gerichte[self.name][kammermatch]['Stufe 2 DE']
-				elif self.gerichte[self.name][kammermatch]['Stufe 2 FR']:
-					gericht=self.gerichte[self.name][kammermatch]['Stufe 2 FR']
-				elif self.gerichte[self.name][kammermatch]['Stufe 2 FR']:
-					gericht=self.gerichte[self.name][kammermatch]['Stufe 2 IT']
-				vgericht=gericht
-				kammer=''
-				if self.gerichte[self.name][kammermatch]['Stufe 3 DE']:
-					kammer=self.gerichte[self.name][kammermatch]['Stufe 3 DE']
-				elif self.gerichte[self.name][kammermatch]['Stufe 3 FR']:
-					kammer=self.gerichte[self.name][kammermatch]['Stufe 3 FR']
-				elif self.gerichte[self.name][kammermatch]['Stufe 3 FR']:
-					kammer=self.gerichte[self.name][kammermatch]['Stufe 3 IT']
+				signatur, gericht, kammer=self.detect(vgericht,vkammer,num)
+				
+				if not vgericht:
+					vgericht=gericht
 				if vkammer=='':
 					vkammer=kammer
 				
 				item = {
-					'Kanton': self.KANTON,
-					'Gerichtsbarkeit': self.GERICHTSBARKEIT,
+					'Kanton': self.kanton_kurz,
 					'Num':num ,
 					'Kammer':kammer,
 					'EDatum': entscheiddatum,

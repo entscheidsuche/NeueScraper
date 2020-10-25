@@ -144,8 +144,8 @@ function getS3Data(marker, html) {
         base = (base.endsWith('/')) ? base : base + '/';
         $('head').append('<base href="' + base + '">');
 
-        html = typeof html !== 'undefined' ? html + prepareTable(info, false, (info.nextMarker=="null")) :
-                                             prepareTable(info, true, (info.nextMarker=="null"));
+        html = typeof html !== 'undefined' ? html + prepareTable(info) :
+                                             prepareTable(info);
         if (info.nextMarker != "null") {
           getS3Data(info.nextMarker, html);
         } else {
@@ -265,18 +265,16 @@ function getInfoFromS3Data(xml) {
 //    directories: ..
 //    prefix: ...
 // }
-function prepareTable(info, erster, letzter) {
+function prepareTable(info) {
   var files = info.directories.concat(info.files), prefix = info.prefix;
   var content = [];
 
-  if(erster){
-	  // add ../ at the start of the dir listing, unless we are already at root dir
-	  if (prefix && prefix == 'scraper/') {
-    	content.push('<table><tr><th>Spider</th></tr>\n');
-	  }
-	  else if (prefix && prefix !== S3B_ROOT_DIR) {
-	    content.push('<table border="1"><tr><th>Kanton</th><th>Signatur</th><th>Gesch&auml;ftsnummer</th><th>Entscheiddatum</th><th>zuletzt modifiziert</th><th>Gr&ouml;sse</th><th>Datei</th></tr>\n');
-	  }
+  // add ../ at the start of the dir listing, unless we are already at root dir
+  if (prefix && prefix == 'scraper/') {
+    content.push('<table><tr><th>Spider</th></tr>\n');
+  }
+  else if (prefix && prefix !== S3B_ROOT_DIR) {
+    content.push('<table border="1"><tr><th>Kanton</th><th>Signatur</th><th>Gesch&auml;ftsnummer</th><th>Entscheiddatum</th><th>zuletzt modifiziert</th><th>Gr&ouml;sse</th><th>Datei</th></tr>\n');
   }
   
 
@@ -297,10 +295,8 @@ function prepareTable(info, erster, letzter) {
     if (!EXCLUDE_FILE.some(function(exclude){ return testExcludeFilter(exclude, item.Key); }))
     content.push(row + '\n');
   });
-  if(letzter){
-    var lastrow=renderRow();
-    content.push(lastrow+"</table>");
-  }
+  var lastrow=renderRow();
+  content.push(lastrow+"</table>");
   return content.join('');
 }
 
@@ -329,14 +325,13 @@ function renderRowBuf(item) {
 	return(row);
 }
 
-var rownr=0;
 
 function renderRow() {
   if(in_store.length>0){
 	  var row = '<tr>';
 	  if(in_store.length==1){
 	  	var item=in_store.shift();
-  		row += '<td colspan="7">'+'<a href="'+item.href+'">'+item.keyText+'</a></td>';
+  		row += '<td>'+'<a href="'+item.href+'">'+item.keyText+'</a></td>';
 		row += '</tr>'
 	  }
 	  else {
@@ -352,9 +347,8 @@ function renderRow() {
 			row += "<td>"+item.LastModified+"</td>";
 			row += "<td>"+item.Size+"</td>";
 			if(typ=="xml"){
-				row += "<td class='tooltip'><a onmouseover=\"$('#r"+rownr+"').load('"+item.href+"')\" ";
-				row += "href='"+item.href+"'>"+item.keyText+"</a><span class='tooltiptext' id='r"+rownr+"'>"+item.keyText+"</span></td>";
-				rownr++;
+				row += "<td class='tooltip'><a onmouseover=\"$('#"+item.keyText+"').load('"+item.href+"')\" ";
+				row += "href='"+item.href+"'>"+item.keyText+"</a><span class='tooltiptext' id='"+item.keyText+"'>"+item.keyText+"</span></td>";
 			}
 			else {
 				row += "<td><a href='"+item.href+"'>"+item.keyText+"</td>";
