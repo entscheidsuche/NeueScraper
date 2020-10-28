@@ -90,7 +90,7 @@ class ZH_OG(BasisSpider):
 							if vkammer=='':
 								vkammer=kammer
 							if vgericht=='':
-								vgericht=kammer
+								vgericht=gericht
 						
 
 							item = {

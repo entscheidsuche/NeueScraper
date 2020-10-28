@@ -241,7 +241,7 @@ class BasisSpider(scrapy.Spider):
 			kammer=self.gerichte[self.name][kammermatch]['Stufe 3 FR']
 		elif self.gerichte[self.name][kammermatch]['Stufe 3 FR']:
 			kammer=self.gerichte[self.name][kammermatch]['Stufe 3 IT']
-		return signatur,gericht,vkammer	
+		return signatur,gericht,kammer	
 		
 
 

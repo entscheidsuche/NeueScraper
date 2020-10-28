@@ -49,7 +49,7 @@ class MyWriterPipeline:
 		upload_file_meta={}
 		upload_file_meta['ScrapyJob']=spider.scrapy_job
 		upload_file_meta['Spider']=spider.name
-		upload_file_tags=PipelineHelper.get_tags(self, item, spider)
+		upload_file_tags=''
 
 		if 'Entscheidquellen' in item:
 			upload_file_key="Entscheidquellen.csv"
@@ -63,13 +63,18 @@ class MyWriterPipeline:
 				html_pfad=PipelineHelper.file_path(self,item, spider)+".html"
 				html_name=MyS3FilesStore.shared_s3_prefix+html_pfad
 				html_content=item['html']
+				logger.debug("html_name: "+html_name)
 				MyS3FilesStore.shared_s3_client.put_object(Body=html_content, Bucket=MyS3FilesStore.shared_s3_bucket, Key=html_name, ACL=MyS3FilesStore.POLICY, Metadata={k: str(v) for k, v in upload_file_meta.items()}, Tagging=upload_file_tags, ContentType='text/html')
 				item['HTMLFiles'][0]['path']=html_pfad			
 						
 			upload_file_content=PipelineHelper.make_xml(item,spider)
+			upload_file_tags=PipelineHelper.get_tags(self, item, spider)
 			
 			upload_file_key = MyS3FilesStore.shared_s3_prefix+PipelineHelper.file_path(self,item, spider)+".xml"
+			logger.debug("xml_name: "+upload_file_key)
 
+		if not upload_file_tags:
+			upload_file_tags=PipelineHelper.get_tags(self, item, spider)
 
 		MyS3FilesStore.shared_s3_client.put_object(Body=upload_file_content, Bucket=MyS3FilesStore.shared_s3_bucket, Key=upload_file_key, ACL=MyS3FilesStore.POLICY, Metadata={k: str(v) for k, v in upload_file_meta.items()}, Tagging=upload_file_tags, ContentType='text/xml')
 		
@@ -156,11 +161,11 @@ class MyS3FilesStore(S3FilesStore):
 		logger.info("pf key_name: "+key_name)
 		buf.seek(0)
 		if self.is_botocore:
-			logger.info("pf is_botocore")
+			logger.debug("pf is_botocore")
 			extra = self._headers_to_botocore_kwargs(self.HEADERS)
 			if headers:
 				extra.update(self._headers_to_botocore_kwargs(headers))
-			logger.info("pf schreibe nun")
+			logger.debug("pf schreibe nun")
 			return threads.deferToThread(
 				self.s3_client.put_object,
 				Bucket=self.bucket,
@@ -171,7 +176,7 @@ class MyS3FilesStore(S3FilesStore):
 				Tagging=upload_file_tags,
 				**extra)
 		else: #ohne botocore noch keine Metadaten und Tags
-			logger.info("pf not is_botocore")
+			logger.debug("pf not is_botocore")
 			b = self._get_boto_bucket()
 			k = b.new_key(key_name)
 			if meta:
@@ -244,9 +249,9 @@ class PipelineHelper:
 		if 'Num' in item:
 			tags=tags+'&Geschaeftsnummer='+item['Num']
 		if 'PDFFiles' in item and item['PDFFiles']:
-			tags=tags+'&Filetyp=PDF'
+			tags=tags+'&PDF=PDF'
 		if 'HTMLFiles' in item and item['HTMLFiles']:
-			tags=tags+'&Filetyp=HTML'
+			tags=tags+'&HTML=HTML'
 		logger.info("Tags: "+tags)
 		return tags
 

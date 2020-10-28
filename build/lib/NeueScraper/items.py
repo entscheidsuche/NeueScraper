@@ -34,6 +34,9 @@ class NeuescraperItem(scrapy.Item):
     Gerichtsbarkeit = scrapy.Field()
     Weiterzug = scrapy.Field()
     Entscheidart = scrapy.Field()
+    Sammlung = scrapy.Field()
+    LeitsatzKurz = scrapy.Field()
+    Pos = scrapy.Field()
 
     # pass
 
@@ -58,6 +61,7 @@ class NeuescraperItem(scrapy.Item):
 			<Gericht>...</Gericht>!
 			<Kammer>...</Kammer>?
 			<Geschaeftsnummer>...</Geschaeftsnummer>?
+			<Sammlung>...</Sammlung>?
 			<EDatum>...</EDatum>?
 		</Quelle>
 		<Kurz>

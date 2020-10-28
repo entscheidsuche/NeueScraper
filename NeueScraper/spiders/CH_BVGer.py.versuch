@@ -5,7 +5,6 @@ import logging
 import json
 import random
 from NeueScraper.spiders.basis import BasisSpider
-import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -48,22 +47,17 @@ class CH_BVGer(BasisSpider):
 	AB_DEFAULT=''
 	JsessionId=''
 	ICEsession=''
+	requests=[]
 
-	def request_generator(self, ab):
+	def request_generator(self):
 		""" Generates scrapy frist request
 		"""
-		requests=[]
-		if ab:
-			requests.append(scrapy.Request(url=self.JSESSION_URL, callback=self.parse_suchform, errback=self.errback_httpbin), meta={'ab'=ab})
-		else{
-			
-		}
-		return []
+		return [scrapy.Request(url=self.JSESSION_URL, callback=self.parse_suchform, errback=self.errback_httpbin)]
 
 	def __init__(self,ab=AB_DEFAULT):
 		super().__init__()
 		self.ab = ab
-		self.request_gen = self.request_generator(ab)
+		self.request_gen = self.request_generator()
 
 	def parse_suchform(self,response):
 		logger.info("Rohergebnis: "+str(len(response.body))+" Zeichen")
@@ -147,20 +141,54 @@ class CH_BVGer(BasisSpider):
 					
 				body='ice.submit.partial=true&ice.event.target=form%3AresultTable%3A#%3Aj_id36&ice.event.captured=form%3AresultTable%3A#%3Aj_id36&ice.event.type=onclick&ice.event.alt=false&ice.event.ctrl=false&ice.event.shift=false&ice.event.meta=false&ice.event.x=86&ice.event.y=195&ice.event.left=false&ice.event.right=false&form%3A_idcl=form%3AresultTable%3A#%3Aj_id36&form%3Aj_id63=&javax.faces.RenderKitId=ICEfacesRenderKit&javax.faces.ViewState=1&icefacesCssUpdates=&form=form&ice.session='+self.ICEsession+'&ice.view=1&ice.focus=form%3AresultTable%3A#%3Aj_id36&rand=0.'+str(random.randint(1000000000000000,9999999999999999))
 				body.replace('#',Pos)
-				# HTML nicht holen, da das die Session durcheinander bringt
-				# req=scrapy.Request(url=htmlUrl, method='POST', headers=self.HEADERS, body=body.encode('ascii'), callback=self.parse_page_intermediate, errback=self.errback_httpbin, meta = {'item':item})
-				yield(item)
+				htmlUrl=self.SUCH_URL+self.JsessionId
+				item['HTMLUrls']=[htmlUrl]
+				req=scrapy.Request(url=htmlUrl, method='POST', headers=self.HEADERS, body=body.encode('ascii'), callback=self.parse_page_intermediate, errback=self.errback_httpbin, meta = {'item':item})
+				self.requests.append(req)
 				
 			if(seite<seiten):
 				body='ice.submit.partial=true&ice.event.target=form%3Aj_id67&ice.event.captured=form%3Aj_id63next&ice.event.type=onclick&ice.event.alt=false&ice.event.ctrl=false&ice.event.shift=false&ice.event.meta=false&ice.event.x=171&ice.event.y=502&ice.event.left=false&ice.event.right=false&form%3A_idcl=&form%3Aj_id63next&form%3Aj_id63=next&javax.faces.RenderKitId=&javax.faces.ViewState=1&icefacesCssUpdates=&form=form&ice.session='+self.ICEsession+'&ice.view=1&ice.focus=form%3Aj_id63next&rand=0.'+str(random.randint(1000000000000000,9999999999999999))
 				logger.debug('body: '+body)
 				req=scrapy.Request(url=self.SUCH_URL+self.JsessionId, method='POST', headers=self.HEADERS, body=body.encode('ascii'), callback=self.trefferliste, errback=self.errback_httpbin)
-				yield(req)
+				self.requests.append(req)
 			else:
 				logger.debug("Fertig!")
 				
 		else:
 			logger.error("kein Treffer gematched")
+
+		if len(self.request)>0:
+			req=self.requests.pop(0)
+			yield(req)
+		
+
+	def parse_page_intermediate(self, response):	
+		""" Parses the current search result page, downloads documents and yields the request for the next search
+		result page
+		"""
+		logging.info("parse_page_intermediate response.status "+str(response.status))
+		logging.info("parse_page_intermediate Rohergebnis "+str(len(response.body))+" Zeichen")
+		logging.info("parse_page_intermediate Rohergebnis: "+response.body_as_unicode())
+		item=response.meta['item']
+		req=scrapy.Request(url=self.DOKUMENT_URL+self.JsessionId, headers=self.HEADERS, callback=self.parse_page, errback=self.errback_httpbin, meta = {'item':item})
+		self.requests.append(req)
+		req=self.requests.pop(0)
+		yield(req)
+
+	def parse_page(self, response):	
+		""" Parses the current search result page, downloads documents and yields the request for the next search
+		result page
+		"""
+		logging.info("parse_page response.status "+str(response.status))
+		logging.info("parse_page Rohergebnis "+str(len(response.body))+" Zeichen")
+		logging.info("parse_page Rohergebnis: "+response.body_as_unicode())
+		item=response.meta['item']
+		item['html']=response.body_as_unicode()
+		item['HTMLFiles']=[{'url': item['HTMLUrls'][0]}]
+		yield(item)								
+		if len(self.requests)>0:
+			req=self.requests.pop(0)
+			yield(req)
 
 
 

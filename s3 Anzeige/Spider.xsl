@@ -133,9 +133,8 @@
     				&nbsp;
 	    			<xsl:value-of select="@Name"/>
 	    		</h3>
-    			<ul>
 					<xsl:for-each select="Spider">
-						<li><b>
+						<b>
 								<xsl:element name="a">
 									<xsl:attribute name="href">http://entscheidsuche.ch.s3-website.eu-west-3.amazonaws.com/scraper/<xsl:value-of select="@Name"/>/</xsl:attribute>
 									<xsl:value-of select="@Name"/>
@@ -193,9 +192,9 @@
 									</xsl:for-each>
 								</tbody>
 							</table>
- 						</li>
+ 						
 					</xsl:for-each>
-				</ul>
+				
 	    	</xsl:for-each>
 		</div>
 		</section>
