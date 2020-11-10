@@ -14,8 +14,6 @@ class AargauSpider(scrapy.Spider):
 	TREFFERLISTE_URL='https://agve.weblaw.ch/?method=hilfe&ul=de'
 	TREFFERLISTE_BODY='s_word=&zips=&method=set_query&query_ticket=RY446H1Y'
 	ab=None
-	reDatum=re.compile('[0-9]{2}\\.[0-9]{2}\\.[0-9]{4}')
-	reTyp=re.compile('.+(?= vom [0-9]{2}\\.[0-9]{2}\\.[0-9]{4})')	
 	def request_generator(self, ab, page):
 		""" Generates scrapy frist request
 		"""

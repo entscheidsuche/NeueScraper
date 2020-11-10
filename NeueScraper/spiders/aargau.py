@@ -14,7 +14,7 @@ class AargauSpider(scrapy.Spider):
 	TREFFERLISTE_URL='https://agve.weblaw.ch/?method=hilfe&ul=de'
 	TREFFERLISTE_BODY='s_word=&zips=&method=set_query&query_ticket=RY446H1Y'
 	ab=None
-		def request_generator(self, ab, page):
+	def request_generator(self, ab, page):
 		""" Generates scrapy frist request
 		"""
 		# return [scrapy.Request(url=self.RESULT_PAGE_URL, method="POST", body= self.RESULT_PAGE_PAYLOAD.format(Jahr=self.START_JAHR), headers=self.HEADERS, callback=self.parse_trefferliste_unsortiert, errback=self.errback_httpbin)]
