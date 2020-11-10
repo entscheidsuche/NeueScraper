@@ -99,10 +99,10 @@ class MyS3FilesStore(S3FilesStore):
 
 	def __init__(self,uri=None):
 		if uri is None:
-			logger.info("__init__ ohne uri aufgerufen")
+			logger.debug("__init__ ohne uri aufgerufen")
 			uri='s3://entscheidsuche.ch/scraper'
 		else:
-			logger.info("__init__ mit uri '"+uri+"' aufgerufen")		
+			logger.debug("__init__ mit uri '"+uri+"' aufgerufen")		
 
 		self.is_botocore = is_botocore()
 		if self.is_botocore:
@@ -132,9 +132,7 @@ class MyS3FilesStore(S3FilesStore):
 		MyS3FilesStore.shared_s3_prefix=self.prefix
 		
 	def stat_file(self, path, info):
-		logger.info("stat_file called")
 		def _onsuccess(boto_key):
-			logger.info("stat_file_onsuccess called")
 			if self.is_botocore:
 				checksum = boto_key['ETag'].strip('"')
 				last_modified = boto_key['LastModified']
@@ -148,7 +146,6 @@ class MyS3FilesStore(S3FilesStore):
 		return self._get_boto_key(path).addCallback(_onsuccess)
 
 	def persist_file(self, path, buf, info=None, meta=None, headers=None, item=None):
-		logger.info("persist_file called")
 		if meta==None:
 			meta={}
 		if info:
@@ -158,7 +155,7 @@ class MyS3FilesStore(S3FilesStore):
 
 		# Upload file to S3 storage
 		key_name = f'{self.prefix}{path}'
-		logger.info("pf key_name: "+key_name)
+		logger.debug("pf key_name: "+key_name)
 		buf.seek(0)
 		if self.is_botocore:
 			logger.debug("pf is_botocore")
@@ -190,25 +187,23 @@ class MyS3FilesStore(S3FilesStore):
 				headers=h, policy=self.POLICY)
 		
 	def _get_boto_bucket(self):
-		logger.info("_get_boto_bucket called")
-		logger.info("AWS_ACCESS_KEY_ID: "+self.AWS_ACCESS_KEY_ID+"AWS_SECRET_ACCESS_KEY"+self.AWS_SECRET_ACCESS_KEY)
+		logger.debug("AWS_ACCESS_KEY_ID: "+self.AWS_ACCESS_KEY_ID+"AWS_SECRET_ACCESS_KEY"+self.AWS_SECRET_ACCESS_KEY)
 		# disable ssl (is_secure=False) because of this python bug:
 		# https://bugs.python.org/issue5103
 		c = self.S3Connection(self.AWS_ACCESS_KEY_ID, self.AWS_SECRET_ACCESS_KEY, is_secure=False)
 		return c.get_bucket(self.bucket, validate=False)
 
 	def _get_boto_key(self, path):
-		logger.info("_get_boto_key called")
 		key_name = f'{self.prefix}{path}'
-		logger.info("gbk key_name: "+key_name)
+		logger.debug("gbk key_name: "+key_name)
 		if self.is_botocore:
-			logger.info("gbk is_botocore")
+			logger.debug("gbk is_botocore")
 			return threads.deferToThread(
 				self.s3_client.head_object,
 				Bucket=self.bucket,
 				Key=key_name)
 		else:
-			logger.info("gkb not is_botocore")
+			logger.debug("gkb not is_botocore")
 			b = self._get_boto_bucket()
 			return threads.deferToThread(b.get_key, key_name)
 
@@ -221,7 +216,7 @@ class PipelineHelper:
 	def file_path(self, item, spider=None):
 		try:
 			num=item['Num']
-			logger.info('Geschäftsnummer: '+num)
+			logger.debug('Geschäftsnummer: '+num)
 			edatum=item['EDatum']
 			if edatum is None:
 				edatum='nodate'
@@ -229,10 +224,10 @@ class PipelineHelper:
 			dir = "undefined"
 			if spider:
 				dir=spider.name
-				logger.info('Spider-Name: '+spider.name)
+				logger.debug('Spider-Name: '+spider.name)
 				prefix=item['Signatur']
 			pfad=dir+"/"+prefix+"_"+filename
-			logger.info('Pfad: '+pfad)
+			logger.debug('Pfad: '+pfad)
 			return pfad
 		except Exception as e:
 			exc_type, exc_value, exc_traceback = sys.exc_info()
@@ -264,10 +259,6 @@ class PipelineHelper:
 		if 'Num' in item:
 			logger.info("Geschäftsnummer: "+item['Num'])
 
-		if 'PDFFiles' in item and item['PDFFiles']:
-			logger.info("Files: "+json.dumps(item['PDFFiles'][0]))
-		if 'HTMLFiles' in item and item['HTMLFiles']:
-			logger.info("Files: "+json.dumps(item['HTMLFiles'][0]))
 		if not('PDFFiles' in item and item['PDFFiles']) and not('HTMLFiles' in item and item['HTMLFiles']):
 			logger.warning("weder PDF noch HTML geholt")
 			#DropItem später nur dann, wenn auch kein HTML geholt

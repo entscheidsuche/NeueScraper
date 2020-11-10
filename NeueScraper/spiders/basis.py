@@ -202,8 +202,9 @@ class BasisSpider(scrapy.Spider):
 			self.gerichte[self.name].append(row)
 		
 		logger.debug("Gerichtsliste verarbeitet")
-		for request in self.request_gen:
-			yield request
+		
+		for req in self.request_gen:
+			yield req
 
 	def detect(self,vgericht,vkammer,num):
 		if self.mehrfachspider:

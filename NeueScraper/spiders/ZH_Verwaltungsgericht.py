@@ -18,7 +18,8 @@ class ZurichVerwgerSpider(BasisSpider):
 	TREFFERLISTE_URL='https://vgrzh.djiktzh.ch/cgi-bin/nph-omniscgi.exe?OmnisPlatform=WINDOWS&WebServerUrl=https://vgrzh.djiktzh.ch&WebServerScript=/cgi-bin/nph-omniscgi.exe&OmnisLibrary=JURISWEB&OmnisClass=rtFindinfoWebHtmlService&OmnisServer=JURISWEB,127.0.0.1:7000&Parametername=WWW&Schema=ZH_VG_WEB&Source=&Aufruf=search&cTemplate=standard/results/resultpage.fiw&cTemplateSuchkriterien=standard/results/searchcriteriarow.fiw&cSprache=GER&W10_KEY=4004259&nSeite={page}'
 	ab=None
 	reDatum=re.compile('[0-9]{2}\\.[0-9]{2}\\.[0-9]{4}')
-	reTyp=re.compile('.+(?= vom [0-9]{2}\\.[0-9]{2}\\.[0-9]{4})')	
+	reTyp=re.compile('.+(?= vom [0-9]{2}\\.[0-9]{2}\\.[0-9]{4})')
+	
 	def request_generator(self, ab, page):
 		""" Generates scrapy frist request
 		"""

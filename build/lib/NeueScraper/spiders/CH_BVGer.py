@@ -5,6 +5,7 @@ import logging
 import json
 import random
 from NeueScraper.spiders.basis import BasisSpider
+import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,7 @@ class CH_BVGer(BasisSpider):
 	name = 'CH_BVGer'
 	MINIMUM_PAGE_LEN = 148
 	MAX_PAGES = 10000
+	START_JAHR = 2007
 
 	START_URL='https://www.bvger.ch/bvger/de/home/rechtsprechung/entscheiddatenbank-bvger.html'
 	SUCH_URL='https://jurispub.admin.ch/publiws/block/send-receive-updates;jsessionid='
@@ -45,58 +47,79 @@ class CH_BVGer(BasisSpider):
 	reNext=re.compile('j_id[0-9]+next')
 	PDF_BASE='https://jurispub.admin.ch'
 	AB_DEFAULT=''
-	JsessionId=''
-	ICEsession=''
 
-	def request_generator(self):
+	def request_generator(self, ab):
 		""" Generates scrapy frist request
 		"""
-		return [scrapy.Request(url=self.JSESSION_URL, callback=self.parse_suchform, errback=self.errback_httpbin)]
-
+		requests=[]
+		if ab:
+			requests.append(scrapy.Request(url=self.JSESSION_URL, callback=self.parse_suchform, errback=self.errback_httpbin, meta={'ab':ab, 'bis':''}))
+		else:
+			jahr=datetime.date.today().year
+			jahre=range(self.START_JAHR,jahr)
+			for j in jahre:
+				if j == self.START_JAHR:
+					ab=""
+				else:
+					ab="01.01."+str(j)
+				if j == jahr:
+					bis=""
+				else:
+					bis="31.12."+str(j)
+				req=scrapy.Request(url=self.JSESSION_URL+"&"+str(j), callback=self.parse_suchform, errback=self.errback_httpbin, meta={'ab':ab, 'bis':bis})
+				req.meta['dont_cache']=True	
+				requests.append(req)
+		return requests
+		
 	def __init__(self,ab=AB_DEFAULT):
 		super().__init__()
 		self.ab = ab
-		self.request_gen = self.request_generator()
+		self.request_gen = self.request_generator(ab)
 
 	def parse_suchform(self,response):
-		logger.info("Rohergebnis: "+str(len(response.body))+" Zeichen")
+		ab=response.meta['ab']
+		bis=response.meta['bis']
+		logger.info("Suchanfrage_von_bis "+ab+"-"+bis+" Rohergebnis: "+str(len(response.body))+" Zeichen")
 		logger.info("Body: "+response.body_as_unicode())
-		ergebnis=self.reICEsession.search(response.body_as_unicode())
-		self.ICEsession=''
-		if ergebnis:
-			self.ICEsession=ergebnis.group(0)
-			logger.info('ICEsession: '+self.ICEsession)
-		else:
-			logger.info('ICEsession nicht gefunden.')
-
-		for entry in response.headers:
-			for subentry in response.headers.getlist(entry):
-				logger.debug("Header '"+entry.decode('ascii')+"': "+subentry.decode('ascii'))
-				if entry.decode('ascii') == 'Set-Cookie':
-					ergebnis=self.reCookie.search(subentry.decode('ascii'))
-					if ergebnis:
-						logger.debug("Cookie: '"+ergebnis.group(1)+"'='"+ergebnis.group(2)+"'")
-						# cookie[ergebnis.group(1).encode('ascii')]=ergebnis.group(2).encode('ascii')
-					ergebnis=self.reJsession.search(subentry.decode('ascii'))
-					if ergebnis:
-						self.JsessionId=ergebnis.group(0)
-						logger.info("JsessionId: "+ self.JsessionId)
-						
-		if self.ICEsession and response.status == 200 and len(response.body) > self.MINIMUM_PAGE_LEN:
-			if self.ab:
-				req_body='ice.submit.partial=true&ice.event.target=form%3AcalFrom&ice.event.captured=form%3AcalFrom&ice.event.type=onblur&form%3A_idform%3AcalTosp=&form%3A_idform%3AcalFromsp=&form%3A_idcl=&form%3Aform%3Atree_idtn=&form%3Aform%3Atree_idta=&form%3AcalTo=&form%3AcalFrom='+self.ab+'&form%3AsearchQuery=&javax.faces.RenderKitId=&javax.faces.ViewState=1&icefacesCssUpdates=&form=&ice.session='+self.ICEsession+'&ice.view=1&ice.focus=&rand=0.'+str(random.randint(1000000000000000,9999999999999999))
-				req=scrapy.Request(url=self.SUCH_URL+self.JsessionId, method='POST', headers=self.HEADERS, body=req_body, callback=self.intermediate_trefferliste, errback=self.errback_httpbin)
+		if response.status == 200 and len(response.body) > self.MINIMUM_PAGE_LEN:
+			ergebnis=self.reICEsession.search(response.body_as_unicode())
+			iceSession=''
+			jSession=''
+			if ergebnis:
+				iceSession=ergebnis.group(0)
+				logger.info('ICEsession: '+iceSession)
 			else:
-				req_body='ice.submit.partial=true&ice.event.target=form%3AsearchSubmitButton&ice.event.captured=form%3AsearchSubmitButton&ice.event.type=onclick&ice.event.alt=false&ice.event.ctrl=false&ice.event.shift=false&ice.event.meta=false&ice.event.x=80&ice.event.y=251&ice.event.left=false&ice.event.right=false&form%3A_idform%3AcalTosp=&form%3A_idform%3AcalFromsp=&form%3A_idcl=&form%3Aform%3Atree_idtn=&form%3Aform%3Atree_idta=&form%3AcalTo=&form%3AcalFrom=&form%3Agrouped=on&form%3AsearchQuery=&javax.faces.RenderKitId=ICEfacesRenderKit&javax.faces.ViewState=1&icefacesCssUpdates=&form=form&form%3AsearchSubmitButton=suchen&ice.session='+self.ICEsession+'&ice.view=1&ice.focus=form%3AsearchSubmitButton&rand=0.'+str(random.randint(1000000000000000,9999999999999999))
-				req=scrapy.Request(url=self.SUCH_URL+self.JsessionId, method='POST', headers=self.HEADERS, body=req_body, callback=self.trefferliste, errback=self.errback_httpbin)
+				logger.info('ICEsession nicht gefunden.')
+
+			for entry in response.headers:
+				for subentry in response.headers.getlist(entry):
+					logger.debug("Header '"+entry.decode('ascii')+"': "+subentry.decode('ascii'))
+					if entry.decode('ascii') == 'Set-Cookie':
+						ergebnis=self.reCookie.search(subentry.decode('ascii'))
+						if ergebnis:
+							logger.debug("Cookie: '"+ergebnis.group(1)+"'='"+ergebnis.group(2)+"'")
+							# cookie[ergebnis.group(1).encode('ascii')]=ergebnis.group(2).encode('ascii')
+						ergebnis=self.reJsession.search(subentry.decode('ascii'))
+						if ergebnis:
+							jSession=ergebnis.group(0)
+							logger.info("JsessionId: "+ jSession)
+						
+			if iceSession and jSession:  
+				req_body='ice.submit.partial=true&ice.event.target=form%3AcalFrom&ice.event.captured=form%3AcalFrom&ice.event.type=onblur&form%3A_idform%3AcalTosp=&form%3A_idform%3AcalFromsp=&form%3A_idcl=&form%3Aform%3Atree_idtn=&form%3Aform%3Atree_idta=&form%3AcalTo='+bis+'&form%3AcalFrom='+ab+'&form%3AsearchQuery=&javax.faces.RenderKitId=&javax.faces.ViewState=1&icefacesCssUpdates=&form=&ice.session='+iceSession+'&ice.view=1&ice.focus=&rand=0.'+str(random.randint(1000000000000000,9999999999999999))
+				req=scrapy.Request(url=self.SUCH_URL+jSession, method='POST', headers=self.HEADERS, body=req_body, callback=self.intermediate_trefferliste, errback=self.errback_httpbin, meta={'ab':ab, 'bis':bis, 'jSession':jSession, 'iceSession':iceSession})
 			yield(req)
 					
 	def intermediate_trefferliste(self,response):
 		logger.debug("Intermediate Trefferliste Rohergebnis "+str(len(response.body))+" Zeichen")
 		antwort=response.body_as_unicode()
 		logger.debug("Body: "+antwort)
-		req_body='ice.submit.partial=true&ice.event.target=form%3AsearchSubmitButton&ice.event.captured=form%3AsearchSubmitButton&ice.event.type=onclick&ice.event.alt=false&ice.event.ctrl=false&ice.event.shift=false&ice.event.meta=false&ice.event.x=72&ice.event.y=252&ice.event.left=false&ice.event.right=false&form%3A_idform%3AcalTosp=&form%3A_idform%3AcalFromsp=&form%3A_idcl=&form%3Aform%3Atree_idtn=&form%3Aform%3Atree_idta=&form%3AcalTo=&form%3AcalFrom='+self.ab+'&form%3AsearchQuery=&javax.faces.RenderKitId=&javax.faces.ViewState=1&icefacesCssUpdates=&form=&form%3AsearchSubmitButton=suchen&ice.session='+self.ICEsession+'&ice.view=1&ice.focus=form%3AsearchSubmitButton&rand=0.'+str(random.randint(1000000000000000,9999999999999999))
-		req=scrapy.Request(url=self.SUCH_URL+self.JsessionId, method='POST', headers=self.HEADERS, body=req_body, callback=self.trefferliste, errback=self.errback_httpbin)
+		jSession=response.meta['jSession']
+		iceSession=response.meta['iceSession']
+		ab=response.meta['ab']
+		bis=response.meta['bis']
+		
+		req_body='ice.submit.partial=true&ice.event.target=form%3AsearchSubmitButton&ice.event.captured=form%3AsearchSubmitButton&ice.event.type=onclick&ice.event.alt=false&ice.event.ctrl=false&ice.event.shift=false&ice.event.meta=false&ice.event.x=72&ice.event.y=252&ice.event.left=false&ice.event.right=false&form%3A_idform%3AcalTosp=&form%3A_idform%3AcalFromsp=&form%3A_idcl=&form%3Aform%3Atree_idtn=&form%3Aform%3Atree_idta=&form%3AcalTo='+bis+'&form%3AcalFrom='+ab+'&form%3AsearchQuery=&javax.faces.RenderKitId=&javax.faces.ViewState=1&icefacesCssUpdates=&form=&form%3AsearchSubmitButton=suchen&ice.session='+iceSession+'&ice.view=1&ice.focus=form%3AsearchSubmitButton&rand=0.'+str(random.randint(1000000000000000,9999999999999999))
+		req=scrapy.Request(url=self.SUCH_URL+jSession, method='POST', headers=self.HEADERS, body=req_body, callback=self.trefferliste, errback=self.errback_httpbin, meta=response.meta)
 		yield(req)
 
 
@@ -138,16 +161,19 @@ class CH_BVGer(BasisSpider):
 				if vgericht=='':
 					item['VGericht']=gericht
 					
-				body='ice.submit.partial=true&ice.event.target=form%3AresultTable%3A#%3Aj_id36&ice.event.captured=form%3AresultTable%3A#%3Aj_id36&ice.event.type=onclick&ice.event.alt=false&ice.event.ctrl=false&ice.event.shift=false&ice.event.meta=false&ice.event.x=86&ice.event.y=195&ice.event.left=false&ice.event.right=false&form%3A_idcl=form%3AresultTable%3A#%3Aj_id36&form%3Aj_id63=&javax.faces.RenderKitId=ICEfacesRenderKit&javax.faces.ViewState=1&icefacesCssUpdates=&form=form&ice.session='+self.ICEsession+'&ice.view=1&ice.focus=form%3AresultTable%3A#%3Aj_id36&rand=0.'+str(random.randint(1000000000000000,9999999999999999))
-				body.replace('#',Pos)
+				# body='ice.submit.partial=true&ice.event.target=form%3AresultTable%3A#%3Aj_id36&ice.event.captured=form%3AresultTable%3A#%3Aj_id36&ice.event.type=onclick&ice.event.alt=false&ice.event.ctrl=false&ice.event.shift=false&ice.event.meta=false&ice.event.x=86&ice.event.y=195&ice.event.left=false&ice.event.right=false&form%3A_idcl=form%3AresultTable%3A#%3Aj_id36&form%3Aj_id63=&javax.faces.RenderKitId=ICEfacesRenderKit&javax.faces.ViewState=1&icefacesCssUpdates=&form=form&ice.session='+iceSession+'&ice.view=1&ice.focus=form%3AresultTable%3A#%3Aj_id36&rand=0.'+str(random.randint(1000000000000000,9999999999999999))
+				# body.replace('#',Pos)
 				# HTML nicht holen, da das die Session durcheinander bringt
 				# req=scrapy.Request(url=htmlUrl, method='POST', headers=self.HEADERS, body=body.encode('ascii'), callback=self.parse_page_intermediate, errback=self.errback_httpbin, meta = {'item':item})
 				yield(item)
 				
 			if(seite<seiten):
-				body='ice.submit.partial=true&ice.event.target=form%3Aj_id67&ice.event.captured=form%3Aj_id63next&ice.event.type=onclick&ice.event.alt=false&ice.event.ctrl=false&ice.event.shift=false&ice.event.meta=false&ice.event.x=171&ice.event.y=502&ice.event.left=false&ice.event.right=false&form%3A_idcl=&form%3Aj_id63next&form%3Aj_id63=next&javax.faces.RenderKitId=&javax.faces.ViewState=1&icefacesCssUpdates=&form=form&ice.session='+self.ICEsession+'&ice.view=1&ice.focus=form%3Aj_id63next&rand=0.'+str(random.randint(1000000000000000,9999999999999999))
+				jSession=response.meta['jSession']
+				iceSession=response.meta['iceSession']
+				
+				body='ice.submit.partial=true&ice.event.target=form%3Aj_id67&ice.event.captured=form%3Aj_id63next&ice.event.type=onclick&ice.event.alt=false&ice.event.ctrl=false&ice.event.shift=false&ice.event.meta=false&ice.event.x=171&ice.event.y=502&ice.event.left=false&ice.event.right=false&form%3A_idcl=&form%3Aj_id63next&form%3Aj_id63=next&javax.faces.RenderKitId=&javax.faces.ViewState=1&icefacesCssUpdates=&form=form&ice.session='+iceSession+'&ice.view=1&ice.focus=form%3Aj_id63next&rand=0.'+str(random.randint(1000000000000000,9999999999999999))
 				logger.debug('body: '+body)
-				req=scrapy.Request(url=self.SUCH_URL+self.JsessionId, method='POST', headers=self.HEADERS, body=body.encode('ascii'), callback=self.trefferliste, errback=self.errback_httpbin)
+				req=scrapy.Request(url=self.SUCH_URL+jSession, method='POST', headers=self.HEADERS, body=body.encode('ascii'), callback=self.trefferliste, errback=self.errback_httpbin, meta=response.meta)
 				yield(req)
 			else:
 				logger.debug("Fertig!")
