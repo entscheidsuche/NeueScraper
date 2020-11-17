@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 
 class BE_Anwaltsaufsicht(TribunaSpider):
 	name = 'BE_Anwaltsaufsicht'
-	allowed_domains = ['www.aa-entscheide.apps.be.ch']
 	
 	RESULT_PAGE_URL = 'https://www.aa-entscheide.apps.be.ch/tribunapublikation/tribunavtplus/loadTable'
 	# Hole immer nur ein Dokument um Probleme mit Deduplizierung und unterschiedlichen Reihenfolgen zu verringern

@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <title>Ort hat sich geändert</title>
+      <meta http-equiv = "refresh" content = "0; url = http://entscheidsuche.ch.s3-eu-west-3.amazonaws.com/scraper/Spiderliste.xml" />
+   </head>
+   <body>
+      <p>Der Ablageort der Spiderliste hat sich geändert: Falls redirect nicht funktioniert: <a href="http://entscheidsuche.ch.s3-eu-west-3.amazonaws.com/scraper/Spiderliste.xml">http://entscheidsuche.ch.s3-eu-west-3.amazonaws.com/scraper/Spiderliste.xml</a></p>
+   </body>
+</html>

@@ -31,12 +31,14 @@ class TribunaSpider(BasisSpider):
 		return body	
 	
 	def request_generator(self):
+		logger.info("request_generator: Self ist vom Typ: "+str(type(self)))			
 		""" Generates scrapy frist request
 		"""
 		body=self.get_next_request()
 		return [scrapy.Request(url=self.RESULT_PAGE_URL, method="POST", body=body, headers=self.HEADERS, callback=self.parse_page, errback=self.errback_httpbin)]
 
 	def __init__(self,ab=None):
+		logger.info("__init__ in tribuna: Self ist vom Typ: "+str(type(self)))			
 		super().__init__()
 		self.ab = ab
 		self.request_gen=self.request_generator()

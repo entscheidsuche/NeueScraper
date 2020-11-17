@@ -19,28 +19,13 @@
     <meta name="topic" content="Kantone"/>
     <meta name="topic" content="Bundesgericht"/>
     <meta name="author" content="entscheidsuche.ch"/>
-    <!-- Global site tag (gtag.js) - Google Analytics -->
-<script async="async" src="https://www.googletagmanager.com/gtag/js?id=UA-137420779-3"></script>
+
 <script src="/get_count.js"></script>
 
 <script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-
-  gtag('config', 'UA-137420779-3');
-  
-  var captureOutboundLink = function(url) {
-   ga('send', 'event', 'outbound', 'click', url, {
-     'transport': 'beacon',
-     'hitCallback': function(){document.location = url;}
-   });
-  }
-   
-  
   function get_counts(){
-	<xsl:for-each select="/Spiderliste/Kanton/Spider/Eintrag">
-		get_count('<xsl:value-of select="../@Name"/>', '<xsl:value-of select="@Name"/>');
+	<xsl:for-each select="/Spiderliste/Kanton/Spider">
+		get_count_json('<xsl:value-of select="@Name"/>');
 	</xsl:for-each>	
   }
   
@@ -65,19 +50,7 @@
             {
                 height: 100%;
             }
-  </style>
-	<script>
-	  (function() {
-	    var cx = '006282428619580867506:dqde6byz0nw';
-	    var gcse = document.createElement('script');
-	    gcse.type = 'text/javascript';
-	    gcse.async = true;
-	    gcse.src = 'https://cse.google.com/cse.js?cx=' + cx;
-	    var s = document.getElementsByTagName('script')[0];
-	    s.parentNode.insertBefore(gcse, s);
-	  })();
-	</script>
-	
+  </style>	
 
 
 </head>
@@ -143,6 +116,10 @@
 							<xsl:if test="Eintrag/Parameter">
 								<xsl:text> Parameter: </xsl:text><xsl:value-of select="Eintrag/Parameter"/>="<xsl:value-of select="Eintrag/Format"/>" <i>[<xsl:value-of select="Eintrag/Bedeutung"/>]</i>
 							</xsl:if>
+							<xsl:element name="div">
+								<xsl:attribute name="id"><xsl:value-of select="@Name"/></xsl:attribute>
+								???
+							</xsl:element>																		
 							<table class="table">
 								<tbody>
 									<xsl:for-each select="Eintrag">

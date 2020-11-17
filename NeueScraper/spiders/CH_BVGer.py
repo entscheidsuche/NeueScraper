@@ -15,7 +15,6 @@ logger = logging.getLogger(__name__)
 class CH_BVGer(BasisSpider):
 	name = 'CH_BVGer'
 	MINIMUM_PAGE_LEN = 148
-	MAX_PAGES = 10000
 	START_JAHR = 2007
 
 	START_URL='https://www.bvger.ch/bvger/de/home/rechtsprechung/entscheiddatenbank-bvger.html'
@@ -46,35 +45,33 @@ class CH_BVGer(BasisSpider):
 	reTrefferzahl=re.compile('<span class="iceOutFrmt standard">([0-9]+(?:,[0-9]+)?) Entscheide gefunden, zeige ([0-9]+(?:,[0-9]+)?) bis ([0-9]+(?:,[0-9]+)?)\. Seite ([0-9]+(?:,[0-9]+)?) von ([0-9]+(?:,[0-9]+)?)\. Resultat sortiert')
 	reNext=re.compile('j_id[0-9]+next')
 	PDF_BASE='https://jurispub.admin.ch'
-	AB_DEFAULT=''
 
-	def request_generator(self, ab):
+	def request_generator(self, ab, bis):
 		""" Generates scrapy frist request
 		"""
 		requests=[]
-		if ab:
-			requests.append(scrapy.Request(url=self.JSESSION_URL, callback=self.parse_suchform, errback=self.errback_httpbin, meta={'ab':ab, 'bis':''}))
+		if bis:
+			bis_int=int(bis)
 		else:
-			jahr=datetime.date.today().year
-			jahre=range(self.START_JAHR,jahr)
-			for j in jahre:
-				if j == self.START_JAHR:
-					ab=""
-				else:
-					ab="01.01."+str(j)
-				if j == jahr:
-					bis=""
-				else:
-					bis="31.12."+str(j)
-				req=scrapy.Request(url=self.JSESSION_URL+"&"+str(j), callback=self.parse_suchform, errback=self.errback_httpbin, meta={'ab':ab, 'bis':bis})
-				req.meta['dont_cache']=True	
-				requests.append(req)
+			bis_int=datetime.date.today().year
+		if ab:
+			ab_int=int(ab)
+		else:
+			ab_int=self.START_JAHR
+		jahre=range(ab_int,bis_int+1)
+		for j in jahre:
+			ab_string="01.01."+str(j)
+			bis_string="31.12."+str(j)
+			req=scrapy.Request(url=self.JSESSION_URL+"&"+str(j), callback=self.parse_suchform, errback=self.errback_httpbin, meta={'ab':ab_string, 'bis':bis_string})
+			req.meta['dont_cache']=True	
+			requests.append(req)
 		return requests
 		
-	def __init__(self,ab=AB_DEFAULT):
+	def __init__(self,ab=None,bis=None):
 		super().__init__()
 		self.ab = ab
-		self.request_gen = self.request_generator(ab)
+		self.bis = bis
+		self.request_gen = self.request_generator(ab, bis)
 
 	def parse_suchform(self,response):
 		ab=response.meta['ab']

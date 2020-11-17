@@ -19,23 +19,6 @@
     <meta name="topic" content="Kantone"/>
     <meta name="topic" content="Bundesgericht"/>
     <meta name="author" content="entscheidsuche.ch"/>
-    <!-- Global site tag (gtag.js) - Google Analytics -->
-<script async="async" src="https://www.googletagmanager.com/gtag/js?id=UA-137420779-3"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-
-  gtag('config', 'UA-137420779-3');
-  
-  var captureOutboundLink = function(url) {
-   ga('send', 'event', 'outbound', 'click', url, {
-     'transport': 'beacon',
-     'hitCallback': function(){document.location = url;}
-   });
-  }
-  
-</script>
 
 
 
@@ -180,14 +163,6 @@
 							publiziert <xsl:value-of select="//Sonst/PDatum"/>
 						</td>
 					</xsl:if>		
-				</tr>
-				<tr>
-					<td>
-						ScrapyCloud-Job
-					</td>
-					<td>
-						<xsl:value-of select="/Entscheid/Metainfos/Job"/>
-					</td>
 				</tr>
 				<tr>
 					<td>

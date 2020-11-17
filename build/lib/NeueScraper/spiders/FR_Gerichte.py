@@ -7,7 +7,6 @@ from NeueScraper.spiders.tribuna import TribunaSpider
 
 class FR_Gerichte(TribunaSpider):
 	name = 'FR_Gerichte'
-	allowed_domains = ['publicationtc.fr.ch']
 	
 	RESULT_PAGE_URL = 'https://publicationtc.fr.ch/tribunavtplus/loadTable'
 	# Hole immer nur ein Dokument um Probleme mit Deduplizierung und unterschiedlichen Reihenfolgen zu verringern

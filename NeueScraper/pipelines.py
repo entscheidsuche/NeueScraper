@@ -22,8 +22,10 @@ from scrapy.exceptions import DropItem
 from io import BytesIO
 from scrapy.utils.misc import md5sum
 from lxml import etree
+import datetime
 
 filenamechars=re.compile("[^-a-zA-Z0-9]")
+filenameparts=re.compile(r'/(?P<signatur>[^_]+_[^_]+_[^_]+)[^\.]+\.(?P<endung>\w+)')
 logger = logging.getLogger(__name__)
 
 from urllib.parse import urlparse
@@ -42,48 +44,91 @@ class MyWriterPipeline:
 		logger.info("pipeline open")
 
 	def close_spider(self,spider):
-		logger.info("pipeline close")
+		logger.info("pipeline open")
+		datestring=datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+		pfad=spider.name+"/Job_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
+		signaturen={}
+		job_typ="komplett" if spider.ab is None else "update"
+		gesamt={'gesamt':0}
+		for f in spider.files_written:
+			# neu nicht mehr vorhandene Inhalte markieren
+			if spider.ab is None and 'quelle' in spider.files_written[f] and not spider.files_written[f]['status']=="nicht_mehr_da":
+				spider.files_written[f]['status']='nicht_mehr_da'
+				del spider.files_written[f][quelle]
+			s=filenameparts.search(f)
+			if s is None:
+				logging.error("Konnte Dateinamen "+f+" nicht aufteilen.")
+			else:
+				if s.group('endung')=='xml':
+					if 'quelle' in spider.files_written[f]:
+						count_group='vorher'
+					else:
+						count_group='aktuell'
+					if spider.files_written[f]['status']=='nicht_mehr_da':
+						count_typ='entfernt'
+					elif spider.files_written[f]['status'] in ['update', "anders_wieder_da"]:
+						count_typ='aktualisiert'
+					elif spider.files_written[f]['status'] in ['neu']:
+						count_typ='neu'
+					else:
+						count_typ='identisch'
+					count_eintrag=count_group+" "+count_typ
+					if not s.group('signatur') in signaturen:
+						signaturen[s.group('signatur')]={'gesamt':0}
+					if not count_eintrag in signaturen[s.group('signatur')]:
+						signaturen[s.group('signatur')][count_eintrag]=1
+					else:
+						signaturen[s.group('signatur')][count_eintrag]=signaturen[s.group('signatur')][count_eintrag]+1
+					if not count_eintrag in gesamt:
+						gesamt[count_eintrag]=1
+					else:
+						gesamt[count_eintrag]=gesamt[count_eintrag]+1
+					if not count_typ=='entfernt':
+						signaturen[s.group('signatur')]['gesamt']=signaturen[s.group('signatur')]['gesamt']+1
+						gesamt['gesamt']=gesamt['gesamt']+1			
+		files_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "dateien": spider.files_written, 'signaturen': signaturen, 'gesamt': gesamt }
+		json_content=json.dumps(files_log)
+		MyS3FilesStore.shared_store.persist_file(pfad, BytesIO(json_content.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
 
 	def process_item(self, item, spider):
 		logger.info("pipeline item")
-		upload_file_meta={}
-		upload_file_meta['ScrapyJob']=spider.scrapy_job
-		upload_file_meta['Spider']=spider.name
-		upload_file_tags=''
+		logFlag=True
 
 		if 'Entscheidquellen' in item:
 			upload_file_key="Entscheidquellen.csv"
 			upload_file_content=item['Entscheidquellen']
+			contentType="text/csv"
+			logFlag=False
 		elif 'Spiderliste' in item:
 			upload_file_key="Spiderliste.xml"
-			upload_file_content=item['Spiderliste']			
+			upload_file_content=item['Spiderliste']
+			contentType='text/xml'
+			logFlag=False
 		else:
 			#muss ich das HTML noch separat abspeichern?
 			if 'html' in item and item['html'] and 'HTMLFiles' in item and item['HTMLFiles']:
 				html_pfad=PipelineHelper.file_path(self,item, spider)+".html"
-				html_name=MyS3FilesStore.shared_s3_prefix+html_pfad
 				html_content=item['html']
-				logger.debug("html_name: "+html_name)
-				MyS3FilesStore.shared_s3_client.put_object(Body=html_content, Bucket=MyS3FilesStore.shared_s3_bucket, Key=html_name, ACL=MyS3FilesStore.POLICY, Metadata={k: str(v) for k, v in upload_file_meta.items()}, Tagging=upload_file_tags, ContentType='text/html')
-				item['HTMLFiles'][0]['path']=html_pfad			
+				logger.debug("html_pfad: "+html_pfad)
+				# Die md5-Checksum bereits vorher berechnen, da das Abspeichern deferred erfolgt.
+				buf=BytesIO(html_content.encode(encoding='UTF-8'))
+				buf.seek(0)
+				checksum=md5sum(buf)
+				buf.seek(0)
+				MyS3FilesStore.shared_store.persist_file(html_pfad, buf, info=None, spider=spider, meta=None, headers=None, item=item, ContentType='text/html', LogFlag=logFlag, checksum=checksum)
+				item['HTMLFiles'][0]['path']=html_pfad
+				item['HTMLFiles'][0]['checksum']=checksum
 						
 			upload_file_content=PipelineHelper.make_xml(item,spider)
-			upload_file_tags=PipelineHelper.get_tags(self, item, spider)
-			
-			upload_file_key = MyS3FilesStore.shared_s3_prefix+PipelineHelper.file_path(self,item, spider)+".xml"
-			logger.debug("xml_name: "+upload_file_key)
+			contentType="text/xml"
+			upload_file_key=PipelineHelper.file_path(self,item, spider)+".xml"
 
-		if not upload_file_tags:
-			upload_file_tags=PipelineHelper.get_tags(self, item, spider)
-
-		MyS3FilesStore.shared_s3_client.put_object(Body=upload_file_content, Bucket=MyS3FilesStore.shared_s3_bucket, Key=upload_file_key, ACL=MyS3FilesStore.POLICY, Metadata={k: str(v) for k, v in upload_file_meta.items()}, Tagging=upload_file_tags, ContentType='text/xml')
+		MyS3FilesStore.shared_store.persist_file(upload_file_key, BytesIO(upload_file_content.encode(encoding='UTF-8')), info=None, spider=spider, meta=None, headers=None, item=item, ContentType=contentType, LogFlag=logFlag)
 		
 		return item
 		
 
 class MyS3FilesStore(S3FilesStore):
-	AWS_ACCESS_KEY_ID = "AKIAXYG6RX7BKEZXJFZT"
-	AWS_SECRET_ACCESS_KEY = "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"
 	AWS_ENDPOINT_URL = "s3://entscheidsuche.ch"
 	AWS_REGION_NAME = "eu-west-3"
 	AWS_USE_SSL = None
@@ -91,6 +136,7 @@ class MyS3FilesStore(S3FilesStore):
 	shared_s3_client = None
 	shared_s3_bucket = None
 	shared_s3_prefix = None
+	shared_store = None
 
 	POLICY = 'private'  # Overriden from settings.FILES_STORE_S3_ACL in FilesPipeline.from_settings
 	HEADERS = {
@@ -108,10 +154,6 @@ class MyS3FilesStore(S3FilesStore):
 		if self.is_botocore:
 			import botocore.session
 			session = botocore.session.get_session()
-			logger.info("init: AWS_ACCESS_KEY_ID: "+self.AWS_ACCESS_KEY_ID)
-			logger.info("init: AWS_SECRET_ACCESS_KEY: "+self.AWS_SECRET_ACCESS_KEY)
-			logger.info("init: AWS_ENDPOINT_URL: "+self.AWS_ENDPOINT_URL)
-			logger.info("init: AWS_REGION_NAME: "+self.AWS_REGION_NAME)
 			self.s3_client = session.create_client(
 				's3',
 				aws_access_key_id=self.AWS_ACCESS_KEY_ID,
@@ -130,6 +172,7 @@ class MyS3FilesStore(S3FilesStore):
 		self.bucket, self.prefix = uri[5:].split('/', 1)
 		MyS3FilesStore.shared_s3_bucket=self.bucket
 		MyS3FilesStore.shared_s3_prefix=self.prefix
+		MyS3FilesStore.shared_store=self
 		
 	def stat_file(self, path, info):
 		def _onsuccess(boto_key):
@@ -145,46 +188,73 @@ class MyS3FilesStore(S3FilesStore):
 			return {'checksum': checksum, 'last_modified': modified_stamp}
 		return self._get_boto_key(path).addCallback(_onsuccess)
 
-	def persist_file(self, path, buf, info=None, meta=None, headers=None, item=None):
+	def persist_file(self, path, buf, info=None, meta=None, headers=None, item=None, spider=None, ContentType=None, LogFlag=True, checksum=None):
 		if meta==None:
 			meta={}
-		if info:
-			meta['scrapy_job']=info.spider.scrapy_job
-			meta['spider']=info.spider.name
-			upload_file_tags=PipelineHelper.get_tags(self, item, info.spider)
+
+		if (not spider) and info:
+			spider=info.spider
+		# Keine Tags machen sondern Metadaten, da Tags teuer sind.
+		if spider:
+			PipelineHelper.get_meta(self, item, spider,meta)
 
 		# Upload file to S3 storage
 		key_name = f'{self.prefix}{path}'
 		logger.debug("pf key_name: "+key_name)
 		buf.seek(0)
-		if self.is_botocore:
-			logger.debug("pf is_botocore")
-			extra = self._headers_to_botocore_kwargs(self.HEADERS)
-			if headers:
-				extra.update(self._headers_to_botocore_kwargs(headers))
-			logger.debug("pf schreibe nun")
-			return threads.deferToThread(
-				self.s3_client.put_object,
-				Bucket=self.bucket,
-				Key=key_name,
-				Body=buf,
-				Metadata={k: str(v) for k, v in (meta or {}).items()},
-				ACL=self.POLICY,
-				Tagging=upload_file_tags,
-				**extra)
-		else: #ohne botocore noch keine Metadaten und Tags
-			logger.debug("pf not is_botocore")
-			b = self._get_boto_bucket()
-			k = b.new_key(key_name)
-			if meta:
-				for metakey, metavalue in meta.items():
-					k.set_metadata(metakey, str(metavalue))
-			h = self.HEADERS.copy()
-			if headers:
-				h.update(headers)
-			return threads.deferToThread(
-				k.set_contents_from_string, buf.getvalue(),
-				headers=h, policy=self.POLICY)
+		if checksum is None:
+			checksum=md5sum(buf)
+			buf.seek(0)
+		existiert_bereits=False
+		if LogFlag and spider:
+			neustatus='neu'
+			if spider.previous_run:
+				if path in spider.previous_run['dateien']:
+					oldfile=spider.previous_run['dateien'][path]
+					if 'status' in oldfile and 'checksum' in oldfile:
+						altstatus=oldfile['status']
+						altchecksum=oldfile['checksum']
+						if altchecksum==checksum:
+							if altstatus == "nicht_mehr_da":
+								neustatus="identisch_wieder_da"
+							else:
+								neustatus="identisch"
+							existiert_bereits=True
+						else:
+							if altstatus =="nicht_mehr_da":
+								neustatus="anders_wieder_da"
+							else:
+								neustatus="update"
+			spider.files_written[path]={'checksum': checksum, "status": neustatus}
+		if not existiert_bereits:
+			if self.is_botocore:
+				logger.debug("pf is_botocore")
+				extra = self._headers_to_botocore_kwargs(self.HEADERS)
+				if headers:
+					extra.update(self._headers_to_botocore_kwargs(headers))
+				logger.debug("pf schreibe nun")
+				return threads.deferToThread(
+					self.s3_client.put_object,
+					Bucket=self.bucket,
+					Key=key_name,
+					Body=buf,
+					Metadata={k: str(v) for k, v in (meta or {}).items()},
+					ACL=self.POLICY,
+					ContentType=ContentType,
+					**extra)
+			else: #ohne botocore noch keine Metadaten und Tags
+				logger.debug("pf not is_botocore")
+				b = self._get_boto_bucket()
+				k = b.new_key(key_name)
+				if meta:
+					for metakey, metavalue in meta.items():
+						k.set_metadata(metakey, str(metavalue))
+				h = self.HEADERS.copy()
+				if headers:
+					h.update(headers)
+				return threads.deferToThread(
+					k.set_contents_from_string, buf.getvalue(),
+					headers=h, policy=self.POLICY)
 		
 	def _get_boto_bucket(self):
 		logger.debug("AWS_ACCESS_KEY_ID: "+self.AWS_ACCESS_KEY_ID+"AWS_SECRET_ACCESS_KEY"+self.AWS_SECRET_ACCESS_KEY)
@@ -234,28 +304,32 @@ class PipelineHelper:
 			logger.error("Unexpected error: " + repr(traceback.format_exception(exc_type, exc_value, exc_traceback)))
 			raise
 			
-	def get_tags(self, item, spider):
 	
-		tags='Spider='+spider.name+'&ScrapyJob='+spider.scrapy_job
+			
+	def get_meta(self, item, spider,meta):
+		meta['Spider']=spider.name
+		meta['ScrapyJob']=spider.scrapy_job
 		if 'Signatur' in item:
-			tags=tags+'&Signatur='+item['Signatur']+'&Kanton='+item['Signatur'][:2]
+			meta['Signatur']=item['Signatur']
+			meta['Kanton']=item['Signatur'][:2]
 		if 'EDatum' in item:
-			tags=tags+'&Entscheiddatum='+item['EDatum']
+			meta['Entscheiddatum']=item['EDatum']
 		if 'Num' in item:
-			tags=tags+'&Geschaeftsnummer='+item['Num']
+			meta['Geschaeftsnummer']=item['Num']
 		if 'PDFFiles' in item and item['PDFFiles']:
-			tags=tags+'&PDF=PDF'
+			meta['PDF']='PDF'
 		if 'HTMLFiles' in item and item['HTMLFiles']:
-			tags=tags+'&HTML=HTML'
-		logger.info("Tags: "+tags)
-		return tags
+			meta['HTML']='HTML'
+		logger.info("Meta: "+json.dumps(meta))
 
 	def xml_add_element(parent, key, value):
 		element = etree.Element(key)
 		element.text=value
 		parent.append(element)
+		return element
 
-	def make_xml(item,spider):	
+	def make_xml(item,spider):
+		# Alles auskommentieren, was vom Spiderlauf abhängig ist.	
 		if 'Num' in item:
 			logger.info("Geschäftsnummer: "+item['Num'])
 
@@ -269,7 +343,7 @@ class PipelineHelper:
 		root.append(meta)
 		PipelineHelper.xml_add_element(meta,'Signatur',item['Signatur'])
 		PipelineHelper.xml_add_element(meta,'Spider',spider.name)
-		PipelineHelper.xml_add_element(meta,'Job',spider.scrapy_job)
+		#PipelineHelper.xml_add_element(meta,'Job',spider.scrapy_job)
 		PipelineHelper.xml_add_element(meta,'Kanton',item['Signatur'][:2].lower())
 		if spider.ebenen > 1 and 'Gericht' in item:
 			PipelineHelper.xml_add_element(meta,'Gericht',item['Gericht'])
@@ -280,9 +354,9 @@ class PipelineHelper:
 		if 'Num' in item:
 			PipelineHelper.xml_add_element(meta,'EDatum',item['EDatum'])
 		if 'PDFFiles' in item and item['PDFFiles']:
-			PipelineHelper.xml_add_element(meta,'PDFFile',item['PDFFiles'][0]['path'])
+			PipelineHelper.xml_add_element(meta,'PDFFile',item['PDFFiles'][0]['path']).set('Checksum',item['PDFFiles'][0]['checksum'])
 		if 'HTMLFiles' in item and item['HTMLFiles']:
-			PipelineHelper.xml_add_element(meta,'HTMLFile',item['HTMLFiles'][0]['path'])
+			PipelineHelper.xml_add_element(meta,'HTMLFile',item['HTMLFiles'][0]['path']).set('Checksum',item['HTMLFiles'][0]['checksum'])
 		
 
 		treffer = etree.Element('Treffer')
@@ -362,14 +436,15 @@ class MyFilesPipeline(FilesPipeline):
 	def file_downloaded(self, response, request, info=None, item=None):
 		if item is None:
 			item=request.meta['item']
-			logger.info('item in file_downloaded gesetzt')
+			logger.debug('item in file_downloaded gesetzt')
 		else:
-			logger.info('item war in file_downloaded bereits gesetzt')		
+			logger.debug('item war in file_downloaded bereits gesetzt')		
 		path = self.file_path(request, response, info, item=item)
+		ContentType='application/pdf' if path[-4:]=='.pdf' else None
 		buf = BytesIO(response.body)
 		checksum = md5sum(buf)
 		buf.seek(0)
-		self.store.persist_file(path, buf, info, item=item) # Parameter item wurde hinzugefügt. store muss dazu angepasst werden (wurde hier für S3 getan)
+		self.store.persist_file(path, buf, info, item=item, ContentType=ContentType) # Parameter item wurde hinzugefügt. store muss dazu angepasst werden (wurde hier für S3 getan)
 		return checksum
 
 	

@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 
 class JU_Gerichte(TribunaSpider):
 	name = 'JU_Gerichte'
-	allowed_domains = ['jurisprudence.jura.ch']
 	
 	RESULT_PAGE_URL = 'https://jurisprudence.jura.ch/tribunavtplus/loadTable'
 	# Hole immer nur ein Dokument um Probleme mit Deduplizierung und unterschiedlichen Reihenfolgen zu verringern

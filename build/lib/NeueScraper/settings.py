@@ -71,15 +71,15 @@ ITEM_PIPELINES = {'NeueScraper.pipelines.MyFilesPipeline': 1, 'NeueScraper.pipel
 FILES_STORE = 's3://entscheidsuche.ch/scraper/'
 FILES_STORE_S3_ACL = 'public-read'
 AWS_ENDPOINT_URL = 'https://s3.eu-west-3.amazonaws.com'
-AWS_ACCESS_KEY_ID = 'AKIAXYG6RX7BKEZXJFZT'
-#AWS_SECRET_ACCESS_KEY ='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'
+#AWS_ACCESS_KEY_ID
+#AWS_SECRET_ACCESS_KEY
 AWS_REGION_NAME='eu-west-3'
 AWS_DEFAULT_REGION='eu-west-3'
 AWS_PROFILE='default'
 AWS_USE_SSL = True
 AWS_VERIFY = True
-FTP_USER = 'Scraper@entscheidsuche.ch'
-FTP_PASSWORD = 'PG4NUQuGDjrxRts'
+#FTP_USER = 'Scraper@entscheidsuche.ch'
+#FTP_PASSWORD
 FILES_URLS_FIELD = "PDFUrls"
 FILES_RESULT_FIELD = "PDFFiles"
 #FEED_URI ='s3://entscheidsuche.ch/scraper/dump.csv'

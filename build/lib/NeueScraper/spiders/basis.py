@@ -26,7 +26,12 @@ class BasisSpider(scrapy.Spider):
 	gerichte = {}
 	kanton= {}
 	CSV_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vR2sZY8Op7cLChL6Hu0aDZmbOrmX_UPtyxz86W-oeyuCemBs0poqxC-EU33i-JhH9PQ7SMqYOnIw5ou/pub?gid=1220663602&single=true&output=csv'
-	kammerfallback=None;
+	JOBS_HOST='http://entscheidsuche.ch.s3.amazonaws.com/'
+	JOBS_URL=JOBS_HOST+'?list-type=2&prefix=scraper%2F'
+	kammerfallback=None
+	files_written ={}
+	previous_run={}
+	ab=None
 
 	def __init__(self):
 		super().__init__()
@@ -38,7 +43,7 @@ class BasisSpider(scrapy.Spider):
 	def parse_gerichtsliste(self, response):
 		logger.info("parse_gerichtsliste response.status "+str(response.status))
 		logger.info("parse_gerichtsliste Rohergebnis "+str(len(response.body))+" Zeichen")
-		logger.info("parse_gerichtsliste Rohergebnis: "+response.body_as_unicode())
+		logger.debug("parse_gerichtsliste Rohergebnis: "+response.body_as_unicode())
 
 		self.scrapy_job=os.environ['SCRAPY_JOB']
 		logger.info("SCRAPY_JOB: "+self.scrapy_job)
@@ -201,8 +206,42 @@ class BasisSpider(scrapy.Spider):
 			logger.info("Generiertes Kammerfallback "+str(self.kammerfallback)+": "+json.dumps(row))
 			self.gerichte[self.name].append(row)
 		
-		logger.debug("Gerichtsliste verarbeitet")
+		logger.info("Gerichtsliste verarbeitet, hole nun die Jobliste.")
 		
+		# Nun einlesen, was an Dateien vom letzten Spidern vorhanden ist
+		jobs_url=self.JOBS_URL+self.name+"%2FJob_"
+		logger.info("Jobs-URL: "+jobs_url)
+		yield scrapy.Request(url=jobs_url, callback=self.parse_jobliste, errback=self.errback_httpbin)
+		
+	def parse_jobliste(self, response):
+		logger.info("parse_jobliste response.status "+str(response.status))
+		logger.info("parse_jobliste Rohergebnis "+str(len(response.body))+" Zeichen")
+		logger.debug("parse_jobliste Rohergebnis: "+response.body_as_unicode())
+		jobs=response.xpath("//*[local-name()='Contents']/*[local-name()='Key']/text()").getall()
+		if jobs:
+			jobs.sort(reverse=True)
+			yield scrapy.Request(url=self.JOBS_HOST+jobs[0], callback=self.parse_dateiliste, errback=self.errback_httpbin)
+		else:
+			logger.info("Kein vorheriger Job gefunden. Erster Lauf von: "+self.name)
+			logger.info("Starte nun "+str(len(self.request_gen))+" Requests.")	
+			for req in self.request_gen:
+				yield req
+
+
+	def parse_dateiliste(self, response):
+		logger.info("parse_dateiliste response.status "+str(response.status))
+		logger.info("parse_dateiliste Rohergebnis "+str(len(response.body))+" Zeichen")
+		logger.debug("parse_dateiliste Rohergebnis: "+response.body_as_unicode())
+		self.previous_run=json.loads(response.body_as_unicode())
+		# Wird nur eine Teilabfrage gemacht, die Daten der vorherigen Abfrage übernehmen und mit der Quelle kennzeichnen
+		previous_job=self.previous_run["job"]
+		for pfad in self.previous_run["dateien"]:
+			eintrag=self.previous_run["dateien"][pfad]
+			checksum=eintrag['checksum']
+			status=eintrag["status"]
+			quelle=eintrag["quelle"] if "quelle" in eintrag else previous_job
+			self.files_written[pfad]={'checksum': checksum, 'status': status, 'quelle': quelle}
+		logger.info("Starte nun "+str(len(self.request_gen))+" Requests.")	
 		for req in self.request_gen:
 			yield req
 
