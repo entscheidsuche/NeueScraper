@@ -12,12 +12,12 @@ NeueScraper/spiders/CH_BVGer.py
 NeueScraper/spiders/FR_Gerichte.py
 NeueScraper/spiders/JU_Gerichte.py
 NeueScraper/spiders/ZH_Obergericht.py
+NeueScraper/spiders/ZH_Sozialversicherungsgericht.py
 NeueScraper/spiders/ZH_Verwaltungsgericht.py
 NeueScraper/spiders/__init__.py
 NeueScraper/spiders/aargau.py
 NeueScraper/spiders/basis.py
 NeueScraper/spiders/tribuna.py
-NeueScraper/spiders/zurich_sozvers.py
 project.egg-info/PKG-INFO
 project.egg-info/SOURCES.txt
 project.egg-info/dependency_links.txt

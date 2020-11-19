@@ -5,11 +5,12 @@ import logging
 from scrapy.http.cookies import CookieJar
 import datetime
 from ..pipelines import PipelineHelper
+from NeueScraper.spiders.basis import BasisSpider
 
-class ZurichSozversSpider(scrapy.Spider):
-	name = 'zurich_sozvers'
-	KANTON = 'Zürich'
-	GERICHT ="Sozialversicherungsgericht"
+logger = logging.getLogger(__name__)
+
+class ZurichSozversSpider(BasisSpider):
+	name = 'ZH_Sozialversicherungsgericht'
 	MINIMUM_PAGE_LEN = 148
 	MAX_PAGES = 10000
 	SEARCH_PAGE_URL='https://chid003d.ideso.ch/c050018/svg/findexweb.nsf/suche.xsp'
@@ -75,12 +76,6 @@ class ZurichSozversSpider(scrapy.Spider):
 		super().__init__()
 		self.ab = ab
 		self.request_gen = self.request_generator()
-
-	def start_requests(self):
-		# treat the first request, subsequent ones are generated and processed inside the callback
-		for request in self.request_gen:
-			yield request
-		logging.info("Normal beendet")
 
 	def parse_searchform(self, response):
 		logging.info("parse_searchform response.status "+str(response.status))
@@ -148,14 +143,19 @@ class ZurichSozversSpider(scrapy.Spider):
 					logging.error("Falsche Anzahl Attribut: "+len(attribute)+" bei: "+entscheid.extract())
 				url=self.BASIS_URL+entscheid.xpath(".//a[@class='xspLink']/@href").get()
 				titel=entscheid.xpath(".//a[@class='xspLink']/text()").get()
+				vkammer=''
+				vgericht=''
+				num=attribute[0]
+				signatur, gericht, kammer=self.detect(vgericht, vkammer, num)
 				item = {
-					'Kanton': self.KANTON,
-					'Gericht' : self.GERICHT,
+					'Kanton': self.kanton_kurz,
+					'Gericht' : gericht,
 					'EDatum': attribute[1],
 					'Titel': titel,
-					'Num': attribute[0],
+					'Num': num,
 					'HTMLUrls': [url],
-					'PDFUrls': []
+					'PDFUrls': [],
+					'Signatur': signatur
 				}
 				request=scrapy.Request(url=url, callback=self.parse_page, errback=self.errback_httpbin, meta = {'item':item})
 				yield(request)
@@ -192,11 +192,8 @@ class ZurichSozversSpider(scrapy.Spider):
 		logging.info("parse_page Rohergebnis "+str(len(response.body))+" Zeichen")
 		logging.info("parse_page Rohergebnis: "+response.body_as_unicode())
 		item=response.meta['item']
-		path=PipelineHelper.file_path(response.url, response, self)
-
-		#yield store.persist_file(path, response.body_as_unicode(), info=self, meta=response.meta, headers=None)
-		#checksum = md5sum(buf)
 		item['html']=response.body_as_unicode()
+		item['HTMLFiles']=[{'url': item['HTMLUrls'][0]}]
 		yield(item)								
 
 

@@ -72,7 +72,7 @@ class MyWriterPipeline:
 						count_typ='neu'
 					else:
 						count_typ='identisch'
-					count_eintrag=count_group+" "+count_typ
+					count_eintrag=count_group+"_"+count_typ
 					if not s.group('signatur') in signaturen:
 						signaturen[s.group('signatur')]={'gesamt':0}
 					if not count_eintrag in signaturen[s.group('signatur')]:
