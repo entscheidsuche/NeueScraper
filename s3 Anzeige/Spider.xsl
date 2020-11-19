@@ -97,7 +97,7 @@
   </nav>
 	      <section class="resume-section p-3 p-lg-5 d-flex justify-content-center" id="urteile">
     	  <div class="w-100">
-    		<h3 class="mb-0">Spiderliste (<span id="total">0</span> Entscheide)</h3>
+    		<h3 class="mb-0">Spiderliste (<span id="total">0</span> Entscheide, <span id="neu">0</span> neu, <span id="changed">0</span> geändert, <span id="entfernt">0</span> entfernt)</h3>
     		<xsl:for-each select="/Spiderliste/Kanton">
     			<h3 class="mb-0">
 		   			<xsl:element name="img">
@@ -107,19 +107,28 @@
 	    			<xsl:value-of select="@Name"/>
 	    		</h3>
 					<xsl:for-each select="Spider">
+	    				<xsl:element name="img">
+    						<xsl:attribute name="id">Icon_<xsl:value-of select="@Name"/></xsl:attribute>
+    						<xsl:attribute name="src">/Icon_zu.png</xsl:attribute>
+							<xsl:attribute name="style">cursor: pointer</xsl:attribute>
+    						<xsl:attribute name="onclick">toggle('<xsl:value-of select="@Name"/>')</xsl:attribute>				
+						</xsl:element>						
 						<b>
-								<xsl:element name="a">
-									<xsl:attribute name="href">http://entscheidsuche.ch.s3-website.eu-west-3.amazonaws.com/scraper/<xsl:value-of select="@Name"/>/</xsl:attribute>
-									<xsl:value-of select="@Name"/>
-								</xsl:element>
-							</b>
-							<xsl:if test="Eintrag/Parameter">
-								<xsl:text> Parameter: </xsl:text><xsl:value-of select="Eintrag/Parameter"/>="<xsl:value-of select="Eintrag/Format"/>" <i>[<xsl:value-of select="Eintrag/Bedeutung"/>]</i>
-							</xsl:if>
-							<xsl:element name="div">
-								<xsl:attribute name="id"><xsl:value-of select="@Name"/></xsl:attribute>
-								???
-							</xsl:element>																		
+							<xsl:element name="a">
+								<xsl:attribute name="href">http://entscheidsuche.ch.s3-website.eu-west-3.amazonaws.com/scraper/<xsl:value-of select="@Name"/>/</xsl:attribute>
+								<xsl:value-of select="@Name"/>
+							</xsl:element>
+						</b>
+						<xsl:if test="Eintrag/Parameter">
+							<xsl:text> Parameter: </xsl:text><xsl:value-of select="Eintrag/Parameter"/>="<xsl:value-of select="Eintrag/Format"/>" <i>[<xsl:value-of select="Eintrag/Bedeutung"/>]</i>
+						</xsl:if>
+						<xsl:element name="div">
+							<xsl:attribute name="id"><xsl:value-of select="@Name"/></xsl:attribute>
+							???
+						</xsl:element>
+						<xsl:element name="div">
+							<xsl:attribute name="id">Body_<xsl:value-of select="@Name"/></xsl:attribute>
+							<xsl:attribute name="style">display:none</xsl:attribute>							
 							<table class="table">
 								<tbody>
 									<xsl:for-each select="Eintrag">
@@ -169,7 +178,7 @@
 									</xsl:for-each>
 								</tbody>
 							</table>
- 						
+ 						</xsl:element>
 					</xsl:for-each>
 				
 	    	</xsl:for-each>
