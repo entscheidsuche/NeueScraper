@@ -1,3 +1,22 @@
+
+function toggle(spider){
+	icon_element=document.getElementById("Icon_"+spider);
+	body_element=document.getElementById("Body_"+spider);
+	src_len=icon_element.src.length
+	if(icon_element.src.substring(src_len-11,src_len)=="Icon_zu.png"){
+		icon_element.src="/Icon_auf.png";
+		body_element.style="";
+	}
+	else{
+		icon_element.src="/Icon_zu.png";
+		body_element.style="display:none";
+	}
+
+}
+  
+
+
+
 function get_count(spider, eintrag){
 	var count={xml:0, html:0, pdf:0}
 	get_count_rec(spider, eintrag, count);
@@ -37,9 +56,16 @@ function get_count(spider, eintrag){
   	
   }
   
-  function set_count(eintrag, zahl){
-	var total_e=document.getElementById("total");
-	total_e.innerHTML=(zahl+parseInt(total_e.innerHTML,10)).toString();
+  function set_count(eintrag, gesamtzahl, neu, changed, entfernt){
+  	// alert(eintrag+"gesamt: "+gesamtzahl.toString()+", neu: "+neu.toString()+", geändert: "+changed.toString()+", entfernt: "+entfernt.toString());
+	var gesamtzahl_e=document.getElementById("total");
+	gesamtzahl_e.innerHTML=(gesamtzahl+parseInt(gesamtzahl_e.innerHTML,10)).toString();
+	var neu_e=document.getElementById("neu");
+	neu_e.innerHTML=(neu+parseInt(neu_e.innerHTML,10)).toString();
+	var changed_e=document.getElementById("changed");
+	changed_e.innerHTML=(changed+parseInt(changed_e.innerHTML,10)).toString();
+	var entfernt_e=document.getElementById("entfernt");
+	entfernt_e.innerHTML=(entfernt+parseInt(entfernt_e.innerHTML,10)).toString();
   }
   
   function set_info(eintrag, text){
@@ -49,26 +75,32 @@ function get_count(spider, eintrag){
 
   function setze_info_string(dict, eintrag, text, jobtyp){
   	var subtext="";
+  	var gesamt=0;
+  	var neu=0;
+  	var changed=0;
+  	var entfernt=0;
   	if('gesamt' in dict){
-		var identisch=0;
-		if("vorher identisch" in dict) identisch+=dict["vorher identisch"];
-		if("aktuell identisch" in dict) identisch+=dict["aktuell identisch"];
-		if(dict.gesamt==identisch){
-			subtext="keine Änderung";
+		var gesamtzahl=parseInt(dict.gesamt,10);
+		if("aktuell_neu" in dict){
+			subtext="neu: "+dict['aktuell_neu'];
+			neu=parseInt(dict['aktuell_neu'],10);
 		}
-		else{
-			if("aktuell neu" in dict) subtext="neu: "+dict['aktuell neu'];
-			if("aktuell aktualisiert" in dict){
-				if (subtext!="") subtext+=", ";
-				subtext+="aktualisiert: "+dict['aktuell aktualisiert'];
-			}
-			if("aktuell entfernt" in dict){
-				if (subtext!="") subtext+=", ";
-				subtext+="entfernt: "+dict['aktuell entfernt'];
-			}
+		if("aktuell_aktualisiert" in dict){
+			if (subtext!="") subtext+=", ";
+			subtext+="aktualisiert: "+dict['aktuell_aktualisiert'];
+			changed=parseInt(dict['aktuell_aktualisiert'],10)
+		}
+		if("aktuell_entfernt" in dict){
+			if (subtext!="") subtext+=", ";
+			subtext+="entfernt: "+dict['aktuell_entfernt'];
+			entfernt=parseInt(dict['aktuell entfernt'],10)				
+		}
+		if(subtext==""){
+			subtext="keine aktuelle Änderung";
 		}
 		if (subtext!="") subtext="<br><small>"+subtext+"</small>";
 		set_info(eintrag, dict.gesamt+" "+text+subtext);
+		if (eintrag.substring(3).includes("_")) set_count(eintrag, gesamtzahl, neu, changed, entfernt);
   	}
   }
 
@@ -79,9 +111,8 @@ function get_count(spider, eintrag){
   	if ("jobtyp" in data) jobtyp=data.jobtyp
   	if (jobtyp=="komplett") text+="Komplett gelesen am "
   	else text+="Update am "
-  	text += data.time + "</small>";
+  	text += data.time + " (UTC)</small>";
 	if ('signaturen' in data && 'gesamt' in data && 'gesamt' in data.gesamt){
-		set_count(spider,parseInt(data.gesamt.gesamt,10));
 		setze_info_string(data.gesamt, spider,text,jobtyp);
 		for (s in data.signaturen){
 			setze_info_string(data.signaturen[s],s,text,jobtyp);
@@ -114,5 +145,4 @@ function get_count(spider, eintrag){
    		xhttp.open("GET", url, true);
 		xhttp.send();
   	}
-  
-  
+
