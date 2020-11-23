@@ -63,16 +63,20 @@ class BasisSpider(scrapy.Spider):
 					else:
 						self.gerichte[spider]=[row]
 						
-		#XML daraus machen
+		#XML und ein vereinfachtes JSON daraus machen
 		root_e=etree.Element('Spiderliste')
 		kantone={}
+		json_kantone={}
 		for spidername in self.gerichte:
 			spidereintrag=self.gerichte[spidername]
 			kantonskurz=spidereintrag[0]['Signatur'][:2]
 			if kantonskurz in self.kantone_de:
 				if kantonskurz in kantone:
+					json_kanton=json_kantone[kantonskurz]				
 					kanton_e=kantone[kantonskurz]
 				else:
+					json_kanton={'de': self.kantone_de[kantonskurz], 'fr': self.kantone_fr[kantonskurz], 'it': self.kantone_it[kantonskurz], 'gerichte': {}}
+					json_kantone[kantonskurz]=json_kanton
 					kanton_e=etree.SubElement(root_e,'Kanton')
 					kanton_e.set('Name',self.kantone_de[kantonskurz])
 					kanton_e.set('Kurz',kantonskurz.lower())
@@ -80,8 +84,46 @@ class BasisSpider(scrapy.Spider):
 				spider_e=etree.SubElement(kanton_e,'Spider')
 				spider_e.set('Name', spidername)
 				for signaturreihe in spidereintrag:
+					signatur=signaturreihe['Signatur']
 					signatur_e=etree.SubElement(spider_e,'Eintrag')
-					signatur_e.set('Name', signaturreihe['Signatur'])
+					signatur_e.set('Name', signatur)
+					# JSON-Eintrag weitermachen
+					if not signaturreihe['Test'].lower=='test':
+						teile=signatur.split('_')
+						gerichtssignatur=teile[0]+"_"+teile[1]
+						if not gerichtssignatur in json_kanton['gerichte']:
+							gerichtsname_de=signaturreihe['Stufe 2 DE']
+							gerichtsname_fr=signaturreihe['Stufe 2 FR']
+							gerichtsname_it=signaturreihe['Stufe 2 IT']
+							if gerichtsname_de=="":
+								if gerichtsname_fr=="":
+									gerichtsname_de=gerichtsname_it
+								else:
+									gerichtsname_de=gerichtsname_fr
+							if gerichtsname_fr=="":
+								gerichtsname_fr=gerichtsname_de
+							if gerichtsname_it=="":
+								gerichtsname_it=gerichtsname_de
+							json_gericht={'de': gerichtsname_de, 'fr': gerichtsname_fr, 'it': gerichtsname_it, 'kammern': {}}
+							json_kanton['gerichte'][gerichtssignatur]=json_gericht
+						else:
+							json_gericht=json_kanton['gerichte'][gerichtssignatur]
+						if not signatur in json_gericht:
+							kammername_de=signaturreihe['Stufe 3 DE']
+							kammername_fr=signaturreihe['Stufe 3 FR']
+							kammername_it=signaturreihe['Stufe 3 IT']
+							if kammername_de=="":
+								if kammername_fr=="":
+									kammername_de=kammername_it
+								else:
+									kammername_de=kammername_fr
+							if kammername_fr=="":
+								kammername_fr=kammername_de
+							if kammername_it=="":
+								kammername_it=kammername_de
+							json_kammer={'de': kammername_de, 'fr': kammername_fr, 'it': kammername_it}
+							json_gericht['kammern'][signatur]=json_kammer
+					
 					for spalte in signaturreihe:
 						wert=signaturreihe[spalte]
 						if(wert):
@@ -94,7 +136,20 @@ class BasisSpider(scrapy.Spider):
 		xml_content = xml_content+str(etree.tostring(root_e, pretty_print=True),"ascii")
 		item= { 'Spiderliste': xml_content }
 		yield(item)
-		#CSV auf S3 ablegen, da Google eine CORS-Exception gibt
+		
+		# JSON um default-Werte ergänzen:
+		for k in json_kantone:
+			if not k+"_XX" in json_kantone[k]['gerichte']:
+				json_kantone[k]['gerichte'][k+"_XX"]={'de': "unbekanntes Gericht", 'fr': "tribunal inconnu", "it": "corte sconosciuta",
+					'kammern':{ k+"_XX_001": { 'de': "", 'fr':"", 'it': ""}}}
+			for g in json_kantone[k]['gerichte']:
+				# Nur dann Fallback-Kammer reinnehmen, wenn es mehr als eine Kammer gibt.
+				if not g+"_999" in json_kantone[k]['gerichte'][g]['kammern'] and len(json_kantone[k]['gerichte'][g]['kammern'])>1:
+					json_kantone[k]['gerichte'][g]['kammern'][g+'_999']={'de': "andere", 'fr': "autres", "it": "altro"}
+		
+		json_content=json.dumps(json_kantone)
+		item= { 'Facetten': json_content}
+		yield(item)
 						
 		if self.name in self.gerichte:
 			if 'Signatur' in self.gerichte[self.name][0]:
@@ -177,7 +232,7 @@ class BasisSpider(scrapy.Spider):
 					matching=self.gerichte[self.name][i]['Matching'].split("|")
 					for m in matching:
 						if m in self.kammerwahl:
-							logger.error("Doppeltes Matching! Matchkey '"+m+"' bereits für "+str(self.kammerwahl[m])+"["+self.gerichte[self.name][self.kammerwahl[m]]['Signatur']+"] belegt und nun nochmal für "+str(i)+"["+self.gerichte[self-name][i]['Signatur']+"]!")
+							logger.error("Doppeltes Matching! Matchkey '"+m+"' bereits für "+str(self.kammerwahl[m])+"["+self.gerichte[self.name][self.kammerwahl[m]]['Signatur']+"] belegt und nun nochmal für "+str(i)+"["+self.gerichte[self.name][i]['Signatur']+"]!")
 						else:
 							self.kammerwahl[m]=i
 				else:
@@ -246,20 +301,32 @@ class BasisSpider(scrapy.Spider):
 			yield req
 
 	def detect(self,vgericht,vkammer,num):
+		logger.info(num+": vgericht='"+vgericht+"', vkammer='"+vkammer+"'")
 		if self.mehrfachspider:
 			kammermatch=-1
+			matchstring=''
 			for m in self.kammerwahl:
 				i=self.kammerwahl[m]
 				tests=m.split("@")
 				if self.zweite_ebene_fix or (not vgericht) or len(tests)==1 or tests[1] in vgericht: # Entweder keine Gerichtsangabe oder Match ok
 					if (not vkammer) or not(tests[0]) or tests[0] in vkammer: 
-						logger.debug("Match für "+str(i)+": "+m+" Eintrag "+self.gerichte[self.name][i]['Signatur'] )
+						logger.info("Match für "+str(i)+": "+m+" Eintrag "+self.gerichte[self.name][i]['Signatur'] )
 						if kammermatch==-1:
 							kammermatch=i
+							matchstring=m
 						else:
-							logger.error(num+" mit "+vkammer+" hat doppelten match. Einmal mit Nummer "+str(kammermatch)+" ["+self.gerichte[self.name][kammermatch]['Signatur']+"] und dann noch mit "+str(i)+" ["+self.gerichte[self.name][i]['Signatur']+"]")
-							kammermatch=-1
-							break
+							logger.info(num+" mit "+vkammer+"@"+vgericht+" hat doppelten match. Einmal mit Nummer "+str(kammermatch)+" ["+self.gerichte[self.name][kammermatch]['Signatur']+"] und dann noch mit "+str(i)+" ["+self.gerichte[self.name][i]['Signatur']+"]")
+							#längeren Match wählen
+							if m<matchstring:
+								logger.info(matchstring+" ist länger.")
+							elif m>matchstring:
+								kammermatch=i
+								matchstring=m
+								logger.info(matchstring+" ist länger.")
+							else:
+								logger.error("Matchstrings "+m+" und "+matchstring+" gleichlang")											
+								kammermatch=-1
+								break
 			if kammermatch==-1:
 				if self.kammerfallback is not None:
 					kammermatch=self.kammerfallback
