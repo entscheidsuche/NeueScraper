@@ -119,6 +119,9 @@
 								<xsl:value-of select="@Name"/>
 							</xsl:element>
 						</b>
+						<xsl:if test="Eintrag/Test">
+							<xsl:text> (in Entwicklung)</xsl:text>
+						</xsl:if>						
 						<xsl:if test="Eintrag/Parameter">
 							<xsl:text> Parameter: </xsl:text><xsl:value-of select="Eintrag/Parameter"/>="<xsl:value-of select="Eintrag/Format"/>" <i>[<xsl:value-of select="Eintrag/Bedeutung"/>]</i>
 						</xsl:if>
