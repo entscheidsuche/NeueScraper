@@ -25,7 +25,7 @@ from lxml import etree
 import datetime
 
 filenamechars=re.compile("[^-a-zA-Z0-9]")
-filenameparts=re.compile(r'/(?P<signatur>[^_]+_[^_]+_[^_]+)[^\.]+\.(?P<endung>\w+)')
+filenameparts=re.compile(r'/(?P<stamm>(?P<signatur>[^_]+_[^_]+_[^_]+)[^\.])+\.(?P<endung>\w+)')
 logger = logging.getLogger(__name__)
 
 from urllib.parse import urlparse
@@ -46,15 +46,33 @@ class MyWriterPipeline:
 	def close_spider(self,spider):
 		logger.info("pipeline open")
 		datestring=datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-		pfad=spider.name+"/Job_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
+		pfad_job=spider.name+"/Job_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
+		pfad_index=spider.name+"/Index_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
 		signaturen={}
-		job_typ="komplett" if spider.ab is None else "update"
+		if spider.ab:
+			job_typ="update"
+		else:
+			vorher=len(list(filter(lambda x:spider.previous_run['dateien'][x]['status'] in ['update',"anders_wieder_da","neu","identisch"], spider.previous_run['dateien']))) if 'dateien' in spider.previous_run else 0
+			if vorher>0:
+				gelesen=len(list(filter(lambda x:spider.files_written[x]['status'] in ['update',"anders_wieder_da","neu","identisch"] and not 'quelle' in spider.files_written[x], spider.files_written)))
+				prozentsatz=gelesen/vorher*100
+				if prozentsatz > 95:
+					job_typ="komplett"
+					logging.info("vorher {} Dateien, nun {} Dateien gelesen {:.2f}%".format(vorher, gelesen, prozentsatz))
+				else:
+					job_typ="unvollständig"
+					logging.error("vorher {} Dateien, nun {} Dateien gelesen {:.2f}%".format(vorher, gelesen, prozentsatz))
+			else:
+				job_typ="neu"
+				logging.info("keine Dokumente eines vorherigen Laufes gefunden.")
+
 		gesamt={'gesamt':0}
+		to_index={}
 		for f in spider.files_written:
 			# neu nicht mehr vorhandene Inhalte markieren
-			if spider.ab is None and 'quelle' in spider.files_written[f] and not spider.files_written[f]['status']=="nicht_mehr_da":
+			if job_typ=="komplett" and 'quelle' in spider.files_written[f] and not spider.files_written[f]['status']=="nicht_mehr_da":
 				spider.files_written[f]['status']='nicht_mehr_da'
-				del spider.files_written[f][quelle]
+				del spider.files_written[f]['quelle']
 			s=filenameparts.search(f)
 			if s is None:
 				logging.error("Konnte Dateinamen "+f+" nicht aufteilen.")
@@ -64,14 +82,22 @@ class MyWriterPipeline:
 						count_group='vorher'
 					else:
 						count_group='aktuell'
+					
 					if spider.files_written[f]['status']=='nicht_mehr_da':
 						count_typ='entfernt'
-					elif spider.files_written[f]['status'] in ['update', "anders_wieder_da"]:
+						if count_group=='aktuell':
+							to_index[f]="delete"
+					elif spider.files_written[f]['status'] in ['update']:
 						count_typ='aktualisiert'
-					elif spider.files_written[f]['status'] in ['neu']:
+						if count_group=='aktuell':
+							to_index[f]="update"
+					elif spider.files_written[f]['status'] in ['neu', "anders_wieder_da"]:
 						count_typ='neu'
+						if count_group=='aktuell':
+							to_index[f]="new"
 					else:
 						count_typ='identisch'
+									
 					count_eintrag=count_group+"_"+count_typ
 					if not s.group('signatur') in signaturen:
 						signaturen[s.group('signatur')]={'gesamt':0}
@@ -88,7 +114,11 @@ class MyWriterPipeline:
 						gesamt['gesamt']=gesamt['gesamt']+1			
 		files_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "dateien": spider.files_written, 'signaturen': signaturen, 'gesamt': gesamt }
 		json_content=json.dumps(files_log)
-		MyS3FilesStore.shared_store.persist_file(pfad, BytesIO(json_content.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
+		MyS3FilesStore.shared_store.persist_file(pfad_job, BytesIO(json_content.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
+
+		index_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "actions": to_index}
+		json_content=json.dumps(index_log)
+		MyS3FilesStore.shared_store.persist_file(pfad_index, BytesIO(json_content.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
 
 	def process_item(self, item, spider):
 		logger.info("pipeline item")
@@ -104,6 +134,12 @@ class MyWriterPipeline:
 			upload_file_content=item['Spiderliste']
 			contentType='text/xml'
 			logFlag=False
+		elif 'Facetten' in item:
+			upload_file_key="Facetten.json"
+			upload_file_content=item['Facetten']
+			contentType='application/json'
+			logFlag=False
+		
 		else:
 			#muss ich das HTML noch separat abspeichern?
 			if 'html' in item and item['html'] and 'HTMLFiles' in item and item['HTMLFiles']:
@@ -406,8 +442,8 @@ class PipelineHelper:
 			PipelineHelper.xml_add_element(source,'PdfUrl',item['PdfUrl'][0])
 		if 'HtmlUrl' in item:
 			PipelineHelper.xml_add_element(source,'HtmlUrl',item['HtmlUrl'][0])
-		if 'Raw' in item:
-			PipelineHelper.xml_add_element(source,'Raw',etree.CDATA(item['Raw'].replace("<","(").replace(">",")")))
+#		if 'Raw' in item:
+#			PipelineHelper.xml_add_element(source,'Raw',etree.CDATA(item['Raw'].replace("<","(").replace(">",")")))
 	
 		xml_content = '<?xml version="1.0" encoding="UTF-8"?><?xml-stylesheet type="text/xsl" href="/Entscheid.xsl"?>\n'
 		xml_content = xml_content+str(etree.tostring(root, pretty_print=True),"ascii")
