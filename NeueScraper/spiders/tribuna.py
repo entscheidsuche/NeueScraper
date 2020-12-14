@@ -19,7 +19,7 @@ class TribunaSpider(BasisSpider):
 	page_nr=0
 	trefferzahl=0
 	ENCRYPTED=False
-	name = 'Tribuna, virtuell'
+	#name = 'Tribuna, virtuell'
 	
 	def get_next_request(self):
 		logger.info("Hole Treffer Nr. "+str(self.page_nr))

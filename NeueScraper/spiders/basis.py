@@ -9,28 +9,33 @@ import os
 import json
 import re
 from lxml import etree
+import copy
 
 from NeueScraper.pipelines import MyFilesPipeline
 from NeueScraper.pipelines import PipelineHelper
 
-elementchars=re.compile("[^-a-zA-Z0-9_]")
-elementre=re.compile("^[a-zA-Z][-a-zA-Z0-9_]+$")
-
 logger = logging.getLogger(__name__)
 
 class BasisSpider(scrapy.Spider):
-	name = 'Gerichtsdaten'
+	elementchars=re.compile("[^-a-zA-Z0-9_]")
+	elementre=re.compile("^[a-zA-Z][-a-zA-Z0-9_]+$")
+	reDatum=re.compile("(?P<Tag>\d\d?)\.\s?(?P<Monat>\d\d?)\.\s?(?P<Jahr>(?:19|20)\d\d)")
+	reDatumOk=re.compile("(?:19|20)\d\d-\d\d-\d\d")
+
+	#name = 'Gerichtsdaten'
 	kantone_de = {'CH':'Eidgenossenschaft','AG':'Aargau','AI':'Appenzell Innerrhoden','AR':'Appenzell Ausserrhoden','BE':'Bern','BL':'Basel-Land','BS':'Basel-Stadt','FR':'Freiburg','GE':'Genf','GL':'Glarus','GR':'Graubünden','JU':'Jura','LU':'Luzern','NE':'Neuenburg','NW':'Nidwalden','OW':'Obwalden','SG':'St.Gallen','SH':'Schaffhausen','SO':'Solothurn','SZ':'Schwyz','TG':'Thurgau','TI':'Tessin','UR':'Uri','VD':'Waadtland','VS':'Wallis','ZG':'Zug','ZH':'Zürich'}
 	kantone_fr = {'CH':'Conféderation','AG':'Argovie','AI':'Appenzell Rhodes-Intérieures','AR':'Appenzell Rhodes-Extérieures','BE':'Berne','BL':'Bâle-Campagne','BS':'Bâle-Ville','FR':'Fribourg','GE':'Genève','GL':'Glaris','GR':'Grisons','JU':'Jura','LU':'Lucerne','NE':'Neuchâtel','NW':'Nidwald','OW':'Obwald','SG':'Saint-Gall','SH':'Schaffhouse','SO':'Soleure','SZ':'Schwytz','TG':'Thurgovie','TI':'Tessin','UR':'Uri','VD':'Vaud','VS':'Valais','ZG':'Zoug','ZH':'Zurich'}
 	kantone_it = {'CH':'Confederazione','AG':'Argovia','AI':'Appenzello Interno','AR':'Appenzello Interno','BE':'Berna','BL':'Basilea Campagna','BS':'Basilea Città','FR':'Friburgo','GE':'Ginevra','GL':'Glarona','GR':'Grigioni','JU':'Giura','LU':'Lucerna','NE':'Neuchâtel','NW':'Nidvaldo','OW':'Obvaldo','SG':'San Gallo','SH':'Sciaffusa','SO':'Soletta','SZ':'Svitto','TG':'Turgovia','TI':'Ticino','UR':'Uri','VD':'Vaud','VS':'Vallese','ZG':'Zugo','ZH':'Zurigo'}
 	gerichte = {}
 	kanton= {}
-	CSV_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vR2sZY8Op7cLChL6Hu0aDZmbOrmX_UPtyxz86W-oeyuCemBs0poqxC-EU33i-JhH9PQ7SMqYOnIw5ou/pub?gid=1220663602&single=true&output=csv'
+	CSV_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vR2sZY8Op7cLChL6Hu0aDZmbOrmX_UPtyxz86W-oeyuCemBs0poqxC-EU33i-JhH9PQ7SMqYOnIw5ou/pub?output=csv'
+	# CSV_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vR2sZY8Op7cLChL6Hu0aDZmbOrmX_UPtyxz86W-oeyuCemBs0poqxC-EU33i-JhH9PQ7SMqYOnIw5ou/pub?gid=1220663602&single=true&output=csv'
 	JOBS_HOST='http://entscheidsuche.ch.s3.amazonaws.com/'
 	JOBS_URL=JOBS_HOST+'?list-type=2&prefix=scraper%2F'
 	kammerfallback=None
 	files_written ={}
 	previous_run={}
+	previous_job=None
 	ab=None
 
 	def __init__(self):
@@ -69,6 +74,7 @@ class BasisSpider(scrapy.Spider):
 		json_kantone={}
 		for spidername in self.gerichte:
 			spidereintrag=self.gerichte[spidername]
+			logger.info("Spider "+spidername+" hat "+str(len(spidereintrag))+ " Spidereinträge")
 			kantonskurz=spidereintrag[0]['Signatur'][:2]
 			if kantonskurz in self.kantone_de:
 				if kantonskurz in kantone:
@@ -127,8 +133,8 @@ class BasisSpider(scrapy.Spider):
 					for spalte in signaturreihe:
 						wert=signaturreihe[spalte]
 						if(wert):
-							spaltenname=elementchars.sub('_',spalte)
-							if not elementre.match(spaltenname):
+							spaltenname=self.elementchars.sub('_',spalte)
+							if not self.elementre.match(spaltenname):
 								spaltenname='X_'+spaltenname
 							spalte_e=etree.SubElement(signatur_e,spaltenname)
 							spalte_e.text=wert
@@ -247,7 +253,7 @@ class BasisSpider(scrapy.Spider):
 		
 		if self.kammerfallback is None and self.mehrfachspider: #Wenn kein Default spider angegeben, baue selbst einen aus dem Eintrag 0
 			#kein Kammerfallback gesetzt aber Mehrfachspider. Generiere daher Kammerfallback
-			row=self.gerichte[self.name][0]
+			row=copy.deepcopy(self.gerichte[self.name][0])
 			row['Signatur']=row['Signatur'].rpartition("_")[0]+"_999"
 			row['Matching']=''
 			row['Stufe 3 DE']='Sonstige Kammer'
@@ -286,17 +292,18 @@ class BasisSpider(scrapy.Spider):
 	def parse_dateiliste(self, response):
 		logger.info("parse_dateiliste response.status "+str(response.status))
 		logger.info("parse_dateiliste Rohergebnis "+str(len(response.body))+" Zeichen")
-		logger.debug("parse_dateiliste Rohergebnis: "+response.body_as_unicode())
+		logger.debug("parse_dateiliste Rohergebnis: "+response.body_as_unicode()[:10000])
 		self.previous_run=json.loads(response.body_as_unicode())
 		# Wird nur eine Teilabfrage gemacht, die Daten der vorherigen Abfrage übernehmen und mit der Quelle kennzeichnen
-		previous_job=self.previous_run["job"]
+		self.previous_job=self.previous_run["job"]
 		for pfad in self.previous_run["dateien"]:
 			eintrag=self.previous_run["dateien"][pfad]
 			checksum=eintrag['checksum']
 			status=eintrag["status"]
-			quelle=eintrag["quelle"] if "quelle" in eintrag else previous_job
-			self.files_written[pfad]={'checksum': checksum, 'status': status, 'quelle': quelle}
-		logger.info("Starte nun "+str(len(self.request_gen))+" Requests.")	
+			quelle=eintrag["quelle"] if "quelle" in eintrag else self.previous_job
+			last_change=eintrag["last_change"] if "last_change" in eintrag else self.previous_job
+			self.files_written[pfad]={'checksum': checksum, 'status': status, 'quelle': quelle, 'last_change': last_change}
+		logger.info("Starte nun "+str(len(self.request_gen))+" Requests.")
 		for req in self.request_gen:
 			yield req
 
@@ -339,17 +346,50 @@ class BasisSpider(scrapy.Spider):
 			gericht=self.gerichte[self.name][kammermatch]['Stufe 2 DE']
 		elif self.gerichte[self.name][kammermatch]['Stufe 2 FR']:
 			gericht=self.gerichte[self.name][kammermatch]['Stufe 2 FR']
-		elif self.gerichte[self.name][kammermatch]['Stufe 2 FR']:
+		elif self.gerichte[self.name][kammermatch]['Stufe 2 IT']:
 			gericht=self.gerichte[self.name][kammermatch]['Stufe 2 IT']
 		kammer=''
 		if self.gerichte[self.name][kammermatch]['Stufe 3 DE']:
 			kammer=self.gerichte[self.name][kammermatch]['Stufe 3 DE']
 		elif self.gerichte[self.name][kammermatch]['Stufe 3 FR']:
 			kammer=self.gerichte[self.name][kammermatch]['Stufe 3 FR']
-		elif self.gerichte[self.name][kammermatch]['Stufe 3 FR']:
+		elif self.gerichte[self.name][kammermatch]['Stufe 3 IT']:
 			kammer=self.gerichte[self.name][kammermatch]['Stufe 3 IT']
 		return signatur,gericht,kammer	
 		
+	def detect_by_signatur(self,signatur):
+		eintrag=self.gerichte[self.name]
+		for e in eintrag:
+			if e['Signatur']==signatur:
+				gericht=''
+				if e['Stufe 2 DE']:
+					gericht=e['Stufe 2 DE']
+				elif e['Stufe 2 FR']:
+					gericht=e['Stufe 2 FR']
+				elif e['Stufe 2 IT']:
+					gericht=e['Stufe 2 IT']
+				kammer=''
+				if e['Stufe 3 DE']:
+					kammer=e['Stufe 3 DE']
+				elif e['Stufe 3 FR']:
+					kammer=e['Stufe 3 FR']
+				elif e['Stufe 3 IT']:
+					kammer=e['Stufe 3 IT']
+				return gericht, kammer
+		logger.error("Signatur "+signatur+" nicht in "+str(len(eintrag))+" Einträge gefunden: "+",".join([e['Signatur'] for e in eintrag]))
+		# Hier kommt nichts zurück, daher der Fehler.		
+
+	def norm_datum(self,datum):
+		if not self.reDatumOk.match(datum):
+			dat=self.reDatum.search(datum)
+			if dat:
+				neudat="{}-{:0>2}-{:0>2}".format(dat.group('Jahr'),dat.group('Monat'),dat.group('Tag'))
+				logger.info("Konvertiere "+datum+" in "+neudat)
+			else:
+				logger.error("unbekanntes Datumsformat")
+				neudat="nodate"
+			datum=neudat
+		return datum
 
 
 	def errback_httpbin(self, failure):

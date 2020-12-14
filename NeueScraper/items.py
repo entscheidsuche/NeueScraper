@@ -25,6 +25,7 @@ class NeuescraperItem(scrapy.Item):
     Leitsatz = scrapy.Field()
     PDatum = scrapy.Field()
     Rechtsgebiet = scrapy.Field()
+    Normen = scrapy.Field()
     DocID = scrapy.Field()
     PDFUrls = scrapy.Field()
     HTMLUrls = scrapy.Field()
@@ -37,6 +38,7 @@ class NeuescraperItem(scrapy.Item):
     Sammlung = scrapy.Field()
     LeitsatzKurz = scrapy.Field()
     Pos = scrapy.Field()
+    html = scrapy.Field()
 
     # pass
 

@@ -142,7 +142,7 @@ class CH_BVGer(BasisSpider):
 				item['PDFUrls']=[self.PDF_BASE+item['PDFUrl']]
 				del item['PDFUrl']
 				Pos=item['Pos']
-				item['EDatum']=item['EDatum'][6:]+"-"+item['EDatum'][3:5]+"-"+item['EDatum'][:2]
+				item['EDatum']=self.norm_datum(item['EDatum'])
 				vkammer=item['VKammer']
 				Leitsatz_kurz=item['LeitsatzKurz']
 				vgericht=""

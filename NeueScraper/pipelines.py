@@ -25,7 +25,7 @@ from lxml import etree
 import datetime
 
 filenamechars=re.compile("[^-a-zA-Z0-9]")
-filenameparts=re.compile(r'/(?P<stamm>(?P<signatur>[^_]+_[^_]+_[^_]+)[^\.])+\.(?P<endung>\w+)')
+filenameparts=re.compile(r'/(?P<stamm>(?P<signatur>[^_]+_[^_]+_[^_]+)[^\.]+)\.(?P<endung>\w+)')
 logger = logging.getLogger(__name__)
 
 from urllib.parse import urlparse
@@ -58,10 +58,10 @@ class MyWriterPipeline:
 				prozentsatz=gelesen/vorher*100
 				if prozentsatz > 95:
 					job_typ="komplett"
-					logging.info("vorher {} Dateien, nun {} Dateien gelesen {:.2f}%".format(vorher, gelesen, prozentsatz))
+					logger.info("vorher {} Dateien, nun {} Dateien gelesen {:.2f}%".format(vorher, gelesen, prozentsatz))
 				else:
 					job_typ="unvollständig"
-					logging.error("vorher {} Dateien, nun {} Dateien gelesen {:.2f}%".format(vorher, gelesen, prozentsatz))
+					logger.error("vorher {} Dateien, nun {} Dateien gelesen {:.2f}%".format(vorher, gelesen, prozentsatz))
 			else:
 				job_typ="neu"
 				logging.info("keine Dokumente eines vorherigen Laufes gefunden.")
@@ -73,6 +73,8 @@ class MyWriterPipeline:
 			if job_typ=="komplett" and 'quelle' in spider.files_written[f] and not spider.files_written[f]['status']=="nicht_mehr_da":
 				spider.files_written[f]['status']='nicht_mehr_da'
 				del spider.files_written[f]['quelle']
+				if 'last_change' in spider.files_written[f]:
+					del spider.files_written[f]['last_change']			
 			s=filenameparts.search(f)
 			if s is None:
 				logging.error("Konnte Dateinamen "+f+" nicht aufteilen.")
@@ -116,7 +118,7 @@ class MyWriterPipeline:
 		json_content=json.dumps(files_log)
 		MyS3FilesStore.shared_store.persist_file(pfad_job, BytesIO(json_content.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
 
-		index_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "actions": to_index}
+		index_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "actions": to_index, 'signaturen': signaturen, 'gesamt': gesamt }
 		json_content=json.dumps(index_log)
 		MyS3FilesStore.shared_store.persist_file(pfad_index, BytesIO(json_content.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
 
@@ -244,24 +246,30 @@ class MyS3FilesStore(S3FilesStore):
 		existiert_bereits=False
 		if LogFlag and spider:
 			neustatus='neu'
+			last_change=None
 			if spider.previous_run:
 				if path in spider.previous_run['dateien']:
 					oldfile=spider.previous_run['dateien'][path]
 					if 'status' in oldfile and 'checksum' in oldfile:
 						altstatus=oldfile['status']
 						altchecksum=oldfile['checksum']
+						altlast_change=oldfile['last_change'] if 'last_change' in oldfile else None
 						if altchecksum==checksum:
 							if altstatus == "nicht_mehr_da":
 								neustatus="identisch_wieder_da"
 							else:
 								neustatus="identisch"
+								last_change=altlast_change if altlast_change else spider.previous_job
 							existiert_bereits=True
 						else:
 							if altstatus =="nicht_mehr_da":
 								neustatus="anders_wieder_da"
 							else:
 								neustatus="update"
-			spider.files_written[path]={'checksum': checksum, "status": neustatus}
+			if last_change:
+				spider.files_written[path]={'checksum': checksum, "status": neustatus, "last_change": last_change}
+			else:
+				spider.files_written[path]={'checksum': checksum, "status": neustatus}
 		if not existiert_bereits:
 			if self.is_botocore:
 				logger.debug("pf is_botocore")
