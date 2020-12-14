@@ -15,7 +15,7 @@ function toggle(spider){
 }
   
 
-
+// Alte Funktion für S3
 
 function get_count(spider, eintrag){
 	var count={xml:0, html:0, pdf:0}
@@ -57,7 +57,7 @@ function get_count(spider, eintrag){
   }
   
   function set_count(eintrag, gesamtzahl, neu, changed, entfernt){
-  	// alert(eintrag+"gesamt: "+gesamtzahl.toString()+", neu: "+neu.toString()+", geändert: "+changed.toString()+", entfernt: "+entfernt.toString());
+  	// alert(eintrag+" gesamt: "+gesamtzahl.toString()+", neu: "+neu.toString()+", geändert: "+changed.toString()+", entfernt: "+entfernt.toString());
 	var gesamtzahl_e=document.getElementById("total");
 	gesamtzahl_e.innerHTML=(gesamtzahl+parseInt(gesamtzahl_e.innerHTML,10)).toString();
 	var neu_e=document.getElementById("neu");
@@ -80,20 +80,20 @@ function get_count(spider, eintrag){
   	var changed=0;
   	var entfernt=0;
   	if('gesamt' in dict){
-		var gesamtzahl=parseInt(dict.gesamt,10);
+		var gesamtzahl=dict.gesamt;
 		if("aktuell_neu" in dict){
 			subtext="neu: "+dict['aktuell_neu'];
-			neu=parseInt(dict['aktuell_neu'],10);
+			neu=dict['aktuell_neu'];
 		}
 		if("aktuell_aktualisiert" in dict){
 			if (subtext!="") subtext+=", ";
 			subtext+="aktualisiert: "+dict['aktuell_aktualisiert'];
-			changed=parseInt(dict['aktuell_aktualisiert'],10)
+			changed=dict['aktuell_aktualisiert']
 		}
 		if("aktuell_entfernt" in dict){
 			if (subtext!="") subtext+=", ";
 			subtext+="entfernt: "+dict['aktuell_entfernt'];
-			entfernt=parseInt(dict['aktuell entfernt'],10)				
+			entfernt=dict['aktuell_entfernt'];
 		}
 		if(subtext==""){
 			subtext="keine aktuelle Änderung";
@@ -113,7 +113,7 @@ function get_count(spider, eintrag){
   	else text+="Update am "
   	text += data.time + " (UTC)</small>";
 	if ('signaturen' in data && 'gesamt' in data && 'gesamt' in data.gesamt){
-		setze_info_string(data.gesamt, spider,text,jobtyp);
+		setze_info_string(data.gesamt,spider,text,jobtyp);
 		for (s in data.signaturen){
 			setze_info_string(data.signaturen[s],s,text,jobtyp);
 		}
@@ -122,7 +122,8 @@ function get_count(spider, eintrag){
   
  
   function get_count_json(spider){
-	  	var url='http://entscheidsuche.ch.s3.amazonaws.com/?list-type=2&prefix=scraper%2F'+spider+'%2FJob_';
+  		// Erst einmal die Jobliste aus S3 holen
+	  	var url='http://entscheidsuche.ch.s3.amazonaws.com/?list-type=2&prefix=scraper%2F'+spider+'%2FIndex_';
   		var xhttp = new XMLHttpRequest();
   			xhttp.onreadystatechange = function(_spider=spider) {
     			if (this.readyState == 4 && this.status == 200) {
@@ -135,6 +136,7 @@ function get_count(spider, eintrag){
 	    					runs.push(dateien[i].innerHTML);
 	    				}
 	    				runs.sort();
+	    				// Nun die neueste Job-Datei verarbeiten
 	    				var filename=runs[runs.length-1];
 	    				fetch('http://entscheidsuche.ch.s3.amazonaws.com/'+filename)
 	    					.then( response => response.json())
