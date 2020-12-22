@@ -333,7 +333,10 @@ class PipelineHelper:
 			logger.debug('Geschäftsnummer: '+num)
 			edatum=item['EDatum']
 			if edatum is None:
-				edatum='nodate'
+				if 'PDatum' in item and item['PDatum'] is not None:
+					edatum=item['PDatum']
+				else:
+					edatum='nodate'
 			filename=filenamechars.sub('-',num)+"_"+filenamechars.sub('-',edatum)
 			dir = "undefined"
 			if spider:
@@ -347,8 +350,17 @@ class PipelineHelper:
 			exc_type, exc_value, exc_traceback = sys.exc_info()
 			logger.error("Unexpected error: " + repr(traceback.format_exception(exc_type, exc_value, exc_traceback)))
 			raise
-			
-	
+	@staticmethod	
+	def NC(string, replace="", info=None, warning=None, error=None):
+		if string is None:
+			if info:
+				logger.info(info+ " [None found]")
+			if warning:
+				logger.warning(warning+ " [None found]")
+			if error:
+				logger.error(error+ " [None found]")
+			string=replace
+		return string
 			
 	def get_meta(self, item, spider,meta):
 		meta['Spider']=spider.name
