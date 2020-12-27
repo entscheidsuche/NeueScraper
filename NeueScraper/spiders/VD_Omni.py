@@ -17,7 +17,7 @@ class VD_Omni(BasisSpider):
 	SUCH_URL='/scripts/nph-omniscgi.exe'
 	HOST ="http://www.jurisprudence.vd.ch"
 	BLAETTERN_URL="/scripts/nph-omniscgi.exe?OmnisPlatform=WINDOWS&WebServerUrl=www.jurisprudence.vd.ch&WebServerScript=/scripts/nph-omniscgi.exe&OmnisLibrary=JURISWEB&OmnisClass=rtFindinfoWebHtmlService&OmnisServer=7001&Parametername=WWW_V4&Schema=VD_TA_WEB&Source=search.fiw&Aufruf=search&cTemplate=search%2Fstandard%2Fresults%2Fresultpage.fiw&cSprache=FRE&W10_KEY={W10}&nSeite={Seite}"
-	TREFFER_PRO_SEITE = 100
+	TREFFER_PRO_SEITE = 20
 	FORMDATA = {
 		"OmnisPlatform": "WINDOWS",
 		"WebServerUrl": "www.jurisprudence.vd.ch",

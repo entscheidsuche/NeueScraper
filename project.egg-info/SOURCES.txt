@@ -5,6 +5,8 @@ NeueScraper/middlewares.py
 NeueScraper/pipelines.py
 NeueScraper/settings.py
 NeueScraper/spiders/AG_Gerichte.py
+NeueScraper/spiders/AI_Aktuell.py
+NeueScraper/spiders/AI_Bericht.py
 NeueScraper/spiders/BE_Anwaltsaufsicht.py
 NeueScraper/spiders/BE_Steuerrekurs.py
 NeueScraper/spiders/BE_Verwaltungsgericht.py

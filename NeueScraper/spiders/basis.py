@@ -249,8 +249,11 @@ class BasisSpider(scrapy.Spider):
 						if not self.zweite_ebene_fix: #Falls Gerichtsebene nicht fix, Gericht mit in das Matching einbeziehen
 							if 'Stufe 2 '+lang in self.gerichte[self.name][i] and self.gerichte[self.name][i]['Stufe 2 '+lang]!='':
 								gericht= "@"+self.gerichte[self.name][i]['Stufe 2 '+lang]
-						if 'Stufe 2 '+lang in self.gerichte[self.name][i] and self.gerichte[self.name][i]['Stufe 3 '+lang]!='':
-							self.kammerwahl[self.gerichte[self.name][i]['Stufe 3 '+lang]+gericht]=i	
+						if 'Stufe 3 '+lang in self.gerichte[self.name][i] and self.gerichte[self.name][i]['Stufe 3 '+lang]!='':
+							self.kammerwahl[self.gerichte[self.name][i]['Stufe 3 '+lang]+gericht]=i
+						elif gericht!='':
+							self.kammerwahl[gericht]=i
+							
 			logger.info("kammerwahl ist "+json.dumps(self.kammerwahl))
 		
 		if self.kammerfallback is None and self.mehrfachspider: #Wenn kein Default spider angegeben, baue selbst einen aus dem Eintrag 0
