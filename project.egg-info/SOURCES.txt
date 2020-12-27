@@ -3,7 +3,6 @@ NeueScraper/__init__.py
 NeueScraper/items.py
 NeueScraper/middlewares.py
 NeueScraper/pipelines.py
-NeueScraper/refstr.py
 NeueScraper/settings.py
 NeueScraper/spiders/AG_Gerichte.py
 NeueScraper/spiders/BE_Anwaltsaufsicht.py

@@ -361,7 +361,7 @@ class PipelineHelper:
 			if error:
 				logger.error(error+ " [None found]")
 			string=replace
-		return string
+		return string.strip()
 
 	@staticmethod
 	def get_meta(item, spider,meta):
@@ -395,7 +395,7 @@ class PipelineHelper:
 
 		if not('PDFFiles' in item and item['PDFFiles']) and not('HTMLFiles' in item and item['HTMLFiles']):
 			logger.warning("weder PDF noch HTML geholt")
-			#DropItem später nur dann, wenn auch kein HTML geholt
+			# Sollen wir Urteile ohne Text auch nehmen?
 			raise DropItem(f"Missing File for {item['Num']}")
 
 		root = etree.Element('Entscheid')
