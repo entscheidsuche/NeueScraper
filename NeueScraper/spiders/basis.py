@@ -20,6 +20,8 @@ class BasisSpider(scrapy.Spider):
 	elementchars=re.compile("[^-a-zA-Z0-9_]")
 	elementre=re.compile("^[a-zA-Z][-a-zA-Z0-9_]+$")
 	reDatum=re.compile("(?P<Tag>\d\d?)\.\s?(?P<Monat>\d\d?)\.\s?(?P<Jahr>(?:19|20)\d\d)")
+	MONATE = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
+	reDatumFR=re.compile(r"(?P<Tag>\d\d?)(?:er)?\s+(?P<Monat>(?:"+"|".join(MONATE)+r"))\s+(?P<Jahr>(?:19|20)\d\d)")
 	reDatumOk=re.compile("(?:19|20)\d\d-\d\d-\d\d")
 
 	#name = 'Gerichtsdaten'
@@ -46,12 +48,12 @@ class BasisSpider(scrapy.Spider):
 		yield scrapy.Request(url=self.CSV_URL, callback=self.parse_gerichtsliste, errback=self.errback_httpbin)
 
 	def parse_gerichtsliste(self, response):
-		logger.info("parse_gerichtsliste response.status "+str(response.status))
+		logger.debug("parse_gerichtsliste response.status "+str(response.status))
 		logger.info("parse_gerichtsliste Rohergebnis "+str(len(response.body))+" Zeichen")
 		logger.debug("parse_gerichtsliste Rohergebnis: "+response.body_as_unicode())
 
 		self.scrapy_job=os.environ['SCRAPY_JOB']
-		logger.info("SCRAPY_JOB: "+self.scrapy_job)
+		logger.debug("SCRAPY_JOB: "+self.scrapy_job)
 
 		item= { 'Entscheidquellen': response.body_as_unicode() }
 		yield(item)
@@ -62,7 +64,7 @@ class BasisSpider(scrapy.Spider):
 			if 'Spider' in row:
 				spider=row['Spider']
 				if spider is not None and spider:
-					logger.info('Zeile mit Eintrag für Spider '+spider+': '+json.dumps(row))
+					logger.debug('Zeile mit Eintrag für Spider '+spider+': '+json.dumps(row))
 					if spider in self.gerichte:
 						self.gerichte[spider].append(row)
 					else:
@@ -74,7 +76,7 @@ class BasisSpider(scrapy.Spider):
 		json_kantone={}
 		for spidername in self.gerichte:
 			spidereintrag=self.gerichte[spidername]
-			logger.info("Spider "+spidername+" hat "+str(len(spidereintrag))+ " Spidereinträge")
+			logger.debug("Spider "+spidername+" hat "+str(len(spidereintrag))+ " Spidereinträge")
 			kantonskurz=spidereintrag[0]['Signatur'][:2]
 			if kantonskurz in self.kantone_de:
 				if kantonskurz in kantone:
@@ -267,7 +269,7 @@ class BasisSpider(scrapy.Spider):
 			logger.info("Generiertes Kammerfallback "+str(self.kammerfallback)+": "+json.dumps(row))
 			self.gerichte[self.name].append(row)
 		
-		logger.info("Gerichtsliste verarbeitet, hole nun die Jobliste.")
+		logger.debug("Gerichtsliste verarbeitet, hole nun die Jobliste.")
 		
 		# Nun einlesen, was an Dateien vom letzten Spidern vorhanden ist
 		jobs_url=self.JOBS_URL+self.name+"%2FJob_"
@@ -275,7 +277,7 @@ class BasisSpider(scrapy.Spider):
 		yield scrapy.Request(url=jobs_url, callback=self.parse_jobliste, errback=self.errback_httpbin)
 		
 	def parse_jobliste(self, response):
-		logger.info("parse_jobliste response.status "+str(response.status))
+		logger.debug("parse_jobliste response.status "+str(response.status))
 		logger.info("parse_jobliste Rohergebnis "+str(len(response.body))+" Zeichen")
 		logger.debug("parse_jobliste Rohergebnis: "+response.body_as_unicode())
 		jobs=response.xpath("//*[local-name()='Contents']/*[local-name()='Key']/text()").getall()
@@ -290,7 +292,7 @@ class BasisSpider(scrapy.Spider):
 
 
 	def parse_dateiliste(self, response):
-		logger.info("parse_dateiliste response.status "+str(response.status))
+		logger.debug("parse_dateiliste response.status "+str(response.status))
 		logger.info("parse_dateiliste Rohergebnis "+str(len(response.body))+" Zeichen")
 		logger.debug("parse_dateiliste Rohergebnis: "+response.body_as_unicode()[:10000])
 		self.previous_run=json.loads(response.body_as_unicode())
@@ -384,10 +386,17 @@ class BasisSpider(scrapy.Spider):
 			dat=self.reDatum.search(datum)
 			if dat:
 				neudat="{}-{:0>2}-{:0>2}".format(dat.group('Jahr'),dat.group('Monat'),dat.group('Tag'))
-				logger.info("Konvertiere "+datum+" in "+neudat)
+				logger.debug("Konvertiere "+datum+" in "+neudat)
 			else:
-				logger.error("unbekanntes Datumsformat")
-				neudat="nodate"
+				datfr=self.reDatumFR.search(datum)
+				if datfr:
+					monat=datfr.group('Monat')
+					monatzahl=self.MONATE.index(monat)+1
+					neudat="{}-{:0>2}-{:0>2}".format(datfr.group('Jahr'),monatzahl,datfr.group('Tag'))
+					logger.debug("Konvertiere "+datum+" in "+neudat)
+				else:
+					logger.error("unbekanntes Datumsformat: "+datum)
+					neudat="nodate"
 			datum=neudat
 		return datum
 
@@ -397,3 +406,4 @@ class BasisSpider(scrapy.Spider):
 		# in case you want to do something special for some errors,
 		# you may need the failure's type
 		logger.error(repr(failure))
+		

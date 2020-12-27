@@ -39,7 +39,6 @@ class NeuescraperItem(scrapy.Item):
     LeitsatzKurz = scrapy.Field()
     Pos = scrapy.Field()
     html = scrapy.Field()
-
     # pass
 
 

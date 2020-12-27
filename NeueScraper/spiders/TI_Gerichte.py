@@ -12,13 +12,9 @@ logger = logging.getLogger(__name__)
 
 class TessinSpider(BasisSpider):
 	name = 'TI_Gerichte'
-	custom_settings = {
-        'COOKIES_ENABLED': True
-    }
 
 	SUCH_URL='/cgi-bin/nph-omniscgi'
 	HOST ="https://www.sentenze.ti.ch"
-	INIT_PARAMETER = "?OmnisPlatform=WINDOWS&WebServerUrl=www.sentenze.ti.ch&WebServerScript=/cgi-bin/nph-omniscgi&OmnisLibrary=JURISWEB&OmnisClass=rtFindinfoWebHtmlService&OmnisServer=JURISWEB,193.246.182.54:6000&Aufruf=loadTemplate&cTemplate=cerca.fiw&Schema=TI_WEB&cLanguage=ITA&Parametername=WWWTI&cSuchstringZiel=testo"
 	TREFFER_PRO_SEITE = 100
 	FORMDATA = {
 		"OmnisPlatform": "WINDOWS",
@@ -71,15 +67,11 @@ class TessinSpider(BasisSpider):
 		"bInfoArt_GIAR1": "GIAR",
 		"bInfoArt_PRPEN1": "PRPEN"
 	}
-	HEADERS = {
-		'Origin': 'https://www.sentenze.ti.ch',
-		'Referer': 'https://www.sentenze.ti.ch/cgi-bin/nph-omniscgi?OmnisPlatform=WINDOWS&WebServerUrl=www.sentenze.ti.ch&WebServerScript=/cgi-bin/nph-omniscgi&OmnisLibrary=JURISWEB&OmnisClass=rtFindinfoWebHtmlService&OmnisServer=JURISWEB,193.246.182.54:6000&Aufruf=loadTemplate&cTemplate=cerca.fiw&Schema=TI_WEB&cLanguage=DEU&Parametername=WWWTI&cSuchstringZiel=testo'
-	}
+	
 	reMeta=re.compile(r"Autorità:\s+(?P<Kammer>[A-Z]+), data decisione:\s+(?P<EDatum>\d\d\.\d\d\.(?:19|20)\d\d)?, data pubblicazione:\s+(?P<PDatum>\d\d\.\d\d\.(?:19|20)\d\d)")
 	
-	
 	def request_generator(self):
-		request=scrapy.Request(url=self.HOST+self.SUCH_URL+self.INIT_PARAMETER, callback=self.parse_suchform, headers=self.HEADERS, errback=self.errback_httpbin)
+		request=scrapy.FormRequest(url=self.HOST+self.SUCH_URL, formdata=self.FORMDATA, method="POST", callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': 1})
 		return [request]
 	
 	def __init__(self, ab=None):
@@ -89,21 +81,12 @@ class TessinSpider(BasisSpider):
 			self.FORMDATA['cEntscheiddatumVonJahr']=ab
 		self.request_gen = self.request_generator()
 
-	def parse_suchform(self, response):
-		# Nur zum Cookie-setzen
-		logger.info("parse_suchform response.status "+str(response.status))
-		antwort=response.body_as_unicode()
-		logger.info("parse_suchform Rohergebnis "+str(len(antwort))+" Zeichen")
-		logger.info("parse_suchform Rohergebnis: "+antwort[:10000])
-		request=scrapy.FormRequest(url=self.HOST+self.SUCH_URL, formdata=self.FORMDATA, method="POST", callback=self.parse_trefferliste, headers=self.HEADERS, errback=self.errback_httpbin, meta={'page': 1})
-		yield request
-
 
 	def parse_trefferliste(self, response):
-		logger.info("parse_trefferliste response.status "+str(response.status))
+		logger.debug("parse_trefferliste response.status "+str(response.status))
 		antwort=response.body_as_unicode()
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
-		logger.info("parse_trefferliste Rohergebnis: "+antwort[:30000])
+		logger.debug("parse_trefferliste Rohergebnis: "+antwort[:30000])
 		
 		treffer=response.xpath("//table/tr/td[@colspan='2']/span[@class='p10bcolor']/text()[2]").get()
 		logger.info("Trefferzahl: "+treffer)
@@ -128,24 +111,24 @@ class TessinSpider(BasisSpider):
 				item['PDatum']=self.norm_datum(metas.group('PDatum'))
 				kurz="#"+metas.group('Kammer')+"#"
 				item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",kurz,item['Num'])
-				logger.info("Entscheid: "+json.dumps(item))
+				logger.debug("Entscheid: "+json.dumps(item))
 				request=scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, meta={'item': item})
 				yield request
 		if seite*self.TREFFER_PRO_SEITE < trefferzahl:
 			self.FORMDATA['nSeite']=str(seite+1)
-			request=scrapy.FormRequest(url=self.HOST+self.SUCH_URL, formdata=self.FORMDATA, method="POST", callback=self.parse_trefferliste, headers=self.HEADERS, errback=self.errback_httpbin, meta={'page': seite+1})
+			request=scrapy.FormRequest(url=self.HOST+self.SUCH_URL, formdata=self.FORMDATA, method="POST", callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': seite+1})
 			yield request
 
 								
 	def parse_document(self, response):
-		logger.info("parse_document response.status "+str(response.status))
+		logger.debug("parse_document response.status "+str(response.status))
 		antwort=response.body_as_unicode()
 		logger.info("parse_document Rohergebnis "+str(len(antwort))+" Zeichen")
-		logger.info("parse_document Rohergebnis: "+antwort[:10000])
+		logger.debug("parse_document Rohergebnis: "+antwort[:10000])
 		
 		item=response.meta['item']			
 		html=response.xpath("//div[@class='WordSection1' or @class='Section1']")
-		item['html']=html.get()
-		item['HTMLFiles']=[{'url': item['HTMLUrls'][0]}]
+		PH.write_html(html.get(), item, self)
+
 		yield(item)
 		

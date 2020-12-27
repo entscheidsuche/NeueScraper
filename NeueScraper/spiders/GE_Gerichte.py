@@ -6,6 +6,7 @@ import json
 from scrapy.http.cookies import CookieJar
 import datetime
 from NeueScraper.spiders.basis import BasisSpider
+from NeueScraper.pipelines import PipelineHelper
 
 logger = logging.getLogger(__name__)
 
@@ -130,12 +131,13 @@ class GenfSpider(BasisSpider):
 		
 		item=response.meta['item']			
 		html=response.xpath("//div[@class='pj']/div[@class='resultats']/div[@class='row']/table[@class='whitetable noicon']")
-		item['html']=html.get()
-		item['HTMLFiles']=[{'url': item['HTMLUrls'][0]}]
+
 		if html.xpath("//table//div[@style='float:right']/a[img]/@href"):
 			item['PDFUrls']=[self.HOST+html.xpath("//table//div[@style='float:right']/a[img]/@href").get()]
 		else:
 			logger.warning("kein PDF für "+item['Num'])
+
+		PipelineHelper.write_html(html.get(), item, self)
 		yield(item)
 		
 

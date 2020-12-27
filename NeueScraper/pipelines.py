@@ -41,10 +41,10 @@ logger = logging.getLogger(__name__)
 
 class MyWriterPipeline:
 	def open_spider(self,spider):
-		logger.info("pipeline open")
+		logger.debug("pipeline open")
 
 	def close_spider(self,spider):
-		logger.info("pipeline open")
+		logger.debug("pipeline close")
 		datestring=datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
 		pfad_job=spider.name+"/Job_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
 		pfad_index=spider.name+"/Index_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
@@ -123,7 +123,7 @@ class MyWriterPipeline:
 		MyS3FilesStore.shared_store.persist_file(pfad_index, BytesIO(json_content.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
 
 	def process_item(self, item, spider):
-		logger.info("pipeline item")
+		logger.debug("pipeline item")
 		logFlag=True
 
 		if 'Entscheidquellen' in item:
@@ -142,29 +142,15 @@ class MyWriterPipeline:
 			contentType='application/json'
 			logFlag=False
 		
-		else:
-			#muss ich das HTML noch separat abspeichern?
-			if 'html' in item and item['html'] and 'HTMLFiles' in item and item['HTMLFiles']:
-				html_pfad=PipelineHelper.file_path(self,item, spider)+".html"
-				html_content=item['html']
-				logger.debug("html_pfad: "+html_pfad)
-				# Die md5-Checksum bereits vorher berechnen, da das Abspeichern deferred erfolgt.
-				buf=BytesIO(html_content.encode(encoding='UTF-8'))
-				buf.seek(0)
-				checksum=md5sum(buf)
-				buf.seek(0)
-				MyS3FilesStore.shared_store.persist_file(html_pfad, buf, info=None, spider=spider, meta=None, headers=None, item=item, ContentType='text/html', LogFlag=logFlag, checksum=checksum)
-				item['HTMLFiles'][0]['path']=html_pfad
-				item['HTMLFiles'][0]['checksum']=checksum
-						
+		else:					
 			upload_file_content=PipelineHelper.make_xml(item,spider)
 			contentType="text/xml"
-			upload_file_key=PipelineHelper.file_path(self,item, spider)+".xml"
+			upload_file_key=PipelineHelper.file_path(item, spider)+".xml"
 
 		MyS3FilesStore.shared_store.persist_file(upload_file_key, BytesIO(upload_file_content.encode(encoding='UTF-8')), info=None, spider=spider, meta=None, headers=None, item=item, ContentType=contentType, LogFlag=logFlag)
 		
 		return item
-		
+	
 
 class MyS3FilesStore(S3FilesStore):
 	AWS_ENDPOINT_URL = "s3://entscheidsuche.ch"
@@ -234,7 +220,7 @@ class MyS3FilesStore(S3FilesStore):
 			spider=info.spider
 		# Keine Tags machen sondern Metadaten, da Tags teuer sind.
 		if spider:
-			PipelineHelper.get_meta(self, item, spider,meta)
+			PipelineHelper.get_meta(item, spider,meta)
 
 		# Upload file to S3 storage
 		key_name = f'{self.prefix}{path}'
@@ -327,16 +313,30 @@ class NeuescraperPipeline:
         return item
 
 class PipelineHelper:
-	def file_path(self, item, spider=None):
+	@staticmethod
+	def write_html(html_content, item, spider):
+		html_pfad=PipelineHelper.file_path(item, spider)+".html"
+		logger.debug("html_pfad: "+html_pfad)
+		# Die md5-Checksum bereits vorher berechnen, da das Abspeichern deferred erfolgt.
+		buf=BytesIO(html_content.encode(encoding='UTF-8'))
+		buf.seek(0)
+		checksum=md5sum(buf)
+		buf.seek(0)
+		MyS3FilesStore.shared_store.persist_file(html_pfad, buf, info=None, spider=spider, meta=None, headers=None, item=item, ContentType='text/html', checksum=checksum)
+		item['HTMLFiles']=[{'url': item['HTMLUrls'][0], 'path': html_pfad, 'checksum': checksum}]
+	
+	@staticmethod
+	def file_path(item, spider=None):
 		try:
 			num=item['Num']
 			logger.debug('Geschäftsnummer: '+num)
-			edatum=item['EDatum']
-			if edatum is None:
+			if (not 'EDatum' in item) or item['EDatum'] is None:
 				if 'PDatum' in item and item['PDatum'] is not None:
 					edatum=item['PDatum']
 				else:
 					edatum='nodate'
+			else:
+				edatum=item['EDatum']
 			filename=filenamechars.sub('-',num)+"_"+filenamechars.sub('-',edatum)
 			dir = "undefined"
 			if spider:
@@ -350,6 +350,7 @@ class PipelineHelper:
 			exc_type, exc_value, exc_traceback = sys.exc_info()
 			logger.error("Unexpected error: " + repr(traceback.format_exception(exc_type, exc_value, exc_traceback)))
 			raise
+			
 	@staticmethod	
 	def NC(string, replace="", info=None, warning=None, error=None):
 		if string is None:
@@ -361,8 +362,9 @@ class PipelineHelper:
 				logger.error(error+ " [None found]")
 			string=replace
 		return string
-			
-	def get_meta(self, item, spider,meta):
+
+	@staticmethod
+	def get_meta(item, spider,meta):
 		meta['Spider']=spider.name
 		meta['ScrapyJob']=spider.scrapy_job
 		if 'Signatur' in item:
@@ -371,19 +373,21 @@ class PipelineHelper:
 		if 'EDatum' in item:
 			meta['Entscheiddatum']=item['EDatum']
 		if 'Num' in item:
-			meta['Geschaeftsnummer']=item['Num']
+			meta['Geschaeftsnummer']=filenamechars.sub('-',item['Num'])
 		if 'PDFFiles' in item and item['PDFFiles']:
 			meta['PDF']='PDF'
 		if 'HTMLFiles' in item and item['HTMLFiles']:
 			meta['HTML']='HTML'
-		logger.info("Meta: "+json.dumps(meta))
+		logger.debug("Meta: "+json.dumps(meta))
 
+	@staticmethod
 	def xml_add_element(parent, key, value):
 		element = etree.Element(key)
 		element.text=value
 		parent.append(element)
 		return element
 
+	@staticmethod
 	def make_xml(item,spider):
 		# Alles auskommentieren, was vom Spiderlauf abhängig ist.	
 		if 'Num' in item:
@@ -405,9 +409,9 @@ class PipelineHelper:
 			PipelineHelper.xml_add_element(meta,'Gericht',item['Gericht'])
 		if spider.ebenen > 2 and 'Kammer' in item:
 			PipelineHelper.xml_add_element(meta,'Kammer',item['Kammer'])
-		if 'EDatum' in item:
-			PipelineHelper.xml_add_element(meta,'Geschaeftsnummer',item['Num'])
 		if 'Num' in item:
+			PipelineHelper.xml_add_element(meta,'Geschaeftsnummer',item['Num'])
+		if 'EDatum' in item:
 			PipelineHelper.xml_add_element(meta,'EDatum',item['EDatum'])
 		if 'PDFFiles' in item and item['PDFFiles']:
 			PipelineHelper.xml_add_element(meta,'PDFFile',item['PDFFiles'][0]['path']).set('Checksum',item['PDFFiles'][0]['checksum'])
@@ -429,9 +433,9 @@ class PipelineHelper:
 			PipelineHelper.xml_add_element(quelle,'Kammer',item['VKammer'])
 		elif 'Kammer' in item:
 			PipelineHelper.xml_add_element(quelle,'Kammer',item['Kammer'])
-		if 'EDatum' in item:
-			PipelineHelper.xml_add_element(quelle,'Geschaeftsnummer',item['Num'])
 		if 'Num' in item:
+			PipelineHelper.xml_add_element(quelle,'Geschaeftsnummer',item['Num'])
+		if 'EDatum' in item:
 			PipelineHelper.xml_add_element(quelle,'EDatum',item['EDatum'])
 		if 'PDFFiles' in item and item['PDFFiles']:
 			PipelineHelper.xml_add_element(quelle,'PDF','')
@@ -469,7 +473,6 @@ class PipelineHelper:
 		xml_content = xml_content+str(etree.tostring(root, pretty_print=True),"ascii")
 		return xml_content
 
-
 class MyFilesPipeline(FilesPipeline):
 	STORE_SCHEMES = {
 		'': FSFilesStore,
@@ -482,7 +485,7 @@ class MyFilesPipeline(FilesPipeline):
 	def file_path(self, request, response=None, info=None, item=None):
 		if item is None:
 			item=request.meta['item']
-		return PipelineHelper.file_path(self,item, info.spider if info is not None else None)+".pdf"
+		return PipelineHelper.file_path(item, info.spider if info is not None else None)+".pdf"
 
 	def get_media_requests(self, item, info):
 		urls = item[self.files_urls_field] if self.files_urls_field in item else []

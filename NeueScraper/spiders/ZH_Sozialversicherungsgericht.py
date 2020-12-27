@@ -6,6 +6,7 @@ from scrapy.http.cookies import CookieJar
 import datetime
 from ..pipelines import PipelineHelper
 from NeueScraper.spiders.basis import BasisSpider
+from NeueScraper.pipelines import PipelineHelper
 
 logger = logging.getLogger(__name__)
 
@@ -78,12 +79,11 @@ class ZurichSozversSpider(BasisSpider):
 		self.request_gen = self.request_generator()
 
 	def parse_searchform(self, response):
-		logging.info("parse_searchform response.status "+str(response.status))
+		logging.debug("parse_searchform response.status "+str(response.status))
 		logging.info("parse_searchform Rohergebnis "+str(len(response.body))+" Zeichen")
-		logging.info("parse_searchform Rohergebnis: "+response.body_as_unicode())
+		logging.debug("parse_searchform Rohergebnis: "+response.body_as_unicode())
 		jahr=response.meta['jahr']
 		viewId=response.xpath("//input[@id='view:_id1__VUID']/@value").get()
-		logging.info("View-ID: "+viewId)
 		logging.info("search_request für Jahr "+str(jahr)+" mit viewId "+viewId)
 		cookieJar = response.meta.setdefault('cookie_jar', CookieJar())
 		cookieJar.extract_cookies(response, response.request)
@@ -93,9 +93,9 @@ class ZurichSozversSpider(BasisSpider):
 		return request
 
 	def parse_trefferliste_forward(self, response):
-		logging.info("parse_trefferliste_forward response.status "+str(response.status))
+		logging.debug("parse_trefferliste_forward response.status "+str(response.status))
 		logging.info("parse_trefferliste_forward Rohergebnis "+str(len(response.body))+" Zeichen")
-		logging.info("parse_trefferliste_forward Rohergebnis: "+response.body_as_unicode())
+		logging.debug("parse_trefferliste_forward Rohergebnis: "+response.body_as_unicode())
 		jahr=response.meta['jahr']
 		cookieJar = response.meta.setdefault('cookie_jar', CookieJar())
 		cookieJar.extract_cookies(response, response.request)
@@ -108,9 +108,9 @@ class ZurichSozversSpider(BasisSpider):
 		yield(request) 
 
 	def parse_trefferliste(self, response):
-		logging.info("parse_trefferliste response.status "+str(response.status))
+		logging.debug("parse_trefferliste response.status "+str(response.status))
 		logging.info("parse_trefferliste Rohergebnis "+str(len(response.body))+" Zeichen")
-		logging.info("parse_trefferliste Rohergebnis: "+response.body_as_unicode())
+		logging.debug("parse_trefferliste Rohergebnis: "+response.body_as_unicode())
 		jahr=response.meta['jahr']
 		#Bei der ersten Trefferseite steht die view_ID und die Trefferzahl im HTML, danach wird sie mit meta übergeben
 		geholt=response.meta['geholt']
@@ -166,8 +166,8 @@ class ZurichSozversSpider(BasisSpider):
 				cookieJar = response.meta.setdefault('cookie_jar', CookieJar())
 				cookieJar.extract_cookies(response, response.request)
 				request = scrapy.Request(url=self.NEXT_PAGE_URL, method="POST", body= self.NEXT_PAGE_PAYLOAD.format(viewid=viewId), headers=self.NEXT_PAGE_HEADERS, callback=self.parse_trefferliste, dont_filter=True, errback=self.errback_httpbin, meta = {'cookie_jar': cookieJar, 'jahr':jahr, 'viewId': viewId, 'trefferZahl': trefferZahl, 'geholt': geholt})
-				logging.info("URL: "+request.url)
-				logging.info("body: "+request.body.decode())
+				logging.debug("URL: "+request.url)
+				logging.debug("body: "+request.body.decode())
 				cookieJar.add_cookie_header(request) # apply Set-Cookie ourselves
 				self.cookie_debug(request, response, "parse_trefferliste")
 				yield(request)
@@ -188,17 +188,10 @@ class ZurichSozversSpider(BasisSpider):
 		""" Parses the current search result page, downloads documents and yields the request for the next search
 		result page
 		"""
-		logging.info("parse_page response.status "+str(response.status))
+		logging.debug("parse_page response.status "+str(response.status))
 		logging.info("parse_page Rohergebnis "+str(len(response.body))+" Zeichen")
-		logging.info("parse_page Rohergebnis: "+response.body_as_unicode())
+		logging.debug("parse_page Rohergebnis: "+response.body_as_unicode())
 		item=response.meta['item']
-		item['html']=response.body_as_unicode()
-		item['HTMLFiles']=[{'url': item['HTMLUrls'][0]}]
+
+		PipelineHelper.write_html(response.body_as_unicode(), item, self)
 		yield(item)								
-
-
-	def errback_httpbin(self, failure):
-		# log all errback failures,
-		# in case you want to do something special for some errors,
-		# you may need the failure's type
-		logging.error(repr(failure))

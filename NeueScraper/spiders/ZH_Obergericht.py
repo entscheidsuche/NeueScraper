@@ -113,10 +113,3 @@ class ZH_OG(BasisSpider):
 						else:
 							logging.error("Entscheid wird wegen fehlender Angaben ignoriert, Dokument-ID: "+idE+" Geschäftsnummer: "+Num+" Raw: "+Raw)
 							
-
-
-	def errback_httpbin(self, failure):
-		# log all errback failures,
-		# in case you want to do something special for some errors,
-		# you may need the failure's type
-		logging.error(repr(failure))

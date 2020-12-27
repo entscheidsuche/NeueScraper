@@ -5,6 +5,7 @@ import logging
 from scrapy.http.cookies import CookieJar
 import datetime
 from NeueScraper.spiders.weblaw import WeblawSpider
+from NeueScraper.pipelines import PipelineHelper
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,6 @@ class AargauSpider(WeblawSpider):
 		logger.info("parse_page Rohergebnis "+str(len(response.body))+" Zeichen")
 		logger.info("parse_page Rohergebnis: "+response.body_as_unicode())
 		item=response.meta['item']
-		item['html']=response.body_as_unicode()
 		edatum=self.reEDATUM.search(response.body_as_unicode())
 		if edatum:
 			edatum_string=edatum['jahr']+"-"+str(self.MONATE.index(edatum['monat'])+1).rjust(2,'0')+"-"+edatum['tag'].rjust(2,'0')
@@ -65,5 +65,7 @@ class AargauSpider(WeblawSpider):
 			logger.warning("Kein EDatum erkannt. Nehme dann nur den Jahrgang")
 			edatum_string=item["Num"][5:9]
 		item['EDatum']=edatum_string
+		PipelineHelper.write_html(response.body_as_unicode(), item, self)
+
 		yield(item)								
 
