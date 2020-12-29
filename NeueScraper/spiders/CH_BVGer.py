@@ -49,7 +49,7 @@ class CH_BVGer(BasisSpider):
 	def request_generator(self, ab, bis):
 		""" Generates scrapy frist request
 		"""
-		requests=[]
+		self.requeststack=[]
 		if bis:
 			bis_int=int(bis)
 		else:
@@ -64,8 +64,18 @@ class CH_BVGer(BasisSpider):
 			bis_string="31.12."+str(j)
 			req=scrapy.Request(url=self.JSESSION_URL+"&"+str(j), callback=self.parse_suchform, errback=self.errback_httpbin, meta={'ab':ab_string, 'bis':bis_string})
 			req.meta['dont_cache']=True	
-			requests.append(req)
-		return requests
+			self.requeststack.append(req)
+		request=self.get_next_request()
+		return [request]
+		
+		
+	# Um Blockaden auszuweichen, verschiedene Jahre hintereinander scrapen
+	def get_next_request(self):
+		request=None
+		if len(self.requeststack)>0:
+			request=self.requeststack[0]
+			del self.requeststack[0]
+		return request
 		
 	def __init__(self,ab=None,bis=None):
 		super().__init__()
@@ -173,8 +183,10 @@ class CH_BVGer(BasisSpider):
 				req=scrapy.Request(url=self.SUCH_URL+jSession, method='POST', headers=self.HEADERS, body=body.encode('ascii'), callback=self.trefferliste, errback=self.errback_httpbin, meta=response.meta)
 				yield(req)
 			else:
-				logger.debug("Fertig!")
-				
+				logger.debug("Fertig!")	
 		else:
 			logger.error("kein Treffer gematched")
+		request=self.get_next_request()
+		if request:
+			yield request
 
