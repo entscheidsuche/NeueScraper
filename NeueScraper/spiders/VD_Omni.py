@@ -16,8 +16,8 @@ class VD_Omni(BasisSpider):
 
 	SUCH_URL='/scripts/nph-omniscgi.exe'
 	HOST ="http://www.jurisprudence.vd.ch"
-	BLAETTERN_URL="/scripts/nph-omniscgi.exe?OmnisPlatform=WINDOWS&WebServerUrl=www.jurisprudence.vd.ch&WebServerScript=/scripts/nph-omniscgi.exe&OmnisLibrary=JURISWEB&OmnisClass=rtFindinfoWebHtmlService&OmnisServer=7001&Parametername=WWW_V4&Schema=VD_TA_WEB&Source=search.fiw&Aufruf=search&cTemplate=search%2Fstandard%2Fresults%2Fresultpage.fiw&cSprache=FRE&W10_KEY={W10}&nSeite={Seite}"
-	TREFFER_PRO_SEITE = 20
+	BLAETTERN_URL="/scripts/nph-omniscgi.exe?OmnisPlatform=WINDOWS&WebServerUrl=www.jurisprudence.vd.ch&WebServerScript=/scripts/nph-omniscgi.exe&OmnisLibrary=JURISWEB&OmnisClass=rtFindinfoWebHtmlService&OmnisServer=7001&Parametername=WWW_V4&Schema=VD_TA_WEB&Source=search.fiw&Aufruf=search&cTemplate=search/standard/results/resultpage.fiw&cSprache=FRE&W10_KEY={W10}&nSeite={Seite}"
+	TREFFER_PRO_SEITE = 50
 	FORMDATA = {
 		"OmnisPlatform": "WINDOWS",
 		"WebServerUrl": "www.jurisprudence.vd.ch",
@@ -52,30 +52,32 @@ class VD_Omni(BasisSpider):
 	
 	HERKUNFT=["!","CCST","CDAP","JI","TA","CE","TC","TN"]
 	
-	reTreffer=re.compile(r"résultats:\s<b>\d+\s-\s\d+</b>\sde\s(?P<Treffer>\d+)\sfiche\(s\)\strouvée\(s\)")
+	reTreffer=re.compile(r"résultats:\s<b>\d+(?:\s-\s\d+)?</b>\sde\s(?P<Treffer>\d+)\sfiche\(s\)\strouvée\(s\)")
 	reW10=re.compile(r"W10_KEY=(?P<Key>\d+)&")
 	
-	def request_generator(self):
-		requests=[]
-		for h in self.HERKUNFT:
+	def get_next_request(self):
+		request=None
+		if len(self.HERKUNFT)>0:
+			logger.info("Starte nun "+self.HERKUNFT[0])
 			formdata=copy.deepcopy(self.FORMDATA)
-			formdata['cHerkunft']=h
-			requests.append(scrapy.FormRequest(url=self.HOST+self.SUCH_URL, formdata=formdata, method="POST", callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': 1, 'herkunft': h}))
-		return requests
+			formdata['cHerkunft']=self.HERKUNFT[0]
+			request=scrapy.FormRequest(url=self.HOST+self.SUCH_URL, formdata=formdata, method="POST", callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': 1, 'herkunft': self.HERKUNFT[0]})
+			del self.HERKUNFT[0]
+		return request
 	
 	def __init__(self, ab=None):
 		super().__init__()
 		if ab:
 			self.ab=ab
 			self.FORMDATA['dPublikationsdatum']=ab
-		self.request_gen = self.request_generator()
+		self.request_gen = [self.get_next_request()]
 
 
 	def parse_trefferliste(self, response):
 		logger.debug("parse_trefferliste response.status "+str(response.status))
 		antwort=response.body_as_unicode()
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
-		logger.info("parse_trefferliste Rohergebnis: "+antwort[:30000])
+		logger.debug("parse_trefferliste Rohergebnis: "+antwort[:30000])
 	
 		treffer=response.xpath("//table[@width='98%' and @border='0' and @cellspacing='0' and @cellpadding='0']/tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0']/tr/td/h5").get()
 		logger.info("Trefferzahl: "+treffer)
@@ -91,7 +93,7 @@ class VD_Omni(BasisSpider):
 		for entscheid in entscheide:
 			text=entscheid.get()
 			item={}
-			logger.info("Eintrag: "+text)
+			logger.debug("Eintrag: "+text)
 			item['HTMLUrls']=[PH.NC(entscheid.xpath("./tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0']/tr[1]/td/table/tr/td/a/@href").get(),error="keine URL in "+text).strip()]
 			item['Titel']=PH.NC(entscheid.xpath("./tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0']/tr[2]/td/table/tr[1]/td/b/text()").get(), info="keine Titelzeile in "+text).strip()
 			item['Leitsatz']=PH.NC(entscheid.xpath("./tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0']/tr[2]/td/table/tr[2]/td[@colspan='2']/text()").get(), info="keine Regeste in "+text).strip()
@@ -118,13 +120,17 @@ class VD_Omni(BasisSpider):
 					yield request
 				else:
 					logger.error("W10 für das Blättern nicht gefunden: "+antwort)
+		else:
+			# Die weiteren Quellen aufrufen (nun sequentiell machen, da parallel geblockt wird)
+			request=self.get_next_request()
+			yield request
 
 								
 	def parse_document(self, response):
 		logger.info("parse_document response.status "+str(response.status))
 		antwort=response.body_as_unicode()
 		logger.info("parse_document Rohergebnis "+str(len(antwort))+" Zeichen")
-		logger.info("parse_document Rohergebnis: "+antwort[:20000])
+		logger.debug("parse_document Rohergebnis: "+antwort[:20000])
 		
 		item=response.meta['item']	
 		html=response.xpath("//div[@class='WordSection1' or @class='Section1']")
