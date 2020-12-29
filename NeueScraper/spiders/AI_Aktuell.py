@@ -52,7 +52,7 @@ class AI_Aktuell(BasisSpider):
 			logger.info("Verarbeite nun: "+entscheid.get())
 			pdfurl=entscheid.xpath("./td/a/@href").get()
 			# Hier erfolgt ein Redirect, den bei PDFs Scrapy nicht automatisch nachverfolgt.
-			item['PDFUrls']=[pdfurl+"/download"]
+			item['PDFUrls']=[pdfurl+"/@@download/file/"+pdfurl.split("/")[-1]]
 			item['VGericht']=gericht
 			item['Num']=entscheid.xpath("./td/a/descendant-or-self::*/text()").get()
 			item['Titel']=entscheid.xpath("./td[2]/text()").get()
