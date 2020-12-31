@@ -75,7 +75,7 @@ class MyWriterPipeline:
 				spider.files_written[f]['status']='nicht_mehr_da'
 				del spider.files_written[f]['quelle']
 				if 'last_change' in spider.files_written[f]:
-					del spider.files_written[f]['last_change']			
+					del spider.files_written[f]['last_change']
 			s=filenameparts.search(f)
 			if s is None:
 				logging.error("Konnte Dateinamen "+f+" nicht aufteilen.")
@@ -85,7 +85,7 @@ class MyWriterPipeline:
 						count_group='vorher'
 					else:
 						count_group='aktuell'
-					
+
 					if spider.files_written[f]['status']=='nicht_mehr_da':
 						count_typ='entfernt'
 						if count_group=='aktuell':
@@ -100,7 +100,7 @@ class MyWriterPipeline:
 							to_index[f]="new"
 					else:
 						count_typ='identisch'
-									
+
 					count_eintrag=count_group+"_"+count_typ
 					if not s.group('signatur') in signaturen:
 						signaturen[s.group('signatur')]={'gesamt':0}
@@ -114,7 +114,7 @@ class MyWriterPipeline:
 						gesamt[count_eintrag]=gesamt[count_eintrag]+1
 					if not count_typ=='entfernt':
 						signaturen[s.group('signatur')]['gesamt']=signaturen[s.group('signatur')]['gesamt']+1
-						gesamt['gesamt']=gesamt['gesamt']+1			
+						gesamt['gesamt']=gesamt['gesamt']+1
 		files_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "dateien": spider.files_written, 'signaturen': signaturen, 'gesamt': gesamt }
 		json_content=json.dumps(files_log)
 		MyS3FilesStore.shared_store.persist_file(pfad_job, BytesIO(json_content.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
@@ -142,16 +142,16 @@ class MyWriterPipeline:
 			upload_file_content=item['Facetten']
 			contentType='application/json'
 			logFlag=False
-		
-		else:					
+
+		else:
 			upload_file_content=PipelineHelper.make_xml(item,spider)
 			contentType="text/xml"
 			upload_file_key=PipelineHelper.file_path(item, spider)+".xml"
 
 		MyS3FilesStore.shared_store.persist_file(upload_file_key, BytesIO(upload_file_content.encode(encoding='UTF-8')), info=None, spider=spider, meta=None, headers=None, item=item, ContentType=contentType, LogFlag=logFlag)
-		
+
 		return item
-	
+
 
 class MyS3FilesStore(S3FilesStore):
 	AWS_ENDPOINT_URL = "s3://entscheidsuche.ch"
@@ -173,7 +173,7 @@ class MyS3FilesStore(S3FilesStore):
 			logger.debug("__init__ ohne uri aufgerufen")
 			uri='s3://entscheidsuche.ch/scraper'
 		else:
-			logger.debug("__init__ mit uri '"+uri+"' aufgerufen")		
+			logger.debug("__init__ mit uri '"+uri+"' aufgerufen")
 
 		self.is_botocore = is_botocore()
 		if self.is_botocore:
@@ -198,7 +198,7 @@ class MyS3FilesStore(S3FilesStore):
 		MyS3FilesStore.shared_s3_bucket=self.bucket
 		MyS3FilesStore.shared_s3_prefix=self.prefix
 		MyS3FilesStore.shared_store=self
-		
+
 	def stat_file(self, path, info):
 		def _onsuccess(boto_key):
 			if self.is_botocore:
@@ -286,7 +286,7 @@ class MyS3FilesStore(S3FilesStore):
 				return threads.deferToThread(
 					k.set_contents_from_string, buf.getvalue(),
 					headers=h, policy=self.POLICY)
-		
+
 	def _get_boto_bucket(self):
 		logger.debug("AWS_ACCESS_KEY_ID: "+self.AWS_ACCESS_KEY_ID+"AWS_SECRET_ACCESS_KEY"+self.AWS_SECRET_ACCESS_KEY)
 		# disable ssl (is_secure=False) because of this python bug:
@@ -317,10 +317,17 @@ class PipelineHelper:
 
 	# Sprache des HTML erkennen, Header ggf. davor setzen und schreiben
 
-	WORDS={ "de": ["der","die","das","ein","eine","einer","er","sie","ihn","hat","hatte","hätte","ist","war","sind"],
-		"fr": ["le","lui","elle","je","on","vous","nous","leur","qui","quand","parce","que","faire","sont","vont"],
-		"it": ["della","del","di","casi","una","al","questa","più","primo","grado","che","diritto","leggi","corte"]}
+	WOERTER={ "de": ["der","die","das","ein","eine","einer","er","sie","ihn","hat","hatte","hätte","ist","war","sind"],"fr": ["le","lui","elle","je","on","vous","nous","leur","qui","quand","parce","que","faire","sont","vont"], "it": ["della","del","di","casi","una","al","questa","più","primo","grado","che","diritto","leggi","corte"]}
+	
+	#REGS={l: re.compile(r"\b(?:"+"|".join(WOERTER[l])+r")\b") for l in WOERTER}
 
+	
+	der=re.compile(r"\b(?:"+"|".join(WOERTER["de"])+r")\b")
+	dfr=re.compile(r"\b(?:"+"|".join(WOERTER["fr"])+r")\b")
+	dit=re.compile(r"\b(?:"+"|".join(WOERTER["it"])+r")\b")
+
+	REGS={'de': der, 'fr': dfr, 'it': dit}
+	
 	reDOCTYPE=re.compile(r"<!DOCTYPE ")
 	reHTML=re.compile("<html",re.IGNORECASE)
 	reHEAD=re.compile("<head>",re.IGNORECASE)
@@ -328,21 +335,19 @@ class PipelineHelper:
 	reMETA=re.compile("<meta",re.IGNORECASE)
 	reUTF=re.compile('charset="utf-8"',re.IGNORECASE)
 
-	def __init__(self):
-		self.REGS={ l : r"\b(?:"+"|".join(self.WORDSi[l])+r")\b" for l in self.WORDS}
-			
+
 	@classmethod
 	def write_html(self,html_content, item, spider):
 		lang=max(self.REGS, key=lambda key: len(self.REGS[key].findall(html_content)))
 		item['Sprache']=lang
-		
+
 		doctype=self.reDOCTYPE.search(html_content)
 		html=self.reHTML.search(html_content)
 		head=self.reHEAD.search(html_content)
 		body=self.reBODY.search(html_content)
 		meta=self.reMETA.search(html_content)
 		utf=self.reUTF.search(html_content)
-		
+
 		if body is None:
 			html_content='<!DOCTYPE html><html lang="'+lang+'"><head><meta charset="utf-8"/></head><body>'+html_content+"</body></html>"
 		if utf is None:
@@ -369,7 +374,7 @@ class PipelineHelper:
 		buf.seek(0)
 		MyS3FilesStore.shared_store.persist_file(html_pfad, buf, info=None, spider=spider, meta=None, headers=None, item=item, ContentType='text/html', checksum=checksum)
 		item['HTMLFiles']=[{'url': item['HTMLUrls'][0], 'path': html_pfad, 'checksum': checksum}]
-	
+
 	@staticmethod
 	def file_path(item, spider=None):
 		try:
@@ -395,8 +400,8 @@ class PipelineHelper:
 			exc_type, exc_value, exc_traceback = sys.exc_info()
 			logger.error("Unexpected error: " + repr(traceback.format_exception(exc_type, exc_value, exc_traceback)))
 			raise
-			
-	@staticmethod	
+
+	@staticmethod
 	def NC(string, replace="", info=None, warning=None, error=None):
 		if string is None:
 			if info:
@@ -434,7 +439,7 @@ class PipelineHelper:
 
 	@staticmethod
 	def make_xml(item,spider):
-		# Alles auskommentieren, was vom Spiderlauf abhängig ist.	
+		# Alles auskommentieren, was vom Spiderlauf abhängig ist.
 		if 'Num' in item:
 			logger.info("Geschäftsnummer: "+item['Num'])
 
@@ -456,13 +461,20 @@ class PipelineHelper:
 			PipelineHelper.xml_add_element(meta,'Kammer',item['Kammer'])
 		if 'Num' in item:
 			PipelineHelper.xml_add_element(meta,'Geschaeftsnummer',item['Num'])
+		if 'Num2' in item:
+			PipelineHelper.xml_add_element(meta,'Geschaeftsnummer',item['Num2'])
 		if 'EDatum' in item:
 			PipelineHelper.xml_add_element(meta,'EDatum',item['EDatum'])
 		if 'PDFFiles' in item and item['PDFFiles']:
 			PipelineHelper.xml_add_element(meta,'PDFFile',item['PDFFiles'][0]['path']).set('Checksum',item['PDFFiles'][0]['checksum'])
 		if 'HTMLFiles' in item and item['HTMLFiles']:
 			PipelineHelper.xml_add_element(meta,'HTMLFile',item['HTMLFiles'][0]['path']).set('Checksum',item['HTMLFiles'][0]['checksum'])
+		if 'Sprache' in item:
+			PipelineHelper.xml_add_element(meta,'Sprache',item['Sprache'])
+		elif spider.kantonssprachen[item['Signatur'][:2]]:
+			PipelineHelper.xml_add_element(meta,'Sprache',spider.kantonssprachen[item['Signatur'][:2]])
 		
+
 
 		treffer = etree.Element('Treffer')
 		root.append(treffer)
@@ -473,7 +485,7 @@ class PipelineHelper:
 		if 'VGericht' in item:
 			PipelineHelper.xml_add_element(quelle,'Gericht',item['VGericht'])
 		elif 'Gericht' in item:
-			PipelineHelper.xml_add_element(quelle,'Gericht',item['Gericht'])	
+			PipelineHelper.xml_add_element(quelle,'Gericht',item['Gericht'])
 		if 'VKammer' in item:
 			PipelineHelper.xml_add_element(quelle,'Kammer',item['VKammer'])
 		elif 'Kammer' in item:
@@ -486,7 +498,7 @@ class PipelineHelper:
 			PipelineHelper.xml_add_element(quelle,'PDF','')
 		if 'HTMLFiles' in item and item['HTMLFiles']:
 			PipelineHelper.xml_add_element(quelle,'HTML','')
-		
+
 		kurz = etree.Element('Kurz')
 		treffer.append(kurz)
 		if 'Titel' in item:
@@ -513,7 +525,7 @@ class PipelineHelper:
 			PipelineHelper.xml_add_element(source,'HtmlUrl',item['HtmlUrl'][0])
 #		if 'Raw' in item:
 #			PipelineHelper.xml_add_element(source,'Raw',etree.CDATA(item['Raw'].replace("<","(").replace(">",")")))
-	
+
 		xml_content = '<?xml version="1.0" encoding="UTF-8"?><?xml-stylesheet type="text/xsl" href="/Entscheid.xsl"?>\n'
 		xml_content = xml_content+str(etree.tostring(root, pretty_print=True),"ascii")
 		return xml_content
@@ -535,14 +547,14 @@ class MyFilesPipeline(FilesPipeline):
 	def get_media_requests(self, item, info):
 		urls = item[self.files_urls_field] if self.files_urls_field in item else []
 		return [scrapy.Request(url=u, meta={"item":item}) for u in urls]
-		
+
 
 	def file_downloaded(self, response, request, info=None, item=None):
 		if item is None:
 			item=request.meta['item']
 			logger.debug('item in file_downloaded gesetzt')
 		else:
-			logger.debug('item war in file_downloaded bereits gesetzt')		
+			logger.debug('item war in file_downloaded bereits gesetzt')
 		path = self.file_path(request, response, info, item=item)
 		ContentType='application/pdf' if path[-4:]=='.pdf' else None
 		buf = BytesIO(response.body)
@@ -551,4 +563,4 @@ class MyFilesPipeline(FilesPipeline):
 		self.store.persist_file(path, buf, info, item=item, ContentType=ContentType) # Parameter item wurde hinzugefügt. store muss dazu angepasst werden (wurde hier für S3 getan)
 		return checksum
 
-	
+

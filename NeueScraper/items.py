@@ -20,6 +20,7 @@ class NeuescraperItem(scrapy.Item):
     Kammer = scrapy.Field()
     VKammer = scrapy.Field()
     Num = scrapy.Field()
+    Num2 = scrapy.Field()
     EDatum = scrapy.Field()
     Titel = scrapy.Field()
     Leitsatz = scrapy.Field()
@@ -61,6 +62,7 @@ class NeuescraperItem(scrapy.Item):
 		<EDatum>...</EDatum>?
 		<PDFFile>PDF-Dateiname</PDFFile>?
 		<HTMLFile>HTML-Dateiname</HTMLFile>?
+		<Sprache>de|fr|it</Sprache>?
 	</Metainfos>
 	<Treffer>
 		<Quelle>
