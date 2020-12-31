@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class BasisSpider(scrapy.Spider):
 	elementchars=re.compile("[^-a-zA-Z0-9_]")
 	elementre=re.compile("^[a-zA-Z][-a-zA-Z0-9_]+$")
-	reDatum=re.compile("(?P<Tag>\d\d?)\.\s?(?P<Monat>\d\d?)\.\s?(?P<Jahr>(?:19|20)\d\d)")
+	reDatum=re.compile("(?P<Tag>\d\d?)\s*\.\s*(?P<Monat>\d\d?)\s*\.\s*(?P<Jahr>(?:19|20)\d\d)")
 	MONATE = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
 	reDatumFR=re.compile(r"(?P<Tag>\d\d?)(?:er)?\s+(?P<Monat>(?:"+"|".join(MONATE)+r"))\s+(?P<Jahr>(?:19|20)\d\d)")
 	reDatumOk=re.compile("(?:19|20)\d\d-\d\d-\d\d")
@@ -342,7 +342,7 @@ class BasisSpider(scrapy.Spider):
 			if kammermatch==-1:
 				if self.kammerfallback is not None:
 					kammermatch=self.kammerfallback
-					logger.warning(num+" mit "+vkammer+" führt zu Kammerfallback")
+					logger.warning(num+" mit "+vkammer+"@"+vgericht+" führt zu Kammerfallback")
 		else:
 			kammermatch=0
 		signatur=self.gerichte[self.name][kammermatch]['Signatur']

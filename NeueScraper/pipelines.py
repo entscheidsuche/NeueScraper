@@ -23,6 +23,7 @@ from io import BytesIO
 from scrapy.utils.misc import md5sum
 from lxml import etree
 import datetime
+import operator
 
 filenamechars=re.compile("[^-a-zA-Z0-9]")
 filenameparts=re.compile(r'/(?P<stamm>(?P<signatur>[^_]+_[^_]+_[^_]+)[^\.]+)\.(?P<endung>\w+)')
@@ -313,8 +314,52 @@ class NeuescraperPipeline:
         return item
 
 class PipelineHelper:
-	@staticmethod
-	def write_html(html_content, item, spider):
+
+	# Sprache des HTML erkennen, Header ggf. davor setzen und schreiben
+
+	WORDS={ "de": ["der","die","das","ein","eine","einer","er","sie","ihn","hat","hatte","hätte","ist","war","sind"],
+		"fr": ["le","lui","elle","je","on","vous","nous","leur","qui","quand","parce","que","faire","sont","vont"],
+		"it": ["della","del","di","casi","una","al","questa","più","primo","grado","che","diritto","leggi","corte"]}
+
+	reDOCTYPE=re.compile(r"<!DOCTYPE ")
+	reHTML=re.compile("<html",re.IGNORECASE)
+	reHEAD=re.compile("<head>",re.IGNORECASE)
+	reBODY=re.compile("<body",re.IGNORECASE)
+	reMETA=re.compile("<meta",re.IGNORECASE)
+	reUTF=re.compile('charset="utf-8"',re.IGNORECASE)
+
+	def __init__(self):
+		self.REGS={ l : r"\b(?:"+"|".join(self.WORDSi[l])+r")\b" for l in self.WORDS}
+			
+	@classmethod
+	def write_html(self,html_content, item, spider):
+		lang=max(self.REGS, key=lambda key: len(self.REGS[key].findall(html_content)))
+		item['Sprache']=lang
+		
+		doctype=self.reDOCTYPE.search(html_content)
+		html=self.reHTML.search(html_content)
+		head=self.reHEAD.search(html_content)
+		body=self.reBODY.search(html_content)
+		meta=self.reMETA.search(html_content)
+		utf=self.reUTF.search(html_content)
+		
+		if body is None:
+			html_content='<!DOCTYPE html><html lang="'+lang+'"><head><meta charset="utf-8"/></head><body>'+html_content+"</body></html>"
+		if utf is None:
+			if meta:
+				html_content=html_content[:meta.start()]+'<meta charset="utf-8"/>'+html_content[meta.start():]
+			elif head:
+				html_content=html_content[:head.span()[1]]+'<meta charset="utf-8"/>'+html_content[head.span()[1]:]
+			else:
+				html_content='<!DOCTYPE html><html lang="'+lang+'"><head><meta charset="utf-8"/></head>'+html_content+"</html>"
+		else:
+			if head is None:
+				html_content='<!DOCTYPE html><html lang="'+lang+'"><head><meta charset="utf-8"/></head>'+html_content+"</html>"
+			elif html is None:
+				html_content='<!DOCTYPE html><html lang="'+lang+'">'+html_content+"</html>"
+			elif doctype is None:
+				html_content='<!DOCTYPE html>'+html_content
+
 		html_pfad=PipelineHelper.file_path(item, spider)+".html"
 		logger.debug("html_pfad: "+html_pfad)
 		# Die md5-Checksum bereits vorher berechnen, da das Abspeichern deferred erfolgt.

@@ -13,6 +13,7 @@ NeueScraper/spiders/BE_Steuerrekurs.py
 NeueScraper/spiders/BE_Verwaltungsgericht.py
 NeueScraper/spiders/BE_ZivilStraf.py
 NeueScraper/spiders/BL_Gerichte.py
+NeueScraper/spiders/CH_BGer.py
 NeueScraper/spiders/CH_BSTG.py
 NeueScraper/spiders/CH_BVGer.py
 NeueScraper/spiders/FR_Gerichte.py

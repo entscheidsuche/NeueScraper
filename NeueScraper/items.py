@@ -39,6 +39,12 @@ class NeuescraperItem(scrapy.Item):
     LeitsatzKurz = scrapy.Field()
     Pos = scrapy.Field()
     html = scrapy.Field()
+    Formal_de=scrapy.Field()
+    Formal_fr=scrapy.Field()
+    Formal_it=scrapy.Field()
+    Abstract=scrapy.Field()
+    Formal_org=scrapy.Field()
+    Sprache=scapry.Field()
     # pass
 
 
