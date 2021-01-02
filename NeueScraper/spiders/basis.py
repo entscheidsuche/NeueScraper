@@ -24,9 +24,9 @@ class BasisSpider(scrapy.Spider):
 	MONATEde = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember']
 	reDatumFR=re.compile(r"(?P<Tag>\d\d?)(?:er)?\s+(?P<Monat>(?:"+"|".join(MONATEfr)+r"))\s+(?P<Jahr>(?:19|20)\d\d)")
 	reDatumDE=re.compile(r"(?P<Tag>\d\d?)\.\s*(?P<Monat>(?:"+"|".join(MONATEde)+r"))\s+(?P<Jahr>(?:19|20)\d\d)")
-	reDatumNurJahr=re.compile(r"(?:19|20)\d\d")
-	
+	reDatumNurJahr=re.compile(r"(?:19|20)\d\d")	
 	reDatumOk=re.compile("(?:19|20)\d\d-\d\d-\d\d")
+	reSplitter=re.compile(r"[\w']+")
 
 	#name = 'Gerichtsdaten'
 	kantone = { 'de': {'CH':'Eidgenossenschaft','AG':'Aargau','AI':'Appenzell Innerrhoden','AR':'Appenzell Ausserrhoden','BE':'Bern','BL':'Basel-Land','BS':'Basel-Stadt','FR':'Freiburg','GE':'Genf','GL':'Glarus','GR':'Graubünden','JU':'Jura','LU':'Luzern','NE':'Neuenburg','NW':'Nidwalden','OW':'Obwalden','SG':'St.Gallen','SH':'Schaffhausen','SO':'Solothurn','SZ':'Schwyz','TG':'Thurgau','TI':'Tessin','UR':'Uri','VD':'Waadtland','VS':'Wallis','ZG':'Zug','ZH':'Zürich'},
@@ -333,15 +333,15 @@ class BasisSpider(scrapy.Spider):
 			for m in self.kammerwahl:
 				i=self.kammerwahl[m]
 				tests=m.split("@")
-				if self.zweite_ebene_fix or (not vgericht) or len(tests)==1 or tests[1] in vgericht: # Entweder keine Gerichtsangabe oder Match ok
-					if (not vkammer) or not(tests[0]) or tests[0] in vkammer: 
-						logger.info("Match für "+str(i)+": "+m+" Eintrag "+self.gerichte[self.name][i]['Signatur'] )
-						kammermatches[i]=len(m)
+				# Wenn enweder die erste Ebene matched und die zweite nicht dagegens steht oder die zweite Ebene matched und die erste nicht dagegen steht, dann ist es ein match
+				if ((self.zweite_ebene_fix or (not vgericht) or len(tests)==1) and tests[0] and tests[0] in vkammer) or (len(tests)>1 and vgericht and tests[1] in vgericht and ((not vkammer) or not(tests[0]) or tests[0] in vkammer)):
+					logger.info("Match für "+str(i)+": "+m+" Eintrag "+self.gerichte[self.name][i]['Signatur'] )
+					kammermatches[i]=len(m)
 						
 			# Falls Geschäftsnummernmatch vorhanden, zähle das wie ein 100Zeichen-Match bei der Kammer.
 			if len(kammermatches)!=1:
 				GN_matches=[]
-				sps=num.split(' ')
+				sps=self.reSplitter.findall(num)
 				for sp in range(len(sps)):
 					matchstring=str(sp+1)+"#"+sps[sp]
 					if matchstring in self.GNmatch:

@@ -454,7 +454,7 @@ class PipelineHelper:
 		if 'EDatum' in item and item['EDatum'] and item['EDatum']!="nodate":
 			eintrag['Datum']=item['EDatum']
 		elif 'PDatum' in item and item['PDatum']  and item['PDatum']!="nodate":
-			eintrag['Datum']=item['SDatum']
+			eintrag['Datum']=item['PDatum']
 		elif 'SDatum' in item and item['SDatum']  and item['SDatum']!="nodate":
 			eintrag['Datum']=item['SDatum']
 		else:
@@ -465,14 +465,17 @@ class PipelineHelper:
 			eintrag['PDF']={'Datei': item['PDFFiles'][0]['path'], 'URL': item['PDFFiles'][0]['url'], 'Checksum': item['PDFFiles'][0]['checksum']}
 		if 'HTMLFiles' in item and item['HTMLFiles']:
 			eintrag['HTML']={'Datei': item['HTMLFiles'][0]['path'], 'URL': item['HTMLFiles'][0]['url'], 'Checksum': item['HTMLFiles'][0]['checksum']}
-						
+		if	'Num2' in item:
+			eintrag['Num']=[item['Num'],item['Num2']]
+		else:
+			eintrag['Num']=[item['Num']]
 		# über die Sprache iterieren
 		kopfzeile=[]
 		missing=[]
 		for sp in spider.kantone:
 			# Nur wenn die Daten vorhanden in dieser Sprache vorhanden sind...
 			if spider.metamatch['Stufe 2 '+sp]:
-				anzeige=(spider.kanton[sp]+" " if sp!="CH" else "")+spider.metamatch['Stufe 2 '+sp]+(" "+spider.metamatch['Stufe 3 '+sp] if spider.metamatch['Stufe 3 '+sp] else "")
+				anzeige=(spider.kanton[sp]+" " if spider.kanton_kurz!="CH" else "")+spider.metamatch['Stufe 2 '+sp]+(" "+spider.metamatch['Stufe 3 '+sp] if spider.metamatch['Stufe 3 '+sp] else "")
 				if 'EDatum' in item and item['EDatum'] and item['EDatum']!="nodate":
 					if len(item['EDatum'])==10:
 						anzeige+=" "+item['EDatum'][8:10]+"."+item['EDatum'][5:7]+"."+item['EDatum'][0:4]
@@ -483,7 +486,7 @@ class PipelineHelper:
 						anzeige+=" "+item['PDatum'][8:10]+"."+item['PDatum'][5:7]+"."+item['PDatum'][0:4]
 					else:
 						anzeige+=" "+item['PDatum']
-					anzeige+="("+self.translation['publiziert']+")"
+					anzeige+="("+spider.translation['publiziert'][sp]+")"
 				anzeige+=" "+item['Num']
 				if 'Num2' in item:
 					anzeige+=" ("+item['Num2']+")"

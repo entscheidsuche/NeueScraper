@@ -6,6 +6,11 @@ from NeueScraper.spiders.basis import BasisSpider
 
 logger = logging.getLogger(__name__)
 
+"""
+Um einen Tribuna-Spider zu bauen, müssen die URLs und die Hostnamen angepasst werden.
+Dazu dann in den Requests für Suche mit und ohne Datum die Trefferzahl auf 1 setzen (ist dort auf 20) und Seitennummer sowie im zweiten Request auch das Suche-ab-Datum markieren.
+"""
+
 class TribunaSpider(BasisSpider):
 	MINIMUM_PAGE_LEN = 148
 	MAX_PAGES = 10000

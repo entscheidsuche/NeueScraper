@@ -23,6 +23,10 @@ NeueScraper/spiders/GE_Gerichte.py
 NeueScraper/spiders/GL_Omni.py
 NeueScraper/spiders/GR_Gerichte.py
 NeueScraper/spiders/JU_Gerichte.py
+NeueScraper/spiders/NE_Omni.py
+NeueScraper/spiders/OW_Gerichte.py
+NeueScraper/spiders/SO_Omni.py
+NeueScraper/spiders/SZ_Gerichte.py
 NeueScraper/spiders/TI_Gerichte.py
 NeueScraper/spiders/VD_FindInfo.py
 NeueScraper/spiders/VD_Omni.py
@@ -35,6 +39,7 @@ NeueScraper/spiders/__init__.py
 NeueScraper/spiders/basis.py
 NeueScraper/spiders/tribuna.py
 NeueScraper/spiders/weblaw.py
+NeueScraper/spiders/weblawvaadin.py
 project.egg-info/PKG-INFO
 project.egg-info/SOURCES.txt
 project.egg-info/dependency_links.txt

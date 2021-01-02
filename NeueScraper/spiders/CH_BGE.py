@@ -24,7 +24,7 @@ class CH_BGE(BasisSpider):
 	
 	reMeta=re.compile(r"^\d+\.\s+(?P<formal>.+(?:Urteil der|arrêt (?:de la|du)) (?P<VKammer>.+) (?:i\.S\.|dans la cause) [^_]+ (?P<Num2>\d+[A-F]?_\d+/(?:19|20)\d\d) (?:[^_]+ )?(?:vom|du) (?P<Datum>\d\d?\.?(?:er)?\s*(?:"+"|".join(BasisSpider.MONATEde+BasisSpider.MONATEfr)+r")\s+(?:19|20)\d\d))$")
 	reMetaSimple=re.compile(r"^\d+\.\s+(?P<Rest>.+)$")
-	reRemoveDivs=re.compile(r"(</(div|span|a)>)|(<(div|span|a)[^>]+>)|(?:^<br>)|(?:<br>(?:(?=<br>)|$))")
+	reRemoveDivs=re.compile(r"(</(div|span|a|artref)>)|(<(div|span|a|artref)[^>]+>)|(?:^<br>)|(?:<br>(?:(?=<br>)|$))")
 	reDoubleSpaces=re.compile(r"\s\s+")
 
 	def mache_request(self,jahr,seite=1):
