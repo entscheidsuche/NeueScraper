@@ -141,51 +141,54 @@ class CH_BVGer(BasisSpider):
 			logger.info(trefferzahl[1]+" Treffer, Treffer "+trefferzahl[2]+"-"+trefferzahl[3]+", Seite "+trefferzahl[4]+" von "+trefferzahl[5])
 			seite=int(trefferzahl[4].replace(',',''))
 			seiten=int(trefferzahl[5].replace(',',''))
-		else:
-			logger.error("Konnte keine Trefferzahl erkennen: "+antwort)
 
-		treffer=[m.groupdict() for m in self.reTreffer.finditer(antwort)]
-		if treffer:
-			logger.debug(str(len(treffer))+" Treffer auf der Trefferliste")
-			for item in treffer:
-				logger.debug("Erkannte Bestandteile: "+json.dumps(item))
-				item['PDFUrls']=[self.PDF_BASE+item['PDFUrl']]
-				del item['PDFUrl']
-				Pos=item['Pos']
-				item['EDatum']=self.norm_datum(item['EDatum'])
-				vkammer=item['VKammer']
-				Leitsatz_kurz=item['LeitsatzKurz']
-				vgericht=""
-				Num=item['Num']
-				signatur, gericht, kammer=self.detect(vgericht,vkammer,Num)
-				item['Gericht']=gericht
-				item['Kammer']=kammer	
-				item['Kanton']=self.kanton_kurz
-				item['Signatur']=signatur
-				vgericht=gericht
-				if vkammer=='':
-					item['VKammer']=kammer
-				if vgericht=='':
-					item['VGericht']=gericht
+			treffer=[m.groupdict() for m in self.reTreffer.finditer(antwort)]
+			if treffer:
+				logger.debug(str(len(treffer))+" Treffer auf der Trefferliste")
+				for item in treffer:
+					logger.debug("Erkannte Bestandteile: "+json.dumps(item))
+					item['PDFUrls']=[self.PDF_BASE+item['PDFUrl']]
+					del item['PDFUrl']
+					Pos=item['Pos']
+					item['EDatum']=self.norm_datum(item['EDatum'])
+					vkammer=item['VKammer']
+					Leitsatz_kurz=item['LeitsatzKurz']
+					vgericht=""
+					Num=item['Num']
+					signatur, gericht, kammer=self.detect(vgericht,vkammer,Num)
+					item['Gericht']=gericht
+					item['Kammer']=kammer	
+					item['Kanton']=self.kanton_kurz
+					item['Signatur']=signatur
+					vgericht=gericht
+					if vkammer=='':
+						item['VKammer']=kammer
+					if vgericht=='':
+						item['VGericht']=gericht
 					
-				# body='ice.submit.partial=true&ice.event.target=form%3AresultTable%3A#%3Aj_id36&ice.event.captured=form%3AresultTable%3A#%3Aj_id36&ice.event.type=onclick&ice.event.alt=false&ice.event.ctrl=false&ice.event.shift=false&ice.event.meta=false&ice.event.x=86&ice.event.y=195&ice.event.left=false&ice.event.right=false&form%3A_idcl=form%3AresultTable%3A#%3Aj_id36&form%3Aj_id63=&javax.faces.RenderKitId=ICEfacesRenderKit&javax.faces.ViewState=1&icefacesCssUpdates=&form=form&ice.session='+iceSession+'&ice.view=1&ice.focus=form%3AresultTable%3A#%3Aj_id36&rand=0.'+str(random.randint(1000000000000000,9999999999999999))
-				# body.replace('#',Pos)
-				# HTML nicht holen, da das die Session durcheinander bringt
-				# req=scrapy.Request(url=htmlUrl, method='POST', headers=self.HEADERS, body=body.encode('ascii'), callback=self.parse_page_intermediate, errback=self.errback_httpbin, meta = {'item':item})
-				yield(item)
+					# body='ice.submit.partial=true&ice.event.target=form%3AresultTable%3A#%3Aj_id36&ice.event.captured=form%3AresultTable%3A#%3Aj_id36&ice.event.type=onclick&ice.event.alt=false&ice.event.ctrl=false&ice.event.shift=false&ice.event.meta=false&ice.event.x=86&ice.event.y=195&ice.event.left=false&ice.event.right=false&form%3A_idcl=form%3AresultTable%3A#%3Aj_id36&form%3Aj_id63=&javax.faces.RenderKitId=ICEfacesRenderKit&javax.faces.ViewState=1&icefacesCssUpdates=&form=form&ice.session='+iceSession+'&ice.view=1&ice.focus=form%3AresultTable%3A#%3Aj_id36&rand=0.'+str(random.randint(1000000000000000,9999999999999999))
+					# body.replace('#',Pos)
+					# HTML nicht holen, da das die Session durcheinander bringt
+					# req=scrapy.Request(url=htmlUrl, method='POST', headers=self.HEADERS, body=body.encode('ascii'), callback=self.parse_page_intermediate, errback=self.errback_httpbin, meta = {'item':item})
+					yield(item)
 				
-			if(seite<seiten):
-				jSession=response.meta['jSession']
-				iceSession=response.meta['iceSession']
+				if(seite<seiten):
+					jSession=response.meta['jSession']
+					iceSession=response.meta['iceSession']
 				
-				body='ice.submit.partial=true&ice.event.target=form%3Aj_id67&ice.event.captured=form%3Aj_id63next&ice.event.type=onclick&ice.event.alt=false&ice.event.ctrl=false&ice.event.shift=false&ice.event.meta=false&ice.event.x=171&ice.event.y=502&ice.event.left=false&ice.event.right=false&form%3A_idcl=&form%3Aj_id63next&form%3Aj_id63=next&javax.faces.RenderKitId=&javax.faces.ViewState=1&icefacesCssUpdates=&form=form&ice.session='+iceSession+'&ice.view=1&ice.focus=form%3Aj_id63next&rand=0.'+str(random.randint(1000000000000000,9999999999999999))
-				logger.debug('body: '+body)
-				req=scrapy.Request(url=self.SUCH_URL+jSession, method='POST', headers=self.HEADERS, body=body.encode('ascii'), callback=self.trefferliste, errback=self.errback_httpbin, meta=response.meta)
-				yield(req)
+					body='ice.submit.partial=true&ice.event.target=form%3Aj_id67&ice.event.captured=form%3Aj_id63next&ice.event.type=onclick&ice.event.alt=false&ice.event.ctrl=false&ice.event.shift=false&ice.event.meta=false&ice.event.x=171&ice.event.y=502&ice.event.left=false&ice.event.right=false&form%3A_idcl=&form%3Aj_id63next&form%3Aj_id63=next&javax.faces.RenderKitId=&javax.faces.ViewState=1&icefacesCssUpdates=&form=form&ice.session='+iceSession+'&ice.view=1&ice.focus=form%3Aj_id63next&rand=0.'+str(random.randint(1000000000000000,9999999999999999))
+					logger.debug('body: '+body)
+					req=scrapy.Request(url=self.SUCH_URL+jSession, method='POST', headers=self.HEADERS, body=body.encode('ascii'), callback=self.trefferliste, errback=self.errback_httpbin, meta=response.meta)
+					yield(req)
+				else:
+					logger.debug("Fertig!")	
 			else:
-				logger.debug("Fertig!")	
+				logger.error("kein Treffer gematched")
 		else:
-			logger.error("kein Treffer gematched")
+			if 'style="color: red;">Kein Suchtreffer!</span>' in antwort:
+				logger.info("Suche ergab keine Treffer.")
+			else:
+				logger.error("Konnte keine Trefferzahl erkennen: "+antwort)
 		request=self.get_next_request()
 		if request:
 			yield request
