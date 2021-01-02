@@ -19,6 +19,7 @@ class TribunaSpider(BasisSpider):
 	page_nr=0
 	trefferzahl=0
 	ENCRYPTED=False
+	VKAMMER=True
 	#name = 'Tribuna, virtuell'
 	
 	def get_next_request(self):
@@ -67,28 +68,33 @@ class TribunaSpider(BasisSpider):
 				i=i+1
 
 			brauchbar=True
-			korrektur=0
-			vkammer=werte[3]
-			if werte[4]!="": korrektur=-1
+			if len(werte)<13:
+				korrektur=-2
+				vkammer=""
+			else:
+				vkammer=werte[3]
+				korrektur=0
+				if len(vkammer)<9:
+					logger.warning("Type mismatch keine Kammer '"+vkammer+"'")
+					vkammer=""
+
+			if werte[4+korrektur]!="": korrektur+=-1
 			id_=werte[5+korrektur]
 			titel=werte[6+korrektur].replace("\\x27","'")
 			num=werte[7+korrektur]
 			entscheiddatum=werte[8+korrektur]
 			leitsatz=werte[9+korrektur].replace("\\x27","'")
 			pfad=werte[12+korrektur]
-			rechtsgebiet=werte[13+korrektur]
+			rechtsgebiet=werte[13+korrektur] if len(werte)>14+korrektur else ""
 			publikationsdatum=werte[len(werte)-1]
 			vgericht=""
 			if self.reDatum.fullmatch(publikationsdatum)==None: publikationsdatum=werte[len(werte)-2]
 			
-			if len(vkammer)<11:
-				logger.warning("Type mismatch keine Kammer '"+vkammer+"'")
-				vkammer=""
 			if self.reID.fullmatch(id_)==None:
 				logger.error("Type mismatch keine ID '"+id_+"'")	
 				brauchbar=False
-			if len(titel)<11:
-				logger.warning("Type mismatch keine Titel '"+titel+"'")
+			if len(titel)<8:
+				logger.warning("Type mismatch kein Titel '"+titel+"'")
 				titel=""	 
 			if self.reNum.fullmatch(num)==None:
 				logger.error("Type mismatch keine Geschäftsnummer '"+num+"'")
@@ -100,9 +106,9 @@ class TribunaSpider(BasisSpider):
 				if leitsatz != '-':
 					logger.warning("Type mismatch kein Leitsatz '"+leitsatz+"'")
 				leitsatz=""
-			if self.reRG.fullmatch(rechtsgebiet)==None:
+			if rechtsgebiet and self.reRG.fullmatch(rechtsgebiet)==None:
 				logger.warning("Type mismatch kein Rechtsgebiet '"+rechtsgebiet+"'")
-				rechtsgebiet=""			   
+				rechtsgebiet=""	   
 			if self.reDatum.fullmatch(publikationsdatum)==None:
 				logger.warning("Type mismatch letzter und vorletzter Eintrag kein Publikationsdatum '"+publikationsdatum+"'")
 				publikationsdatum=""
@@ -114,7 +120,7 @@ class TribunaSpider(BasisSpider):
 				
 				if not vgericht:
 					vgericht=gericht
-				if vkammer=='':
+				if not vkammer:
 					vkammer=kammer
 				
 				item = {
