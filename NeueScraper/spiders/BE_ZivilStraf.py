@@ -20,7 +20,7 @@ class BE_ZivilStraf(TribunaSpider):
 	MINIMUM_PAGE_LEN = 148
 	DOWNLOAD_URL = 'https://www.zsg-entscheide.apps.be.ch/tribunapublikation/tribunavtplus/ServletDownload/'
 	PDF_PATH = 'E%3A%5C%5Cwebapps%5C%5Ca2y%5C%5Ca2ya-www-trbpub100web%5C%5Cpdf%5C'
-	PDF_PATTERN = "{}{}_{}.pdf?path={}\\{}.pdf&dossiernummer={}"
+	PDF_PATTERN = "{}{}_{}.pdf?path={}{}.pdf&dossiernummer={}"
 
 	reNum=re.compile('\D{2,3}\s\d\d\d\d\s\d+')
 	
