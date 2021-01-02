@@ -145,6 +145,12 @@ class MyWriterPipeline:
 
 		else:
 			upload_file_content=PipelineHelper.make_xml(item,spider)
+			#vorher noch das json Schreiben
+			json_content, json_checksum = PipelineHelper.make_json(item,spider)
+			json_contentType="application/json"
+			json_file_key=PipelineHelper.file_path(item, spider)+".json"
+			MyS3FilesStore.shared_store.persist_file(json_file_key, BytesIO(json_content.encode(encoding='UTF-8')), info=None, spider=spider, meta=None, headers=None, item=item, ContentType=json_contentType, LogFlag=logFlag, checksum=json_checksum)
+			
 			contentType="text/xml"
 			upload_file_key=PipelineHelper.file_path(item, spider)+".xml"
 
@@ -437,6 +443,92 @@ class PipelineHelper:
 		parent.append(element)
 		return element
 
+
+	@staticmethod
+	def make_json(item,spider):
+		eintrag={}
+		eintrag['Signatur']=item['Signatur']
+		eintrag['Spider']=spider.name
+		if 'Sprache' in item:
+			eintrag['Sprache']=item['Sprache']
+		if 'EDatum' in item and item['EDatum'] and item['EDatum']!="nodate":
+			eintrag['Datum']=item['EDatum']
+		elif 'PDatum' in item and item['PDatum']  and item['PDatum']!="nodate":
+			eintrag['Datum']=item['SDatum']
+		elif 'SDatum' in item and item['SDatum']  and item['SDatum']!="nodate":
+			eintrag['Datum']=item['SDatum']
+		else:
+			eintrag['Datum']=spider.ERSATZDATUM
+		if len(eintrag['Datum'])==4:
+			eintrag['Datum']+="-01-01"
+		if 'PDFFiles' in item and item['PDFFiles']:
+			eintrag['PDF']={'Datei': item['PDFFiles'][0]['path'], 'URL': item['PDFFiles'][0]['url'], 'Checksum': item['PDFFiles'][0]['checksum']}
+		if 'HTMLFiles' in item and item['HTMLFiles']:
+			eintrag['HTML']={'Datei': item['HTMLFiles'][0]['path'], 'URL': item['HTMLFiles'][0]['url'], 'Checksum': item['HTMLFiles'][0]['checksum']}
+						
+		# über die Sprache iterieren
+		kopfzeile=[]
+		missing=[]
+		for sp in spider.kantone:
+			# Nur wenn die Daten vorhanden in dieser Sprache vorhanden sind...
+			if spider.metamatch['Stufe 2 '+sp]:
+				anzeige=(spider.kanton[sp]+" " if sp!="CH" else "")+spider.metamatch['Stufe 2 '+sp]+(" "+spider.metamatch['Stufe 3 '+sp] if spider.metamatch['Stufe 3 '+sp] else "")
+				if 'EDatum' in item and item['EDatum'] and item['EDatum']!="nodate":
+					if len(item['EDatum'])==10:
+						anzeige+=" "+item['EDatum'][8:10]+"."+item['EDatum'][5:7]+"."+item['EDatum'][0:4]
+					else:
+						anzeige+=" "+item['EDatum']
+				elif 'PDatum' in item and item['PDatum'] and item['PDatum']!="nodate":
+					if len(item['PDatum'])==10:
+						anzeige+=" "+item['PDatum'][8:10]+"."+item['PDatum'][5:7]+"."+item['PDatum'][0:4]
+					else:
+						anzeige+=" "+item['PDatum']
+					anzeige+="("+self.translation['publiziert']+")"
+				anzeige+=" "+item['Num']
+				if 'Num2' in item:
+					anzeige+=" ("+item['Num2']+")"
+				kopfzeile.append({'Sprachen': [sp], 'Text': anzeige})
+			else:
+				missing.append(sp)
+		kopfzeile[0]['Sprachen']+=missing
+		eintrag['Kopfzeile']=kopfzeile
+
+		abstract=[]
+		missing=[]
+		# Falls es sprachabhängige Abstracts gibt:
+		for sp in spider.kantone:
+			if 'Abstract_'+sp in item:
+				abstract.append({'Sprachen': [sp], 'Text': item['Abstract_'+sp]})
+			else:
+				missing.append(sp)
+		if len(abstract)>0:
+			abstract[0]['Sprachen']+=missing
+		else:
+			abstracts=[]
+			if 'Titel' in item and item['Titel']:
+				abstracts.append(item['Titel'])
+			if 'Abstract' in item and item['Abstract']:
+				abstracts.append(item['Abstract'])
+			if 'Leitsatz' in item and item['Leitsatz']:
+				abstracts.append(item['Leitsatz'])
+			elif 'LeitsatzKurz' in item and item['LeitsatzKurz']:
+				abstracts.append(item['LeitsatzKurz'])
+			if 'Normen' in item and item['Normen']:
+				abstracts.append(item['Normen'])
+			if 'Rechtsgebiet' in item and item['Rechtsgebiet']:
+				abstracts.append(item['Rechtsgebiet'])
+			if len(abstracts)>0:
+				abstract.append({'Sprachen': list(spider.kantone), 'Text': " | ".join(abstracts)})
+		if len(abstract)>0:
+			eintrag['Abstract']=abstract
+		buf = BytesIO(json.dumps(eintrag).encode('UTF-8'))
+		checksum = md5sum(buf)
+		eintrag['ScrapyJob']=spider.scrapy_job
+		eintrag['Zeit UTC']=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+		eintrag['Checksum']=checksum
+		
+		return json.dumps(eintrag), checksum
+
 	@staticmethod
 	def make_xml(item,spider):
 		# Alles auskommentieren, was vom Spiderlauf abhängig ist.
@@ -466,15 +558,17 @@ class PipelineHelper:
 		if 'EDatum' in item:
 			PipelineHelper.xml_add_element(meta,'EDatum',item['EDatum'])
 		if 'PDFFiles' in item and item['PDFFiles']:
-			PipelineHelper.xml_add_element(meta,'PDFFile',item['PDFFiles'][0]['path']).set('Checksum',item['PDFFiles'][0]['checksum'])
+			pdffile=PipelineHelper.xml_add_element(meta,'PDFFile',item['PDFFiles'][0]['path'])
+			pdffile.set('Checksum',item['PDFFiles'][0]['checksum'])
+			pdffile.set('URL',item['PDFFiles'][0]['url'])
 		if 'HTMLFiles' in item and item['HTMLFiles']:
-			PipelineHelper.xml_add_element(meta,'HTMLFile',item['HTMLFiles'][0]['path']).set('Checksum',item['HTMLFiles'][0]['checksum'])
+			htmlfile=PipelineHelper.xml_add_element(meta,'HTMLFile',item['HTMLFiles'][0]['path'])
+			htmlfile.set('Checksum',item['HTMLFiles'][0]['checksum'])
+			htmlfile.set('URL',item['HTMLFiles'][0]['url'])
 		if 'Sprache' in item:
 			PipelineHelper.xml_add_element(meta,'Sprache',item['Sprache'])
 		elif spider.kantonssprachen[item['Signatur'][:2]]:
 			PipelineHelper.xml_add_element(meta,'Sprache',spider.kantonssprachen[item['Signatur'][:2]])
-		
-
 
 		treffer = etree.Element('Treffer')
 		root.append(treffer)

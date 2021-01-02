@@ -25,6 +25,7 @@ class NeuescraperItem(scrapy.Item):
     Titel = scrapy.Field()
     Leitsatz = scrapy.Field()
     PDatum = scrapy.Field()
+    SDatum = scrapy.Field()
     Rechtsgebiet = scrapy.Field()
     Normen = scrapy.Field()
     DocID = scrapy.Field()
@@ -44,6 +45,9 @@ class NeuescraperItem(scrapy.Item):
     Formal_fr=scrapy.Field()
     Formal_it=scrapy.Field()
     Abstract=scrapy.Field()
+    Abstract_de=scrapy.Field()
+    Abstract_fr=scrapy.Field()
+    Abstract_it=scrapy.Field()
     Formal_org=scrapy.Field()
     Sprache=scapry.Field()
     # pass

@@ -20,10 +20,14 @@ NeueScraper/spiders/CH_BSTG.py
 NeueScraper/spiders/CH_BVGer.py
 NeueScraper/spiders/FR_Gerichte.py
 NeueScraper/spiders/GE_Gerichte.py
+NeueScraper/spiders/GL_Omni.py
+NeueScraper/spiders/GR_Gerichte.py
 NeueScraper/spiders/JU_Gerichte.py
 NeueScraper/spiders/TI_Gerichte.py
 NeueScraper/spiders/VD_FindInfo.py
 NeueScraper/spiders/VD_Omni.py
+NeueScraper/spiders/VS_Gerichte.py
+NeueScraper/spiders/ZG_Verwaltungsgericht.py
 NeueScraper/spiders/ZH_Obergericht.py
 NeueScraper/spiders/ZH_Sozialversicherungsgericht.py
 NeueScraper/spiders/ZH_Verwaltungsgericht.py

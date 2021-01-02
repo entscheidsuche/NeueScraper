@@ -85,68 +85,74 @@ class ZurichVerwgerSpider(BasisSpider):
 		logger.info("parse_trefferliste Rohergebnis: "+response.body_as_unicode())
 		
 		treffer=response.xpath("(//table[@width='98%']//table[@width='100%']/tr/td/b/text())[2]").get()
-		trefferZahl=int(treffer)
-		
-		entscheide=response.xpath("//table[@width='100%']/tr/td[@valign='top']/table")
-		for entscheid in entscheide:
-			logger.info("Verarbeite Entscheid: "+entscheid.get())
-			url=entscheid.xpath(".//a/@href").get()
-			logger.info("url: "+url)
-			num=entscheid.xpath(".//a/font/text()").get()
-			logger.info("num: "+num)
-			vkammer=entscheid.xpath(".//tr[1]/td[4]/font/text()").get()
-			if vkammer==None:
-				vkammer=""
-				logger.info("keine Kammer")
+		if treffer is None:
+			keine_treffer=response.xpath("//table[@width='98%']//table[@width='100%']/tr/td/b/text()").get()
+			if keine_treffer =="keine Treffer":
+				logger.info("Meldung: keine Treffer gefunden")
 			else:
-				logger.info("Kammer: "+vkammer)
-			titel=entscheid.xpath(".//tr[2]/td[2]/b/text()").get()
-			logger.info("Titel: "+titel)
-			regesten=entscheid.xpath(".//tr[2]/td[2]/text()").getall()
-			regeste=""
-			for s in regesten:
-				if not(s.isspace() or s==""):
-					if len(regeste)>0:
-						regeste=regeste+" "
-					regeste=regeste+s
-			datum=entscheid.xpath(".//td[@colspan='2']/i/text()").get()
-			logger.info("Typ+Datum: "+datum)
-			edatum=self.reDatum.search(datum).group(0)
-			if self.reTyp.search(datum):
-				typ= self.reTyp.search(datum).group(0)
-			else:
-				typ=""
-			id=entscheid.xpath(".//td[a]/text()").get()
-			logger.info("ID?: "+id)
-			vgericht=''
-			signatur, gericht, kammer=self.detect(vgericht,vkammer,num)
+				logger.error("Ergebnis konnte nicht erkannt werden")
+		else:
+			trefferZahl=int(treffer)
 		
-			item = {
-				'Kanton': self.kanton_kurz,
-				'Gericht' : gericht,
-				'VGericht' : vgericht,
-				'EDatum': edatum,
-				'Titel': titel,
-				'Leitsatz': regeste.strip(),
-				'Num': num,
-				'HTMLUrls': [url],
-				'PDFUrls': [],
-				'Kammer': kammer,
-				'VKammer': vkammer,
-				'Entscheidart': typ,
-				'Signatur': signatur
-			}
-			request=scrapy.Request(url=url, callback=self.parse_page, errback=self.errback_httpbin, meta = {'item':item})
-			yield(request)
-
+			entscheide=response.xpath("//table[@width='100%']/tr/td[@valign='top']/table")
+			for entscheid in entscheide:
+				logger.info("Verarbeite Entscheid: "+entscheid.get())
+				url=entscheid.xpath(".//a/@href").get()
+				logger.info("url: "+url)
+				num=entscheid.xpath(".//a/font/text()").get()
+				logger.info("num: "+num)
+				vkammer=entscheid.xpath(".//tr[1]/td[4]/font/text()").get()
+				if vkammer==None:
+					vkammer=""
+					logger.info("keine Kammer")
+				else:
+					logger.info("Kammer: "+vkammer)
+				titel=entscheid.xpath(".//tr[2]/td[2]/b/text()").get()
+				logger.info("Titel: "+titel)
+				regesten=entscheid.xpath(".//tr[2]/td[2]/text()").getall()
+				regeste=""
+				for s in regesten:
+					if not(s.isspace() or s==""):
+						if len(regeste)>0:
+							regeste=regeste+" "
+						regeste=regeste+s
+				datum=entscheid.xpath(".//td[@colspan='2']/i/text()").get()
+				logger.info("Typ+Datum: "+datum)
+				edatum=self.reDatum.search(datum).group(0)
+				if self.reTyp.search(datum):
+					typ= self.reTyp.search(datum).group(0)
+				else:
+					typ=""
+				id=entscheid.xpath(".//td[a]/text()").get()
+				logger.info("ID?: "+id)
+				vgericht=''
+				signatur, gericht, kammer=self.detect(vgericht,vkammer,num)
 		
-		page=response.meta['page']
-		jahr=response.meta['jahr']
+				item = {
+					'Kanton': self.kanton_kurz,
+					'Gericht' : gericht,
+					'VGericht' : vgericht,
+					'EDatum': edatum,
+					'Titel': titel,
+					'Leitsatz': regeste.strip(),
+					'Num': num,
+					'HTMLUrls': [url],
+					'PDFUrls': [],
+					'Kammer': kammer,
+					'VKammer': vkammer,
+					'Entscheidart': typ,
+					'Signatur': signatur
+				}
+				request=scrapy.Request(url=url, callback=self.parse_page, errback=self.errback_httpbin, meta = {'item':item})
+				yield(request)
 
-		if page*self.TREFFER_PRO_SEITE < trefferZahl:
-			logger.info("Hole Seite "+ str(page+1) +" von "+treffer+" Treffern.")
-			request=self.request_generator(page+1,jahr)
-			yield(request)
+			page=response.meta['page']
+			jahr=response.meta['jahr']
+
+			if page*self.TREFFER_PRO_SEITE < trefferZahl:
+				logger.info("Hole Seite "+ str(page+1) +" von "+treffer+" Treffern.")
+				request=self.request_generator(page+1,jahr)
+				yield(request)
 		
 
 	def parse_page(self, response):	
