@@ -12,22 +12,23 @@ from NeueScraper.pipelines import PipelineHelper as PH
 logger = logging.getLogger(__name__)
 
 
-# .... noch nicht angepasst!
-
 class SO_Omni(BasisSpider):
 	name = 'SO_Omni'
+	#Solothurn benötigt Cookies
+	custom_settings = {
+        'COOKIES_ENABLED': True
+    }
 
 	SUCH_URL='/cgi-bin/nph-omniscgi.exe'
 	HOST ="https://gerichtsentscheide.so.ch"
 	TREFFER_PRO_SEITE = 50
-	BLAETTERN_URL="/cgi-bin/nph-omniscgi.exe?OmnisPlatform=WINDOWS&WebServerUrl=https://gerichtsentscheide.so.ch&WebServerScript=/cgi-bin/nph-omniscgi.exe&OmnisLibrary=JURISWEB&OmnisClass=rtFindinfoWebHtmlService&OmnisServer=7001&Parametername=WEB&Schema=JGWEB&Source=&Aufruf=validate&cTemplate=/simple/search_resulttable.html&cTemplate_ValidationError=search.html&cSprache=DE&nSeite={Seite}&bSOGOnly=0&cSuchstringZiel=F37_HTML&bInstanzInt=true&bInstanzInt_AK=AK&bInstanzInt_BK=BK&bInstanzInt_JK=JK&bInstanzInt_OG=OG&bInstanzInt_SC=SC&bInstanzInt_SK=SK&bInstanzInt_SG=SG&bInstanzInt_ST=ST&bInstanzInt_VS=VS&bInstanzInt_VW=VW&bInstanzInt_ZK=ZK&bInstanzInt_#NULL=#NULL&nAnzahlTrefferProSeite="+str(TREFFER_PRO_SEITE)+"&W10_KEY=3449663&nAnzahlTreffer={Trefferzahl}"
 	FORMDATA = {
 		"OmnisPlatform": "WINDOWS",
-		"WebServerUrl": "gerichtsentscheide.so.ch",
+		"WebServerUrl": "https://gerichtsentscheide.so.ch",
 		"WebServerScript": "/cgi-bin/nph-omniscgi.exe",
 		"OmnisLibrary": "JURISWEB",
 		"OmnisClass": "rtFindinfoWebHtmlService",
-		"OmnisServer": "JURISWEB,7001",
+		"OmnisServer": "7001",
 		"Schema": "JGWEB",
 		"Parametername": "WEB",
 		"Aufruf": "validate",
@@ -62,8 +63,7 @@ class SO_Omni(BasisSpider):
 		"nAnzahlTrefferProSeite": str(TREFFER_PRO_SEITE)
 	}
 	
-	reTreffer=re.compile(r"</b>\svon\s(?P<Treffer>\d+)\sgefundenen\sEntscheid")
-	reW10=re.compile(r"W10_KEY=(?P<Key>\d+)&")
+	reTreffer=re.compile(r"</b>\svon\s(?P<Treffer>\d+)\sgefundenen\sGeschäft")
 	reNum2=re.compile(r"\((?P<Num2>[^)]+)\)")
 	
 	def get_next_request(self):
@@ -83,9 +83,9 @@ class SO_Omni(BasisSpider):
 		logger.debug("parse_trefferliste response.status "+str(response.status))
 		antwort=response.body_as_unicode()
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
-		logger.debug("parse_trefferliste Rohergebnis: "+antwort[:30000])
+		logger.info("parse_trefferliste Rohergebnis: "+antwort[:30000])
 	
-		treffer=response.xpath("//table[@width='100%' and @border='0' and @cellspacing='0' and @cellpadding='0']/tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0']/tr/td[@width='50%']").get()
+		treffer=PH.NC(response.xpath("//table[@width='100%' and @border='0' and @cellspacing='0' and @cellpadding='0']/tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0']/tr/td[@width='50%']").get(),error="keine Trefferzahl erkannt!")
 		logger.info("Trefferzahl: "+treffer)
 		treffers=self.reTreffer.search(treffer)
 		if treffers:
@@ -109,14 +109,14 @@ class SO_Omni(BasisSpider):
 				del abstract[0]
 				del abstract[0]
 				item['Leitsatz']="<br>".join(abstract)
-			item['Num']=PH.NC(entscheid.xpath("./tr/td/a/text()[contains(.,'.')]").get(), error="keine Geschäftsnummer in "+text)
-			num2=PH.NC(entscheid.xpath("./tr/td[@nowrap='nowrap']/text()[contains(.,'(')]").get(), info="keine zweite Geschäftsnummer in "+text)
+			item['Num']=PH.NC(entscheid.xpath("./tr/td/a/span/text()[contains(.,'.')]").get(), error="keine Geschäftsnummer in "+text)
+			num2=PH.NC(entscheid.xpath("./tr/td[2]/text()[contains(.,'(')]").get(), info="keine zweite Geschäftsnummer in "+text)
 			if self.reNum2.search(num2):
 				item['Num2']=self.reNum2.search(num2).group("Num2")
 			edatum_roh=PH.NC(entscheid.xpath("./tr/td[@align='right']/text()[contains(.,'Entscheiddatum:')]").get(), info="kein Entscheiddatum in "+text)
 			if self.reDatum.search(edatum_roh):
 				item['EDatum']=self.norm_datum(edatum_roh)
-			pdatum_roh=PH.NC(entscheid.xpath("./tr/td[@colspan='2' and @align='right']/text()[contains(.,'datum:')]").get(), info="kein Publikationsdatum in "+text)
+			pdatum_roh=PH.NC(entscheid.xpath("./tr/td[@colspan='2' and @align='right']/text()[contains(.,'Erstpublikationsdatum:')]").get(), info="kein Publikationsdatum in "+text)
 			if self.reDatum.search(pdatum_roh):
 				item['PDatum']=self.norm_datum(pdatum_roh)
 			item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",item['Num'][:2],item['Num'])
@@ -125,19 +125,12 @@ class SO_Omni(BasisSpider):
 			yield request
 	
 		if seite*self.TREFFER_PRO_SEITE < trefferzahl:
-			href=response.xpath("//table[@width='100%' and @border='0' and @cellspacing='0' and @cellpadding='0']/tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0' and @border='0']/tr/td[@align='right']/a/@href")
-			if href==[]:
+			href=response.xpath("//table[@width='100%' and @border='0' and @cellspacing='0' and @cellpadding='0']/tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0']/tr/td[@align='right']/a[last()-1]/@href").get()
+			if href=="":
 				logger.error("Blätterlink nicht gefunden: "+antwort)
 			else:
-				href_string=href.get()
-				W10=self.reW10.search(href_string)
-				if W10:
-					next_url=self.HOST+self.BLAETTERN_URL.format(W10=W10.group('Key'),Seite=str(seite+1),Trefferzahl=trefferzahl)
-					request=scrapy.Request(url=next_url, callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': seite+1})
-					yield request
-				else:
-					logger.error("W10 für das Blättern nicht gefunden: "+antwort)
-
+				request=scrapy.Request(url=href, callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': seite+1})
+				yield request
 								
 	def parse_document(self, response):
 		logger.info("parse_document response.status "+str(response.status))
@@ -155,4 +148,3 @@ class SO_Omni(BasisSpider):
 		if len(regeste)>0:
 			item['Leitsatz']=regeste.get()
 		yield(item)
-		
