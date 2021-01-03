@@ -339,13 +339,13 @@ class BasisSpider(scrapy.Spider):
 					kammermatches[i]=len(m)
 						
 			# Falls Geschäftsnummernmatch vorhanden, zähle das wie ein 100Zeichen-Match bei der Kammer.
-			if len(kammermatches)!=1:
+			if len(kammermatches)!=1 and len(self.GNmatch)>0:
 				GN_matches=[]
 				sps=self.reSplitter.findall(num)
 				for sp in range(len(sps)):
 					matchstring=str(sp+1)+"#"+sps[sp]
 					if matchstring in self.GNmatch:
-						logger.info("Geschäftsnummermatch für "+matchstring+" Position "+json.dumps(self.GNmatch[matchstring])+": Einträge "+",".join([self.gerichte[self.name][i]['Signatur'] for i in self.GNmatch[matchstring]]) )				
+						logger.info("Geschäftsnummermatch für "+matchstring+" Position "+",".join(self.GNmatch[matchstring])+": Einträge "+",".join([self.gerichte[self.name][i]['Signatur'] for i in self.GNmatch[matchstring]]) )				
 						for i in self.GNmatch[matchstring]:
 							if i in kammermatches:
 								kammermatches[i]+=100
@@ -405,9 +405,9 @@ class BasisSpider(scrapy.Spider):
 				kammer=''
 				if e['Stufe 3 de']:
 					kammer=e['Stufe 3 de']
-				elif e['Stufe 3 FR']:
+				elif e['Stufe 3 fr']:
 					kammer=e['Stufe 3 fr']
-				elif e['Stufe 3 IT']:
+				elif e['Stufe 3 it']:
 					kammer=e['Stufe 3 it']
 				
 				return gericht, kammer
