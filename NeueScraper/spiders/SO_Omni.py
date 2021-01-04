@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 
 class SO_Omni(BasisSpider):
 	name = 'SO_Omni'
-	#Solothurn benötigt Cookies
+	#Solothurn benötigt Cookies aber die scrapy-Cookies funktionieren nicht. Daher selber machen.
+
 	custom_settings = {
         'COOKIES_ENABLED': True
     }
@@ -80,7 +81,17 @@ class SO_Omni(BasisSpider):
 
 
 	def parse_trefferliste(self, response):
-		logger.debug("parse_trefferliste response.status "+str(response.status))
+		logger.info("parse_trefferliste response.status "+str(response.status))
+		Cookie=""
+		if 'Cookie' in response.request.headers:
+			logger.debug("parse_trefferliste Cookie gesendet: "+response.request.headers['Cookie'].decode('UTF-8'))	
+		else:
+			logger.debug("Im Trefferlistenrequest gibt es keine Cookies.")
+		if 'Set-Cookie' in response.headers:
+			logger.info("parse_trefferliste Cookie erhalten: "+response.headers['Set-Cookie'].decode('UTF-8'))
+			Cookie=response.headers['Set-Cookie'].decode('UTF-8').split(";")[0]
+		else:
+			logger.info("In der Trefferlistenresponse gibt es keine Cookies.")
 		antwort=response.body_as_unicode()
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:30000])
@@ -122,6 +133,9 @@ class SO_Omni(BasisSpider):
 			item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",item['Num'][:2],item['Num'])
 			logger.info("Entscheid: "+json.dumps(item))
 			request=scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, meta={'item': item})
+			if Cookie:
+				request.headers['Cookie']=Cookie.encode('UTF-8')
+				logger.info("Cookie gesetzt: "+Cookie)
 			yield request
 	
 		if seite*self.TREFFER_PRO_SEITE < trefferzahl:
@@ -130,13 +144,24 @@ class SO_Omni(BasisSpider):
 				logger.error("Blätterlink nicht gefunden: "+antwort)
 			else:
 				request=scrapy.Request(url=href, callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': seite+1})
+				if Cookie:
+					request.headers['Cookie']=Cookie.encode('UTF-8')
+					logger.info("Cookie gesetzt: "+Cookie)
 				yield request
 								
 	def parse_document(self, response):
 		logger.info("parse_document response.status "+str(response.status))
+		if 'Cookie' in response.request.headers:
+			logger.debug("parse_document Cookie gesendet: "+response.request.headers['Cookie'].decode('UTF-8'))	
+		else:
+			logger.debug("Im Documentrequest komme keine Cookies an.")
+		if 'Set-Cookie' in response.headers:
+			logger.debug("parse_document Cookie erhalten: "+response.headers['Set-Cookie'].decode('UTF-8'))
+		else:
+			logger.debug("In der Documentresponse gibt es keine Cookies.")
 		antwort=response.body_as_unicode()
 		logger.info("parse_document Rohergebnis "+str(len(antwort))+" Zeichen")
-		logger.debug("parse_document Rohergebnis: "+antwort[:20000])
+		logger.info("parse_document Rohergebnis: "+antwort[:20000])
 		
 		item=response.meta['item']	
 		html=response.xpath("//div[@class='WordSection1' or @class='Section1']")

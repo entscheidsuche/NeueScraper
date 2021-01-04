@@ -24,11 +24,14 @@ NeueScraper/spiders/GL_Omni.py
 NeueScraper/spiders/GR_Gerichte.py
 NeueScraper/spiders/JU_Gerichte.py
 NeueScraper/spiders/NE_Omni.py
+NeueScraper/spiders/NW_Gerichte.py
 NeueScraper/spiders/OW_Gerichte.py
 NeueScraper/spiders/SH_OG.py
 NeueScraper/spiders/SO_Omni.py
 NeueScraper/spiders/SZ_Gerichte.py
+NeueScraper/spiders/TG_OG.py
 NeueScraper/spiders/TI_Gerichte.py
+NeueScraper/spiders/UR_Gerichte.py
 NeueScraper/spiders/VD_FindInfo.py
 NeueScraper/spiders/VD_Omni.py
 NeueScraper/spiders/VS_Gerichte.py

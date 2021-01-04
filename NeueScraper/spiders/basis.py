@@ -339,18 +339,22 @@ class BasisSpider(scrapy.Spider):
 					kammermatches[i]=len(m)
 						
 			# Falls Geschäftsnummernmatch vorhanden, zähle das wie ein 100Zeichen-Match bei der Kammer.
-			if len(kammermatches)!=1 and len(self.GNmatch)>0:
-				GN_matches=[]
-				sps=self.reSplitter.findall(num)
-				for sp in range(len(sps)):
-					matchstring=str(sp+1)+"#"+sps[sp]
-					if matchstring in self.GNmatch:
-						logger.info("Geschäftsnummermatch für "+matchstring+" Position "+",".join(self.GNmatch[matchstring])+": Einträge "+",".join([self.gerichte[self.name][i]['Signatur'] for i in self.GNmatch[matchstring]]) )				
-						for i in self.GNmatch[matchstring]:
-							if i in kammermatches:
-								kammermatches[i]+=100
-							else:
-								kammermatches[i]=100
+			if len(kammermatches)!=1:
+				if len(self.GNmatch)>0:
+					GN_matches=[]
+					sps=self.reSplitter.findall(num)
+					for sp in range(len(sps)):
+						matchstring=str(sp+1)+"#"+sps[sp]
+						if matchstring in self.GNmatch:
+							info=""
+							for k in self.GNmatch[matchstring]:
+								info+=str(k)+"("+self.gerichte[self.name][k]['Signatur']+") "
+							logger.info("Geschäftsnummermatch für "+matchstring+": "+info)				
+							for i in self.GNmatch[matchstring]:
+								if i in kammermatches:
+									kammermatches[i]+=100
+								else:
+									kammermatches[i]=100
 				# Falls mehrere Matches, nehme den mit dem höchsten Score
 				if len(kammermatches)>1:
 					sortiert = sorted(kammermatches.items(), key=lambda x: x[1], reverse=True)

@@ -12,7 +12,7 @@ from NeueScraper.pipelines import PipelineHelper as PH
 logger = logging.getLogger(__name__)
 
 
-class NE_Omni(BasisSpider):
+class SH_OG(BasisSpider):
 	name = 'SH_OG'
 
 	SUCH_URL='/index.php?id=89'
