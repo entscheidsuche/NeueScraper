@@ -38,8 +38,11 @@ class BasisSpider(scrapy.Spider):
 	translation = { 'publiziert': {'de': 'publiziert', 'fr': 'publié', 'it': 'pubblicato'}}
 	CSV_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vR2sZY8Op7cLChL6Hu0aDZmbOrmX_UPtyxz86W-oeyuCemBs0poqxC-EU33i-JhH9PQ7SMqYOnIw5ou/pub?output=csv'
 	# CSV_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vR2sZY8Op7cLChL6Hu0aDZmbOrmX_UPtyxz86W-oeyuCemBs0poqxC-EU33i-JhH9PQ7SMqYOnIw5ou/pub?gid=1220663602&single=true&output=csv'
-	JOBS_HOST='http://entscheidsuche.ch.s3.amazonaws.com/'
-	JOBS_URL=JOBS_HOST+'?list-type=2&prefix=scraper%2F'
+	#JOBS_HOST='http://entscheidsuche.ch.s3.amazonaws.com/'
+	#JOBS_URL=JOBS_HOST+'?list-type=2&prefix=scraper%2F'
+	JOBS_HOST='https://entscheidsuche.ch'
+	JOBS_URL=JOBS_HOST+'/docs/Jobs/'
+	
 	kammerfallback=None
 	files_written ={}
 	previous_run={}
@@ -116,10 +119,13 @@ class BasisSpider(scrapy.Spider):
 									gerichtsname_de=gerichtsname_it
 								else:
 									gerichtsname_de=gerichtsname_fr
+								signaturreihe['Stufe 2 de']=gerichtsname_de
 							if gerichtsname_fr=="":
 								gerichtsname_fr=gerichtsname_de
+								signaturreihe['Stufe 2 fr']=gerichtsname_fr
 							if gerichtsname_it=="":
 								gerichtsname_it=gerichtsname_de
+								signaturreihe['Stufe 2 it']=gerichtsname_it
 							json_gericht={'de': gerichtsname_de, 'fr': gerichtsname_fr, 'it': gerichtsname_it, 'kammern': {}}
 							json_kanton['gerichte'][gerichtssignatur]=json_gericht
 						else:
@@ -133,11 +139,18 @@ class BasisSpider(scrapy.Spider):
 									kammername_de=kammername_it
 								else:
 									kammername_de=kammername_fr
+								signaturreihe['Stufe 3 de']=kammername_de
 							if kammername_fr=="":
 								kammername_fr=kammername_de
+								signaturreihe['Stufe 3 fr']=kammername_fr
 							if kammername_it=="":
 								kammername_it=kammername_de
-							json_kammer={'de': kammername_de, 'fr': kammername_fr, 'it': kammername_it}
+								signaturreihe['Stufe 3 it']=kammername_it
+							# Sind Kammernamen überhaupt gesetzt?
+							if kammername_de:
+								json_kammer={'spider': spidername, 'de': kammername_de, 'fr': kammername_fr, 'it': kammername_it}
+							else:
+								json_kammer={'spider': spidername}
 							json_gericht['kammern'][signatur]=json_kammer
 					
 					for spalte in signaturreihe:
@@ -148,6 +161,7 @@ class BasisSpider(scrapy.Spider):
 								spaltenname='X_'+spaltenname
 							spalte_e=etree.SubElement(signatur_e,spaltenname)
 							spalte_e.text=wert
+							
 		xml_content = '<?xml version="1.0" encoding="UTF-8"?><?xml-stylesheet type="text/xsl" href="/Spider.xsl"?>\n'
 		xml_content = xml_content+str(etree.tostring(root_e, pretty_print=True),"ascii")
 		item= { 'Spiderliste': xml_content }
@@ -156,16 +170,36 @@ class BasisSpider(scrapy.Spider):
 		# JSON um default-Werte ergänzen:
 		for k in json_kantone:
 			if not k+"_XX" in json_kantone[k]['gerichte']:
+				erstes_gericht=next(iter(json_kantone[k]['gerichte']))
+				erste_kammer=next(iter(json_kantone[k]['gerichte'][erstes_gericht]['kammern']))
 				json_kantone[k]['gerichte'][k+"_XX"]={'de': "unbekanntes Gericht", 'fr': "tribunal inconnu", "it": "corte sconosciuta",
-					'kammern':{ k+"_XX_001": { 'de': "", 'fr':"", 'it': ""}}}
+					'kammern':{ k+"_XX_001": { 'spider': json_kantone[k]['gerichte'][erstes_gericht]['kammern'][erste_kammer]['spider']}}}
 			for g in json_kantone[k]['gerichte']:
 				# Nur dann Fallback-Kammer reinnehmen, wenn es mehr als eine Kammer gibt.
 				if not g+"_999" in json_kantone[k]['gerichte'][g]['kammern'] and len(json_kantone[k]['gerichte'][g]['kammern'])>1:
-					json_kantone[k]['gerichte'][g]['kammern'][g+'_999']={'de': "andere", 'fr': "autres", "it": "altro"}
+					erste_kammer=next(iter(json_kantone[k]['gerichte'][g]['kammern']))				
+					json_kantone[k]['gerichte'][g]['kammern'][g+'_999']={'de': "andere", 'fr': "autres", "it": "altro", 'spider': json_kantone[k]['gerichte'][g]['kammern'][erste_kammer]['spider']}
 		
 		json_content=json.dumps(json_kantone)
 		item= { 'Facetten': json_content}
 		yield(item)
+
+		htaccess="Options +Indexes\n"
+		htaccess+="Header set Access-Control-Allow-Origin *\n"
+		htaccess+="RewriteEngine On\n"
+		htaccess+="RewriteBase /\n"
+		htaccess+='RewriteRule "^Index/([^/]+)/last$" "/docs/lese_index.php?spider=$1" [L]\n'
+		
+		for c in json_kantone:
+			for g in json_kantone[c]['gerichte']:
+				for k in json_kantone[c]['gerichte'][g]['kammern']:
+					s=json_kantone[c]['gerichte'][g]['kammern'][k]['spider']
+					htaccess+=f'RewriteRule "^({k}_.*)$" "/docs/{s}/$1" [L]\n'
+					
+		item= { 'htaccess': htaccess}
+		yield(item)
+
+		#Redirects für die Website schreiben
 						
 		if self.name in self.gerichte:
 			if 'Signatur' in self.gerichte[self.name][0]:
@@ -211,11 +245,11 @@ class BasisSpider(scrapy.Spider):
 				logger.error("2. Ebene leer bei "+self.name)
 			self.stufe3=''
 			if not self.mehrfachspider:
-				if 'Stufe 3 IT' in self.gerichte[self.name][0]:
+				if 'Stufe 3 it' in self.gerichte[self.name][0]:
 					self.stufe3=self.gerichte[self.name][0]['Stufe 3 it']
-				if 'Stufe 3 FR' in self.gerichte[self.name][0]:
+				if 'Stufe 3 fr' in self.gerichte[self.name][0]:
 					self.stufe3=self.gerichte[self.name][0]['Stufe 3 fr']
-				if 'Stufe 3 DE' in self.gerichte[self.name][0]:
+				if 'Stufe 3 de' in self.gerichte[self.name][0]:
 					self.stufe3=self.gerichte[self.name][0]['Stufe 3 de']
 				if self.stufe3:
 					self.ebenen=3
@@ -289,14 +323,37 @@ class BasisSpider(scrapy.Spider):
 		logger.debug("Gerichtsliste verarbeitet, hole nun die Jobliste.")
 		
 		# Nun einlesen, was an Dateien vom letzten Spidern vorhanden ist
-		jobs_url=self.JOBS_URL+self.name+"%2FJob_"
+		#jobs_url=self.JOBS_URL+self.name+"%2FJob_"
+		jobs_url=self.JOBS_URL+self.name
 		logger.info("Jobs-URL: "+jobs_url)
-		yield scrapy.Request(url=jobs_url, callback=self.parse_jobliste, errback=self.errback_httpbin)
+		yield scrapy.Request(url=jobs_url, callback=self.parse_jobliste_https, errback=self.errback_httpbin, meta={'handle_httpstatus_list': [404]})
 		
-	def parse_jobliste(self, response):
-		logger.debug("parse_jobliste response.status "+str(response.status))
-		logger.info("parse_jobliste Rohergebnis "+str(len(response.body))+" Zeichen")
-		logger.debug("parse_jobliste Rohergebnis: "+response.body_as_unicode())
+	# nicht mehr genutzt
+	def parse_jobliste_https(self, response):
+		logger.info("parse_jobliste_https response.status "+str(response.status))
+		logger.info("parse_jobliste_https Rohergebnis "+str(len(response.body))+" Zeichen")
+		logger.info("parse_jobliste_https Rohergebnis: "+response.body_as_unicode())
+		if response.status==404:
+			logger.warning("Jobverzeichnis existiert nicht")
+			jobs=[]
+		else:
+			jobs=response.xpath("//img[@src='/_autoindex/icons/unknown.png']/following-sibling::a/text()").getall()
+		if len(jobs)>0:
+			jobs.sort(reverse=True)
+			logger.info(f"letzter Job: {jobs[0]}")
+			yield scrapy.Request(url=self.JOBS_URL+self.name+"/Jobs/"+jobs[0], callback=self.parse_dateiliste, errback=self.errback_httpbin)
+		else:
+			logger.info("Kein vorheriger Job gefunden. Erster Lauf von: "+self.name)
+			logger.info("Starte nun "+str(len(self.request_gen))+" Requests.")	
+			for req in self.request_gen:
+				yield req
+
+
+	#
+	def parse_jobliste_S3(self, response):
+		logger.debug("parse_jobliste_S3 response.status "+str(response.status))
+		logger.info("parse_jobliste_S3 Rohergebnis "+str(len(response.body))+" Zeichen")
+		logger.debug("parse_jobliste_S3 Rohergebnis: "+response.body_as_unicode())
 		jobs=response.xpath("//*[local-name()='Contents']/*[local-name()='Key']/text()").getall()
 		if jobs:
 			jobs.sort(reverse=True)
@@ -309,9 +366,9 @@ class BasisSpider(scrapy.Spider):
 
 
 	def parse_dateiliste(self, response):
-		logger.debug("parse_dateiliste response.status "+str(response.status))
+		logger.info("parse_dateiliste response.status "+str(response.status))
 		logger.info("parse_dateiliste Rohergebnis "+str(len(response.body))+" Zeichen")
-		logger.debug("parse_dateiliste Rohergebnis: "+response.body_as_unicode()[:10000])
+		logger.info("parse_dateiliste Rohergebnis: "+response.body_as_unicode()[:10000])
 		self.previous_run=json.loads(response.body_as_unicode())
 		# Wird nur eine Teilabfrage gemacht, die Daten der vorherigen Abfrage übernehmen und mit der Quelle kennzeichnen
 		self.previous_job=self.previous_run["job"]
@@ -456,3 +513,4 @@ class BasisSpider(scrapy.Spider):
 		# you may need the failure's type
 		logger.error(repr(failure))
 		
+	

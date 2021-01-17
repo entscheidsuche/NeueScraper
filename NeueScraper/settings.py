@@ -68,16 +68,18 @@ DEFAULT_REQUEST_HEADERS = {
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
 ITEM_PIPELINES = {'NeueScraper.pipelines.MyFilesPipeline': 1, 'NeueScraper.pipelines.MyWriterPipeline': 100}
-FILES_STORE = 's3://entscheidsuche.ch/scraper/'
-FILES_STORE_S3_ACL = 'public-read'
-AWS_ENDPOINT_URL = 'https://s3.eu-west-3.amazonaws.com'
+FILES_STORE = 'sftp://entscheidsuche.ch'
+SFTP_HOST ='entscheidsuche.ch'
+#FILES_STORE = 's3://entscheidsuche.ch/scraper/'
+#FILES_STORE_S3_ACL = 'public-read'
+#AWS_ENDPOINT_URL = 'https://s3.eu-west-3.amazonaws.com'
 #AWS_ACCESS_KEY_ID
 #AWS_SECRET_ACCESS_KEY
-AWS_REGION_NAME='eu-west-3'
-AWS_DEFAULT_REGION='eu-west-3'
-AWS_PROFILE='default'
-AWS_USE_SSL = True
-AWS_VERIFY = True
+#AWS_REGION_NAME='eu-west-3'
+#AWS_DEFAULT_REGION='eu-west-3'
+#AWS_PROFILE='default'
+#AWS_USE_SSL = True
+#AWS_VERIFY = True
 #FTP_USER = 'Scraper@entscheidsuche.ch'
 #FTP_PASSWORD
 FILES_URLS_FIELD = "PDFUrls"

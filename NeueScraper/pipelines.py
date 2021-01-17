@@ -24,6 +24,11 @@ from scrapy.utils.misc import md5sum
 from lxml import etree
 import datetime
 import operator
+import pysftp
+import posixpath
+from scrapy.settings import Settings
+from scrapy.exceptions import IgnoreRequest, NotConfigured
+
 
 filenamechars=re.compile("[^-a-zA-Z0-9]")
 filenameparts=re.compile(r'/(?P<stamm>(?P<signatur>[^_]+_[^_]+_[^_]+)[^\.]+)\.(?P<endung>\w+)')
@@ -37,91 +42,94 @@ from scrapy.pipelines.files import FSFilesStore
 from scrapy.pipelines.files import GCSFilesStore
 from scrapy.pipelines.files import FTPFilesStore
 
-logger = logging.getLogger(__name__)
-
-
 class MyWriterPipeline:
 	def open_spider(self,spider):
 		logger.debug("pipeline open")
 
 	def close_spider(self,spider):
-		logger.debug("pipeline close")
-		datestring=datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-		pfad_job=spider.name+"/Job_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
-		pfad_index=spider.name+"/Index_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
-		signaturen={}
-		if spider.ab:
-			job_typ="update"
+		if spider.name=='Impfung':
+			logger.warning("keine BasisSpider Klasse")
 		else:
-			vorher=len(list(filter(lambda x:spider.previous_run['dateien'][x]['status'] in ['update',"anders_wieder_da","neu","identisch"], spider.previous_run['dateien']))) if 'dateien' in spider.previous_run else 0
-			if vorher>0:
-				gelesen=len(list(filter(lambda x:spider.files_written[x]['status'] in ['update',"anders_wieder_da","neu","identisch"] and not 'quelle' in spider.files_written[x], spider.files_written)))
-				prozentsatz=gelesen/vorher*100
-				if prozentsatz > 95:
-					job_typ="komplett"
-					logger.info("vorher {} Dateien, nun {} Dateien gelesen {:.2f}%".format(vorher, gelesen, prozentsatz))
+			logger.debug("pipeline close")
+			datestring=datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+			pfad_job="Jobs/"+spider.name+"/Job_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
+			pfad_index="Index/"+spider.name+"/Index_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
+			signaturen={}
+			if spider.ab:
+				job_typ="update"
+			else:
+				vorher=len(list(filter(lambda x:spider.previous_run['dateien'][x]['status'] in ['update',"anders_wieder_da","neu","identisch"], spider.previous_run['dateien']))) if 'dateien' in spider.previous_run else 0
+				if vorher>0:
+					gelesen=len(list(filter(lambda x:spider.files_written[x]['status'] in ['update',"anders_wieder_da","neu","identisch"] and not 'quelle' in spider.files_written[x], spider.files_written)))
+					prozentsatz=gelesen/vorher*100
+					if prozentsatz > 95:
+						job_typ="komplett"
+						logger.info("vorher {} Dateien, nun {} Dateien gelesen {:.2f}%".format(vorher, gelesen, prozentsatz))
+					else:
+						job_typ="unvollständig"
+						logger.error("vorher {} Dateien, nun {} Dateien gelesen {:.2f}%".format(vorher, gelesen, prozentsatz))
 				else:
-					job_typ="unvollständig"
-					logger.error("vorher {} Dateien, nun {} Dateien gelesen {:.2f}%".format(vorher, gelesen, prozentsatz))
-			else:
-				job_typ="neu"
-				logging.info("keine Dokumente eines vorherigen Laufes gefunden.")
+					job_typ="neu"
+					logger.info("keine Dokumente eines vorherigen Laufes gefunden.")
 
-		gesamt={'gesamt':0}
-		to_index={}
-		for f in spider.files_written:
-			# neu nicht mehr vorhandene Inhalte markieren
-			if job_typ=="komplett" and 'quelle' in spider.files_written[f] and not spider.files_written[f]['status']=="nicht_mehr_da":
-				spider.files_written[f]['status']='nicht_mehr_da'
-				del spider.files_written[f]['quelle']
-				if 'last_change' in spider.files_written[f]:
-					del spider.files_written[f]['last_change']
-			s=filenameparts.search(f)
-			if s is None:
-				logging.error("Konnte Dateinamen "+f+" nicht aufteilen.")
-			else:
-				if s.group('endung')=='xml':
-					if 'quelle' in spider.files_written[f]:
-						count_group='vorher'
-					else:
-						count_group='aktuell'
+			gesamt={'gesamt':0}
+			to_index={}
+			for f in spider.files_written:
+				# neu nicht mehr vorhandene Inhalte markieren
+				if job_typ=="komplett" and 'quelle' in spider.files_written[f] and not spider.files_written[f]['status']=="nicht_mehr_da":
+					spider.files_written[f]['status']='nicht_mehr_da'
+					del spider.files_written[f]['quelle']
+					if 'last_change' in spider.files_written[f]:
+						del spider.files_written[f]['last_change']
+				s=filenameparts.search(f)
+				if s is None:
+					logger.error("Konnte Dateinamen "+f+" nicht aufteilen.")
+				else:
+					logger.debug(f"Dateiname: {f} mit Endung {s.group('endung')}")
+					if s.group('endung')=='json':
+						logger.debug(f"Dateiname {f} ist json.")
+						if 'quelle' in spider.files_written[f]:
+							count_group='vorher'
+						else:
+							count_group='aktuell'
+	
+						if spider.files_written[f]['status']=='nicht_mehr_da':
+							count_typ='entfernt'
+							if count_group=='aktuell':
+								to_index[f]="delete"
+						elif spider.files_written[f]['status'] in ['update']:
+							count_typ='aktualisiert'
+							if count_group=='aktuell':
+								to_index[f]="update"
+						elif spider.files_written[f]['status'] in ['neu', "anders_wieder_da"]:
+							count_typ='neu'
+							if count_group=='aktuell':
+								to_index[f]="new"
+						else:
+							count_typ='identisch'
+	
+						count_eintrag=count_group+"_"+count_typ
+						if not s.group('signatur') in signaturen:
+							signaturen[s.group('signatur')]={'gesamt':0}
+						if not count_eintrag in signaturen[s.group('signatur')]:
+							signaturen[s.group('signatur')][count_eintrag]=1
+						else:
+							signaturen[s.group('signatur')][count_eintrag]=signaturen[s.group('signatur')][count_eintrag]+1
+						if not count_eintrag in gesamt:
+							gesamt[count_eintrag]=1
+						else:
+							gesamt[count_eintrag]=gesamt[count_eintrag]+1
+						if not count_typ=='entfernt':
+							signaturen[s.group('signatur')]['gesamt']=signaturen[s.group('signatur')]['gesamt']+1
+							gesamt['gesamt']=gesamt['gesamt']+1
+			files_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "dateien": spider.files_written, 'signaturen': signaturen, 'gesamt': gesamt }
+			json_content=json.dumps(files_log)
+			MyFilesPipeline.common_store.persist_file(pfad_job, BytesIO(json_content.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
 
-					if spider.files_written[f]['status']=='nicht_mehr_da':
-						count_typ='entfernt'
-						if count_group=='aktuell':
-							to_index[f]="delete"
-					elif spider.files_written[f]['status'] in ['update']:
-						count_typ='aktualisiert'
-						if count_group=='aktuell':
-							to_index[f]="update"
-					elif spider.files_written[f]['status'] in ['neu', "anders_wieder_da"]:
-						count_typ='neu'
-						if count_group=='aktuell':
-							to_index[f]="new"
-					else:
-						count_typ='identisch'
+			index_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "actions": to_index, 'signaturen': signaturen, 'gesamt': gesamt }
+			json_content=json.dumps(index_log)
+			MyFilesPipeline.common_store.persist_file(pfad_index, BytesIO(json_content.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
 
-					count_eintrag=count_group+"_"+count_typ
-					if not s.group('signatur') in signaturen:
-						signaturen[s.group('signatur')]={'gesamt':0}
-					if not count_eintrag in signaturen[s.group('signatur')]:
-						signaturen[s.group('signatur')][count_eintrag]=1
-					else:
-						signaturen[s.group('signatur')][count_eintrag]=signaturen[s.group('signatur')][count_eintrag]+1
-					if not count_eintrag in gesamt:
-						gesamt[count_eintrag]=1
-					else:
-						gesamt[count_eintrag]=gesamt[count_eintrag]+1
-					if not count_typ=='entfernt':
-						signaturen[s.group('signatur')]['gesamt']=signaturen[s.group('signatur')]['gesamt']+1
-						gesamt['gesamt']=gesamt['gesamt']+1
-		files_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "dateien": spider.files_written, 'signaturen': signaturen, 'gesamt': gesamt }
-		json_content=json.dumps(files_log)
-		MyS3FilesStore.shared_store.persist_file(pfad_job, BytesIO(json_content.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
-
-		index_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "actions": to_index, 'signaturen': signaturen, 'gesamt': gesamt }
-		json_content=json.dumps(index_log)
-		MyS3FilesStore.shared_store.persist_file(pfad_index, BytesIO(json_content.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
 
 	def process_item(self, item, spider):
 		logger.debug("pipeline item")
@@ -142,21 +150,122 @@ class MyWriterPipeline:
 			upload_file_content=item['Facetten']
 			contentType='application/json'
 			logFlag=False
+		elif 'htaccess' in item:
+			upload_file_key=".htaccess"
+			upload_file_content=item['htaccess']
+			contentType='text/plain'
+			logFlag=False
 
 		else:
-			upload_file_content=PipelineHelper.make_xml(item,spider)
+			if 'Num' in item:
+				logger.info("Geschäftsnummer: "+item['Num'])
+			else:
+				logger.warning("keine Geschäftsnummer!")
+				item['Num']='unknown'
+			if not('PDFFiles' in item and item['PDFFiles']) and not('HTMLFiles' in item and item['HTMLFiles']):
+				logger.warning("weder PDF noch HTML geholt")
+				# Sollen wir Urteile ohne Text auch nehmen?
+				raise DropItem(f"Missing File for {item['Num']}")
+
+			#upload_file_content=PipelineHelper.make_xml(item,spider)
 			#vorher noch das json Schreiben
 			json_content, json_checksum = PipelineHelper.make_json(item,spider)
 			json_contentType="application/json"
 			json_file_key=PipelineHelper.file_path(item, spider)+".json"
-			MyS3FilesStore.shared_store.persist_file(json_file_key, BytesIO(json_content.encode(encoding='UTF-8')), info=None, spider=spider, meta=None, headers=None, item=item, ContentType=json_contentType, LogFlag=logFlag, checksum=json_checksum)
+			#MyS3FilesStore.shared_store.persist_file(json_file_key, BytesIO(json_content.encode(encoding='UTF-8')), info=None, spider=spider, meta=None, headers=None, item=item, ContentType=json_contentType, LogFlag=logFlag, checksum=json_checksum)
+			MyFilesPipeline.common_store.persist_file(json_file_key, BytesIO(json_content.encode(encoding='UTF-8')), info=None, spider=spider, meta=None, headers=None, item=item, ContentType=json_contentType, LogFlag=logFlag, checksum=json_checksum)
 			
-			contentType="text/xml"
-			upload_file_key=PipelineHelper.file_path(item, spider)+".xml"
+			#contentType="text/xml"
+			#upload_file_key=PipelineHelper.file_path(item, spider)+".xml"
+			upload_file_key=None
 
-		MyS3FilesStore.shared_store.persist_file(upload_file_key, BytesIO(upload_file_content.encode(encoding='UTF-8')), info=None, spider=spider, meta=None, headers=None, item=item, ContentType=contentType, LogFlag=logFlag)
+		#MyS3FilesStore.shared_store.persist_file(upload_file_key, BytesIO(upload_file_content.encode(encoding='UTF-8')), info=None, spider=spider, meta=None, headers=None, item=item, ContentType=contentType, LogFlag=logFlag)
+		if upload_file_key:
+			MyFilesPipeline.common_store.persist_file(upload_file_key, BytesIO(upload_file_content.encode(encoding='UTF-8')), info=None, spider=spider, meta=None, headers=None, item=item, ContentType=contentType, LogFlag=logFlag)
 
 		return item
+
+
+
+class SFTPFilesStore:
+	SFTP_USERNAME = None
+	SFTP_PASSWORD = None
+	BASEDIR='/home/entsche1/public_html/entscheide/docs'
+	instanz = None
+
+	def __init__(self, uri=None):
+		if uri is None:
+			logger.debug("__init__ ohne uri aufgerufen")
+			settings = Settings()
+			if settings:
+				uri=settings['FILES_STORE']
+			else:
+				logger.error("keine uri gesetzt und auch kein settings bekommen")
+			uri='sftps://entscheidsuche.ch'
+		else:
+			logger.debug("__init__ mit uri '"+uri+"' aufgerufen")
+
+		if not uri.startswith("sftp://"):
+			logger.error(f"Incorrect URI scheme in {uri}, expected 'sftp'")
+			raise ValueError(f"Incorrect URI scheme in {uri}, expected 'sftp'")
+		SFTPFilesStore.instanz=self
+		logger.info("SFTP Instanz gesetzt.")
+		u = urlparse(uri)
+		self.host = u.hostname
+		self.username = u.username or self.SFTP_USERNAME
+		self.password = u.password or self.SFTP_PASSWORD
+		self.basedir = self.BASEDIR
+		logger.info(f"init sftp: Username ({self.username}), Passwort({('*'*len(self.password))}) und Basedir({self.basedir}) gesetzt")
+
+	def persist_file(self, path, buf, info=None, meta=None, headers=None, item=None, spider=None, ContentType=None, LogFlag=True, checksum=None):
+		logger.info(f"SFTP-persist_file Pfad: {path}")
+		if (not spider) and info:
+			spider=info.spider
+
+		# Upload file to SFTP
+		existiert_bereits=PipelineHelper.checkfile(spider, path, buf, checksum,LogFlag)
+		if not existiert_bereits:
+			fullpath = f'{self.basedir}/{path}'
+			return threads.deferToThread(SFTPFilesStore.sftp_store_file, path=fullpath, file=buf, host=self.host, username=self.username, password=self.password)
+
+	def stat_file(self, path, info):
+		return {}
+
+
+	@staticmethod
+	def sftp_makedirs_cwd(sftp, path, first_call=True):
+		"""Set the current directory of the FTP connection given in the ``ftp``
+		argument (as a ftplib.FTP object), creating all parent directories if they
+		don't exist. The ftplib.FTP object must be already connected and logged in.
+		"""
+		
+		logger.info(f"sftp_makedirs: Path {path}, first_call {first_call}")
+		try:
+			sftp.chdir(path)
+		except:
+			SFTPFilesStore.sftp_makedirs_cwd(sftp, posixpath.dirname(path), False)
+			logger.info(f"mkdir {path}")
+			sftp.mkdir(path)
+			if first_call:
+				sftp.chdir(path)
+
+	@staticmethod
+	def sftp_store_file(*, path, file, host, username, password):
+		"""Opens a FTP connection with passed credentials,sets current directory
+		to the directory extracted from given path, then uploads the file to server
+		"""
+		logger.info(f"sftp_store_file: Host: {host}, Path: {path}, Username ({username}), Passwort({('*'*len(password))}) gesetzt")
+		cnopts=pysftp.CnOpts()
+		# Eigentlich sollte hier auf ein Hostsfile zugegriffen werden, aber das geht nicht so einfach.
+		cnopts.hostkeys = None
+		with pysftp.Connection(host=host, username=username, password=password, cnopts=cnopts) as sftp:
+			file.seek(0)
+			dirname, filename = posixpath.split(path)
+			SFTPFilesStore.sftp_makedirs_cwd(sftp, dirname)
+			logger.info(f"Schreibe nun für Pfad {path} die Datei {filename}")
+			sftp.putfo(file,filename, confirm=False)
+			file.close()
+
 
 
 class MyS3FilesStore(S3FilesStore):
@@ -164,10 +273,9 @@ class MyS3FilesStore(S3FilesStore):
 	AWS_REGION_NAME = "eu-west-3"
 	AWS_USE_SSL = None
 	AWS_VERIFY = None
-	shared_s3_client = None
 	shared_s3_bucket = None
 	shared_s3_prefix = None
-	shared_store = None
+	instanz = None
 
 	POLICY = 'private'  # Overriden from settings.FILES_STORE_S3_ACL in FilesPipeline.from_settings
 	HEADERS = {
@@ -177,7 +285,11 @@ class MyS3FilesStore(S3FilesStore):
 	def __init__(self,uri=None):
 		if uri is None:
 			logger.debug("__init__ ohne uri aufgerufen")
-			uri='s3://entscheidsuche.ch/scraper'
+			settings = Settings()
+			if settings:
+				uri=settings['FILES_STORE']
+			else:
+				logger.error("keine Store_uri gesetzt und auch kein settings bekommen")
 		else:
 			logger.debug("__init__ mit uri '"+uri+"' aufgerufen")
 
@@ -203,7 +315,9 @@ class MyS3FilesStore(S3FilesStore):
 		self.bucket, self.prefix = uri[5:].split('/', 1)
 		MyS3FilesStore.shared_s3_bucket=self.bucket
 		MyS3FilesStore.shared_s3_prefix=self.prefix
-		MyS3FilesStore.shared_store=self
+		logger.info("_common_store_ in MyS3FilesStore gesetzt")
+		MyS3FilesStore.insanz=self
+		logger.info("SFTP Instanz gesetzt.")
 
 	def stat_file(self, path, info):
 		def _onsuccess(boto_key):
@@ -220,6 +334,7 @@ class MyS3FilesStore(S3FilesStore):
 		return self._get_boto_key(path).addCallback(_onsuccess)
 
 	def persist_file(self, path, buf, info=None, meta=None, headers=None, item=None, spider=None, ContentType=None, LogFlag=True, checksum=None):
+		logger.info(f"S3-persist_file Pfad: {path}")
 		if meta==None:
 			meta={}
 
@@ -232,37 +347,7 @@ class MyS3FilesStore(S3FilesStore):
 		# Upload file to S3 storage
 		key_name = f'{self.prefix}{path}'
 		logger.debug("pf key_name: "+key_name)
-		buf.seek(0)
-		if checksum is None:
-			checksum=md5sum(buf)
-			buf.seek(0)
-		existiert_bereits=False
-		if LogFlag and spider:
-			neustatus='neu'
-			last_change=None
-			if spider.previous_run:
-				if path in spider.previous_run['dateien']:
-					oldfile=spider.previous_run['dateien'][path]
-					if 'status' in oldfile and 'checksum' in oldfile:
-						altstatus=oldfile['status']
-						altchecksum=oldfile['checksum']
-						altlast_change=oldfile['last_change'] if 'last_change' in oldfile else None
-						if altchecksum==checksum:
-							if altstatus == "nicht_mehr_da":
-								neustatus="identisch_wieder_da"
-							else:
-								neustatus="identisch"
-								last_change=altlast_change if altlast_change else spider.previous_job
-							existiert_bereits=True
-						else:
-							if altstatus =="nicht_mehr_da":
-								neustatus="anders_wieder_da"
-							else:
-								neustatus="update"
-			if last_change:
-				spider.files_written[path]={'checksum': checksum, "status": neustatus, "last_change": last_change}
-			else:
-				spider.files_written[path]={'checksum': checksum, "status": neustatus}
+		existiert_bereits=PipelineHelper.checkfile(spider, path, buf, checksum,LogFlag)
 		if not existiert_bereits:
 			if self.is_botocore:
 				logger.debug("pf is_botocore")
@@ -316,8 +401,8 @@ class MyS3FilesStore(S3FilesStore):
 
 
 class NeuescraperPipeline:
-    def process_item(self, item, spider):
-        return item
+	def process_item(self, item, spider):
+		return item
 
 class PipelineHelper:
 
@@ -378,8 +463,43 @@ class PipelineHelper:
 		buf.seek(0)
 		checksum=md5sum(buf)
 		buf.seek(0)
-		MyS3FilesStore.shared_store.persist_file(html_pfad, buf, info=None, spider=spider, meta=None, headers=None, item=item, ContentType='text/html', checksum=checksum)
+		MyFilesPipeline.common_store.persist_file(html_pfad, buf, info=None, spider=spider, meta=None, headers=None, item=item, ContentType='text/html', checksum=checksum)
 		item['HTMLFiles']=[{'url': item['HTMLUrls'][0], 'path': html_pfad, 'checksum': checksum}]
+
+	@staticmethod
+	def checkfile(spider, path, buf, checksum,LogFlag):
+		buf.seek(0)
+		if checksum is None:
+			checksum=md5sum(buf)
+			buf.seek(0)
+		existiert_bereits=False
+		if LogFlag and spider:
+			neustatus='neu'
+			last_change=None
+			if spider.previous_run:
+				if path in spider.previous_run['dateien']:
+					oldfile=spider.previous_run['dateien'][path]
+					if 'status' in oldfile and 'checksum' in oldfile:
+						altstatus=oldfile['status']
+						altchecksum=oldfile['checksum']
+						altlast_change=oldfile['last_change'] if 'last_change' in oldfile else None
+						if altchecksum==checksum:
+							if altstatus == "nicht_mehr_da":
+								neustatus="identisch_wieder_da"
+							else:
+								neustatus="identisch"
+								last_change=altlast_change if altlast_change else spider.previous_job
+							existiert_bereits=True
+						else:
+							if altstatus =="nicht_mehr_da":
+								neustatus="anders_wieder_da"
+							else:
+								neustatus="update"
+			if last_change:
+				spider.files_written[path]={'checksum': checksum, "status": neustatus, "last_change": last_change}
+			else:
+				spider.files_written[path]={'checksum': checksum, "status": neustatus}
+		return existiert_bereits
 
 	@staticmethod
 	def file_path(item, spider=None):
@@ -495,6 +615,28 @@ class PipelineHelper:
 				missing.append(sp)
 		kopfzeile[0]['Sprachen']+=missing
 		eintrag['Kopfzeile']=kopfzeile
+		
+		meta=[]
+		settings=spider.gerichte[spider.name]
+		for setting in settings:
+			if setting['Signatur']==item['Signatur']:
+				break;
+
+		gesamttext=""
+		for sp in spider.kantone:
+			text=spider.kanton[sp]+" "+setting['Stufe 2 '+sp]+" "+setting['Stufe 3 '+sp]
+			meta.append({'Sprachen': [sp], 'Text': text })
+			gesamttext+="#"+text
+		
+		alle_meta=""	
+		if 'VKammer' in item and item['VKammer'] and not(item['VKammer'] in gesamttext):
+			alle_meta=item['VKammer']
+		if 'VGericht' in item and item['VGericht'] and not(item['VGericht'] in gesamttext):
+			alle_meta+=" "+item['VGericht']
+		if alle_meta:
+			meta.append({'Sprachen': ['de', 'fr', 'it'], 'Text': alle_meta})
+		eintrag['Meta']=meta
+			
 
 		abstract=[]
 		missing=[]
@@ -534,15 +676,6 @@ class PipelineHelper:
 
 	@staticmethod
 	def make_xml(item,spider):
-		# Alles auskommentieren, was vom Spiderlauf abhängig ist.
-		if 'Num' in item:
-			logger.info("Geschäftsnummer: "+item['Num'])
-
-		if not('PDFFiles' in item and item['PDFFiles']) and not('HTMLFiles' in item and item['HTMLFiles']):
-			logger.warning("weder PDF noch HTML geholt")
-			# Sollen wir Urteile ohne Text auch nehmen?
-			raise DropItem(f"Missing File for {item['Num']}")
-
 		root = etree.Element('Entscheid')
 		meta = etree.Element('Metainfos')
 		root.append(meta)
@@ -628,13 +761,73 @@ class PipelineHelper:
 		return xml_content
 
 class MyFilesPipeline(FilesPipeline):
+	common_store=None
+
 	STORE_SCHEMES = {
 		'': FSFilesStore,
 		'file': FSFilesStore,
 		's3': MyS3FilesStore,
 		'gs': GCSFilesStore,
-		'ftp': FTPFilesStore
+		'ftp': FTPFilesStore,
+		'sftp': SFTPFilesStore
 	}
+	
+	def __init__(self, store_uri=None, download_func=None, settings=None):
+		if not store_uri:
+			logger.info("keine store_uri gesetzt")
+			if isinstance(settings, dict) or settings is None:
+				settings = Settings(settings)
+			if settings:
+				store_uri=settings['FILES_STORE']
+			else:
+				logger.error("keine Store_uri gesetzt und auch kein settings-Parameter übergeben")
+			raise NotConfigured
+
+		super().__init__(store_uri, download_func=download_func, settings=settings)
+	
+	
+	@classmethod
+	def from_settings(cls, settings):
+		s3store = cls.STORE_SCHEMES['s3']
+		s3store.AWS_ACCESS_KEY_ID = settings['AWS_ACCESS_KEY_ID']
+		s3store.AWS_SECRET_ACCESS_KEY = settings['AWS_SECRET_ACCESS_KEY']
+		s3store.AWS_ENDPOINT_URL = settings['AWS_ENDPOINT_URL']
+		s3store.AWS_REGION_NAME = settings['AWS_REGION_NAME']
+		s3store.AWS_USE_SSL = settings['AWS_USE_SSL']
+		s3store.AWS_VERIFY = settings['AWS_VERIFY']
+		s3store.POLICY = settings['FILES_STORE_S3_ACL']
+
+		gcs_store = cls.STORE_SCHEMES['gs']
+		gcs_store.GCS_PROJECT_ID = settings['GCS_PROJECT_ID']
+		gcs_store.POLICY = settings['FILES_STORE_GCS_ACL'] or None
+
+		ftp_store = cls.STORE_SCHEMES['ftp']
+		ftp_store.FTP_USERNAME = settings['FTP_USER']
+		ftp_store.FTP_PASSWORD = settings['FTP_PASSWORD']
+		ftp_store.USE_ACTIVE_MODE = settings.getbool('FEED_STORAGE_FTP_ACTIVE')
+
+		sftp_store = cls.STORE_SCHEMES['sftp']
+		sftp_store.SFTP_USERNAME = settings['SFTP_USERNAME']
+		sftp_store.SFTP_PASSWORD = settings['SFTP_PASSWORD']
+
+		store_uri = settings['FILES_STORE']
+		store = cls(store_uri, settings=settings)
+		return store
+
+	def _get_store(self, uri):
+		if os.path.isabs(uri):  # to support win32 paths like: C:\\some\dir
+			scheme = 'file'
+		else:
+			scheme = urlparse(uri).scheme
+		store_cls = self.STORE_SCHEMES[scheme]
+		store=store_cls(uri)
+		MyFilesPipeline.common_store=store.instanz
+		if MyFilesPipeline.common_store:
+			logger.info("Store instanz gesetzt")
+		else:
+			logger.error("Store instanz war None")
+		return store
+
 
 	def file_path(self, request, response=None, info=None, item=None):
 		if item is None:
@@ -657,7 +850,7 @@ class MyFilesPipeline(FilesPipeline):
 		buf = BytesIO(response.body)
 		checksum = md5sum(buf)
 		buf.seek(0)
-		self.store.persist_file(path, buf, info, item=item, ContentType=ContentType) # Parameter item wurde hinzugefügt. store muss dazu angepasst werden (wurde hier für S3 getan)
+		self.common_store.persist_file(path, buf, info, item=item, ContentType=ContentType) # Parameter item wurde hinzugefügt. store muss dazu angepasst werden (wurde hier für S3 getan)
 		return checksum
 
 

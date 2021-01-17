@@ -54,37 +54,45 @@ class CH_BGer(BasisSpider):
 	def parse_trefferliste(self, response):
 		logger.debug("parse_trefferliste response.status "+str(response.status))
 		antwort=response.body_as_unicode()
-		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
+		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen: "+response.url)
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:30000])
 	
-		treffer=int(response.xpath("//div[@class='content']/div[@class='ranklist_header center']/text()").get().strip().split(" ")[0])
-		anfangsposition=int(response.xpath("//div[@class='ranklist_content']/ol/@start").get())
-		urteile=response.xpath("//div[@class='ranklist_content']/ol/li")
-
-		logger.info("Liste von {} Urteilen. Start bei {} von {} Treffer".format(len(urteile),anfangsposition, treffer))
-		
-		for entscheid in urteile:
-			item={}
-			text=entscheid.get()
-			meta=entscheid.xpath("./span/a/text()").get()
-			item['HTMLUrls']=[entscheid.xpath("./span/a/@href").get()]
-			titel=entscheid.xpath("./div/div[3]/text()").get()
-			if titel:
-				item['Titel']=titel.strip()
-			item['VKammer']=PH.NC(entscheid.xpath("./div/div[1]/text()").get(), warning="Kammerzeile nicht geparst: "+text)
-			item['Rechtsgebiet']=PH.NC(entscheid.xpath("./div/div[2]/text()").get(), warning="Rechtsgebietszeile nicht geparst: "+text)
-			
-			if self.reDatum.search(meta) is None:
-				logger.error("Konnte Datum in meta nicht erkennen: "+meta)
+		trefferstring=PH.NC(response.xpath("//div[@class='content']/div[@class='ranklist_header center']/text()").get(),info="Trefferzahl nicht gefunden in: "+antwort)
+		if trefferstring=="":
+			no_treffer=response.xpath("//div[@class='content']/div[@class='ranklist_content center']/text()").get()
+			if no_treffer and "keine Urteile gefunden" in no_treffer:
+				logger.info("keine Urteile im Zeitraum "+response.meta['von']+"-"+response.meta['bis'])
 			else:
-				item['EDatum']=self.norm_datum(meta)
-				item['Num']=meta[11:]
-				item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",item['VKammer'],item['Num'])
-				request = scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, meta={'item': item})
-				yield request
-		if anfangsposition+len(urteile)<treffer:
-			request=self.mache_request(response.meta['von'],response.meta['bis'],response.meta['page']+1)
-			yield request			
+				logger.error("Weder Trefferzahl noch 'keine Treffer' gefunden in: "+response.url+": "+antwort)
+		else:
+			treffer=int(trefferstring.split(" ")[0])
+			anfangsposition=int(response.xpath("//div[@class='ranklist_content']/ol/@start").get())
+			urteile=response.xpath("//div[@class='ranklist_content']/ol/li")
+
+			logger.info("Liste von {} Urteilen. Start bei {} von {} Treffer".format(len(urteile),anfangsposition, treffer))
+		
+			for entscheid in urteile:
+				item={}
+				text=entscheid.get()
+				meta=entscheid.xpath("./span/a/text()").get()
+				item['HTMLUrls']=[entscheid.xpath("./span/a/@href").get()]
+				titel=entscheid.xpath("./div/div[3]/text()").get()
+				if titel:
+					item['Titel']=titel.strip()
+				item['VKammer']=PH.NC(entscheid.xpath("./div/div[1]/text()").get(), warning="Kammerzeile nicht geparst: "+text)
+				item['Rechtsgebiet']=PH.NC(entscheid.xpath("./div/div[2]/text()").get(), warning="Rechtsgebietszeile nicht geparst: "+text)
+			
+				if self.reDatum.search(meta) is None:
+					logger.error("Konnte Datum in meta nicht erkennen: "+meta)
+				else:
+					item['EDatum']=self.norm_datum(meta)
+					item['Num']=meta[11:]
+					item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",item['VKammer'],item['Num'])
+					request = scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, meta={'item': item})
+					yield request
+			if anfangsposition+len(urteile)<treffer:
+				request=self.mache_request(response.meta['von'],response.meta['bis'],response.meta['page']+1)
+				yield request			
 
 	def parse_document(self, response):
 		logger.info("parse_document response.status "+str(response.status))
