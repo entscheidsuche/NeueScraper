@@ -189,6 +189,7 @@ class BasisSpider(scrapy.Spider):
 		htaccess+="RewriteEngine On\n"
 		htaccess+="RewriteBase /\n"
 		htaccess+='RewriteRule "^Index/([^/]+)/last$" "/docs/lese_index.php?spider=$1" [L]\n'
+		htaccess+='RewriteRule "^Jobs/([^/]+)/last$" "/docs/lese_job.php?spider=$1" [L]\n'
 		
 		for c in json_kantone:
 			for g in json_kantone[c]['gerichte']:
@@ -324,32 +325,10 @@ class BasisSpider(scrapy.Spider):
 		
 		# Nun einlesen, was an Dateien vom letzten Spidern vorhanden ist
 		#jobs_url=self.JOBS_URL+self.name+"%2FJob_"
-		jobs_url=self.JOBS_URL+self.name
+		jobs_url=self.JOBS_URL+self.name+"/last"
 		logger.info("Jobs-URL: "+jobs_url)
-		yield scrapy.Request(url=jobs_url, callback=self.parse_jobliste_https, errback=self.errback_httpbin, meta={'handle_httpstatus_list': [404]})
+		yield scrapy.Request(url=jobs_url, callback=self.parse_dateiliste, errback=self.errback_httpbin, meta={'handle_httpstatus_list': [404]})
 		
-	# nicht mehr genutzt
-	def parse_jobliste_https(self, response):
-		logger.info("parse_jobliste_https response.status "+str(response.status))
-		logger.info("parse_jobliste_https Rohergebnis "+str(len(response.body))+" Zeichen")
-		logger.info("parse_jobliste_https Rohergebnis: "+response.body_as_unicode())
-		if response.status==404:
-			logger.warning("Jobverzeichnis existiert nicht")
-			jobs=[]
-		else:
-			jobs=response.xpath("//img[@src='/_autoindex/icons/unknown.png']/following-sibling::a/text()").getall()
-		if len(jobs)>0:
-			jobs.sort(reverse=True)
-			logger.info(f"letzter Job: {jobs[0]}")
-			yield scrapy.Request(url=self.JOBS_URL+self.name+"/Jobs/"+jobs[0], callback=self.parse_dateiliste, errback=self.errback_httpbin)
-		else:
-			logger.info("Kein vorheriger Job gefunden. Erster Lauf von: "+self.name)
-			logger.info("Starte nun "+str(len(self.request_gen))+" Requests.")	
-			for req in self.request_gen:
-				yield req
-
-
-	#
 	def parse_jobliste_S3(self, response):
 		logger.debug("parse_jobliste_S3 response.status "+str(response.status))
 		logger.info("parse_jobliste_S3 Rohergebnis "+str(len(response.body))+" Zeichen")
@@ -364,21 +343,25 @@ class BasisSpider(scrapy.Spider):
 			for req in self.request_gen:
 				yield req
 
-
 	def parse_dateiliste(self, response):
 		logger.info("parse_dateiliste response.status "+str(response.status))
 		logger.info("parse_dateiliste Rohergebnis "+str(len(response.body))+" Zeichen")
 		logger.info("parse_dateiliste Rohergebnis: "+response.body_as_unicode()[:10000])
-		self.previous_run=json.loads(response.body_as_unicode())
-		# Wird nur eine Teilabfrage gemacht, die Daten der vorherigen Abfrage übernehmen und mit der Quelle kennzeichnen
-		self.previous_job=self.previous_run["job"]
-		for pfad in self.previous_run["dateien"]:
-			eintrag=self.previous_run["dateien"][pfad]
-			checksum=eintrag['checksum']
-			status=eintrag["status"]
-			quelle=eintrag["quelle"] if "quelle" in eintrag else self.previous_job
-			last_change=eintrag["last_change"] if "last_change" in eintrag else self.previous_job
-			self.files_written[pfad]={'checksum': checksum, 'status': status, 'quelle': quelle, 'last_change': last_change}
+		previous_run=json.loads(response.body_as_unicode())
+		if 'job' in previous_run and previous_run['job'] != 'nojob':
+			self.previous_run=previous_run
+			# Wird nur eine Teilabfrage gemacht, die Daten der vorherigen Abfrage übernehmen und mit der Quelle kennzeichnen
+			self.previous_job=self.previous_run["job"]
+			for pfad in self.previous_run["dateien"]:
+				eintrag=self.previous_run["dateien"][pfad]
+				checksum=eintrag['checksum']
+				status=eintrag["status"]
+				quelle=eintrag["quelle"] if "quelle" in eintrag else self.previous_job
+				last_change=eintrag["last_change"] if "last_change" in eintrag else self.previous_job
+				self.files_written[pfad]={'checksum': checksum, 'status': status, 'quelle': quelle, 'last_change': last_change}
+		else:
+			logger.info("Kein vorheriger Job gefunden. Erster Lauf von: "+self.name)
+
 		logger.info("Starte nun "+str(len(self.request_gen))+" Requests.")
 		for req in self.request_gen:
 			yield req
