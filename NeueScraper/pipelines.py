@@ -28,6 +28,7 @@ import pysftp
 import posixpath
 from scrapy.settings import Settings
 from scrapy.exceptions import IgnoreRequest, NotConfigured
+import requests
 
 
 filenamechars=re.compile("[^-a-zA-Z0-9]")
@@ -47,90 +48,92 @@ class MyWriterPipeline:
 		logger.debug("pipeline open")
 
 	def close_spider(self,spider):
-		if spider.name=='Impfung':
-			logger.warning("keine BasisSpider Klasse")
+		logger.debug("pipeline close")
+		datestring=datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+		pfad_job="Jobs/"+spider.name+"/Job_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
+		pfad_index="Index/"+spider.name+"/Index_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
+		signaturen={}
+		if spider.ab:
+			job_typ="update"
 		else:
-			logger.debug("pipeline close")
-			datestring=datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-			pfad_job="Jobs/"+spider.name+"/Job_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
-			pfad_index="Index/"+spider.name+"/Index_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
-			signaturen={}
-			if spider.ab:
-				job_typ="update"
+			vorher=len(list(filter(lambda x:spider.previous_run['dateien'][x]['status'] in ['update',"anders_wieder_da","neu","identisch"], spider.previous_run['dateien']))) if 'dateien' in spider.previous_run else 0
+			if vorher>0:
+				gelesen=len(list(filter(lambda x:spider.files_written[x]['status'] in ['update',"anders_wieder_da","neu","identisch"] and not 'quelle' in spider.files_written[x], spider.files_written)))
+				prozentsatz=gelesen/vorher*100
+				if prozentsatz > 95:
+					job_typ="komplett"
+					logger.info("vorher {} Dateien, nun {} Dateien gelesen {:.2f}%".format(vorher, gelesen, prozentsatz))
+				else:
+					job_typ="unvollständig"
+					logger.error("vorher {} Dateien, nun {} Dateien gelesen {:.2f}%".format(vorher, gelesen, prozentsatz))
 			else:
-				vorher=len(list(filter(lambda x:spider.previous_run['dateien'][x]['status'] in ['update',"anders_wieder_da","neu","identisch"], spider.previous_run['dateien']))) if 'dateien' in spider.previous_run else 0
-				if vorher>0:
-					gelesen=len(list(filter(lambda x:spider.files_written[x]['status'] in ['update',"anders_wieder_da","neu","identisch"] and not 'quelle' in spider.files_written[x], spider.files_written)))
-					prozentsatz=gelesen/vorher*100
-					if prozentsatz > 95:
-						job_typ="komplett"
-						logger.info("vorher {} Dateien, nun {} Dateien gelesen {:.2f}%".format(vorher, gelesen, prozentsatz))
+				job_typ="neu"
+				logger.info("keine Dokumente eines vorherigen Laufes gefunden.")
+
+		gesamt={'gesamt':0}
+		to_index={}
+		for f in spider.files_written:
+			# neu nicht mehr vorhandene Inhalte markieren
+			if job_typ=="komplett" and 'quelle' in spider.files_written[f] and not spider.files_written[f]['status']=="nicht_mehr_da":
+				spider.files_written[f]['status']='nicht_mehr_da'
+				del spider.files_written[f]['quelle']
+				if 'last_change' in spider.files_written[f]:
+					del spider.files_written[f]['last_change']
+			s=filenameparts.search(f)
+			if s is None:
+				logger.error("Konnte Dateinamen "+f+" nicht aufteilen.")
+			else:
+				logger.debug(f"Dateiname: {f} mit Endung {s.group('endung')}")
+				if s.group('endung')=='json':
+					logger.debug(f"Dateiname {f} ist json.")
+					if 'quelle' in spider.files_written[f]:
+						count_group='vorher'
 					else:
-						job_typ="unvollständig"
-						logger.error("vorher {} Dateien, nun {} Dateien gelesen {:.2f}%".format(vorher, gelesen, prozentsatz))
-				else:
-					job_typ="neu"
-					logger.info("keine Dokumente eines vorherigen Laufes gefunden.")
+						count_group='aktuell'
 
-			gesamt={'gesamt':0}
-			to_index={}
-			for f in spider.files_written:
-				# neu nicht mehr vorhandene Inhalte markieren
-				if job_typ=="komplett" and 'quelle' in spider.files_written[f] and not spider.files_written[f]['status']=="nicht_mehr_da":
-					spider.files_written[f]['status']='nicht_mehr_da'
-					del spider.files_written[f]['quelle']
-					if 'last_change' in spider.files_written[f]:
-						del spider.files_written[f]['last_change']
-				s=filenameparts.search(f)
-				if s is None:
-					logger.error("Konnte Dateinamen "+f+" nicht aufteilen.")
-				else:
-					logger.debug(f"Dateiname: {f} mit Endung {s.group('endung')}")
-					if s.group('endung')=='json':
-						logger.debug(f"Dateiname {f} ist json.")
-						if 'quelle' in spider.files_written[f]:
-							count_group='vorher'
-						else:
-							count_group='aktuell'
-	
-						if spider.files_written[f]['status']=='nicht_mehr_da':
-							count_typ='entfernt'
-							if count_group=='aktuell':
-								to_index[f]="delete"
-						elif spider.files_written[f]['status'] in ['update']:
-							count_typ='aktualisiert'
-							if count_group=='aktuell':
-								to_index[f]="update"
-						elif spider.files_written[f]['status'] in ['neu', "anders_wieder_da"]:
-							count_typ='neu'
-							if count_group=='aktuell':
-								to_index[f]="new"
-						else:
-							count_typ='identisch'
-	
-						count_eintrag=count_group+"_"+count_typ
-						if not s.group('signatur') in signaturen:
-							signaturen[s.group('signatur')]={'gesamt':0}
-						if not count_eintrag in signaturen[s.group('signatur')]:
-							signaturen[s.group('signatur')][count_eintrag]=1
-						else:
-							signaturen[s.group('signatur')][count_eintrag]=signaturen[s.group('signatur')][count_eintrag]+1
-						if not count_eintrag in gesamt:
-							gesamt[count_eintrag]=1
-						else:
-							gesamt[count_eintrag]=gesamt[count_eintrag]+1
-						if not count_typ=='entfernt':
-							signaturen[s.group('signatur')]['gesamt']=signaturen[s.group('signatur')]['gesamt']+1
-							gesamt['gesamt']=gesamt['gesamt']+1
-			files_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "dateien": spider.files_written, 'signaturen': signaturen, 'gesamt': gesamt }
-			json_content=json.dumps(files_log)
-			MyFilesPipeline.common_store.persist_file(pfad_job, BytesIO(json_content.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
+					if spider.files_written[f]['status']=='nicht_mehr_da':
+						count_typ='entfernt'
+						if count_group=='aktuell':
+							to_index[f]="delete"
+					elif spider.files_written[f]['status'] in ['update']:
+						count_typ='aktualisiert'
+						if count_group=='aktuell':
+							to_index[f]="update"
+					elif spider.files_written[f]['status'] in ['neu', "anders_wieder_da"]:
+						count_typ='neu'
+						if count_group=='aktuell':
+							to_index[f]="new"
+					else:
+						count_typ='identisch'
+					count_eintrag=count_group+"_"+count_typ
+					if not s.group('signatur') in signaturen:
+						signaturen[s.group('signatur')]={'gesamt':0}
+					if not count_eintrag in signaturen[s.group('signatur')]:
+						signaturen[s.group('signatur')][count_eintrag]=1
+					else:
+						signaturen[s.group('signatur')][count_eintrag]=signaturen[s.group('signatur')][count_eintrag]+1
+					if not count_eintrag in gesamt:
+						gesamt[count_eintrag]=1
+					else:
+						gesamt[count_eintrag]=gesamt[count_eintrag]+1
+					if not count_typ=='entfernt':
+						signaturen[s.group('signatur')]['gesamt']=signaturen[s.group('signatur')]['gesamt']+1
+						gesamt['gesamt']=gesamt['gesamt']+1
+		files_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "dateien": spider.files_written, 'signaturen': signaturen, 'gesamt': gesamt }
+		json_jobs=json.dumps(files_log)
+		MyFilesPipeline.common_store.persist_file(pfad_job, BytesIO(json_jobs.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
+		index_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "actions": to_index, 'signaturen': signaturen, 'gesamt': gesamt }
+		json_index=json.dumps(index_log)
+		MyFilesPipeline.common_store.persist_file(pfad_index, BytesIO(json_index.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
+		# Nachdem die Pipeline durchgelaufen ist, den Index-Request synchron machen
+		try:
+			antwort=requests.post("https://entscheidsuche.pansoft.de", data=json_jobs, headers= {'Content-Type': 'application/json'}, timeout=300)
+			logger.info("Indexierungsrequest mit Antwort: "+str(antwort.status_code))
+		except Exception as e:
+			# Später hier zwischen Fehler und Timeout unterscheiden
+			logger.error("Fehler beim Indexieren: " + str(e.__class__))
 
-			index_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "actions": to_index, 'signaturen': signaturen, 'gesamt': gesamt }
-			json_content=json.dumps(index_log)
-			MyFilesPipeline.common_store.persist_file(pfad_index, BytesIO(json_content.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
-
-
+				
 	def process_item(self, item, spider):
 		logger.debug("pipeline item")
 		logFlag=True
