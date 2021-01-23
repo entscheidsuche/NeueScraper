@@ -107,8 +107,10 @@ class TessinSpider(BasisSpider):
 			if metas is None:
 				logger.error("Metainformation nicht erkannt in '"+meta+"' in '"+text+"'")
 			else:
-				item['EDatum']=self.norm_datum(metas.group('EDatum'))
-				item['PDatum']=self.norm_datum(metas.group('PDatum'))
+				if metas.group('EDatum'): item['EDatum']=self.norm_datum(metas.group('EDatum'))
+				else:
+					logger.warning("Kein E.Datum gefinden in '"+meta+"' in '"+text+"'")
+				if metas.group('PDatum'): item['PDatum']=self.norm_datum(metas.group('PDatum'))
 				kurz="#"+metas.group('Kammer')+"#"
 				item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",kurz,item['Num'])
 				logger.debug("Entscheid: "+json.dumps(item))
