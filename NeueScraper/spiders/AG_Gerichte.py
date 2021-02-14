@@ -16,8 +16,8 @@ class AargauSpider(WeblawSpider):
 	SUCH_URL='/?method=hilfe&ul=de'
 	reTREFFER=re.compile(r"</b>,\s+(?P<treffer>\d+) Treffer \(")
 	reEINTRAG=re.compile(r"title=\"(?P<num>[^\"]+)\"[^\"]+<span class=\"s_orgeinh\">\s+(?P<gericht>[^<]+[^\s])\s+</span>\s+<span class=\"s_category\">\s+(?P<kammer>[^<]+[^\s])\s+</span>\s+</div>\s+<div class=\"s_text\">\s+(?P<regeste>[^<]+[^\s])\s+[\s\w>=</\"\.\?%&;-]{1,2000}<a href=\"(?P<html>https?://agve\.weblaw\.ch/html/[^\"]+html)\" target=\"agveresult\">\s+<img src=\"/img/orig\.png\" alt=\"Original\">\s+</a>\s+<a href=\"(?P<pdf>/pdf[^\"]+pdf)\"")
-	MONATE=["Jan","Fe","März","April","Mai","Juni","Juli","Au","Sept","Okt","Nov","Dez"]
-	reEDATUM=re.compile(r"(?P<tag>\d+)\.(?:.|\s){1,50}(?P<monat>"+"|".join(MONATE)+")(?:.|\s){1,50}(?P<jahr>(?:19|20)\d\d)")
+	MONATE=["Jan","Fe","März","April","Mai","Juni","Juli","Au","Sep","Ok","Nov","Dez"]
+	reEDATUM=re.compile(r"(?P<tag>\d\d?)\.(?:.|\s){1,50}(?P<monat>"+"|".join(MONATE)+")(?:.|\s){1,50}(?P<jahr>(?:19|20)\d\d)")
 	HEADERS={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:82.0) Gecko/20100101 Firefox/82.0',
 			'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
 			'Accept-Language': 'en-US,en;q=0.5',

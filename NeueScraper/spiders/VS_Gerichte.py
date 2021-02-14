@@ -13,12 +13,12 @@ class VS_Gerichte(WeblawVaadinSpider):
 	name = 'VS_Gerichte'
 	
 	SUCHFORM='/le/?v-browserDetails=1&theme=le3themeAR&v-sh=900&v-sw=1440&v-cw=1439&v-ch=793&v-curdate=1609113076640&v-tzo=-60&v-dstd=60&v-rtzo=-60&v-dston=false&v-vw=1439&v-vh=0&v-loc=https://rechtsprechung.ar.ch/le/&v-wn=le-3449-0.{}&v-1609113076640='
-	HOST ="https://apps.vs.ch"
+	HOST ="https://rechtsprechung.vs.ch"
 	HEADER = {
 		"Content-Type": "text/plain;charset=utf-8",
 		"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:84.0) Gecko/20100101 Firefox/84.0",
-		"Referer": "https://apps.vs.ch/le/",
-		"Origin": "https://apps.vs.ch"}
+		"Referer": "https://rechtsprechung.vs.ch/le/",
+		"Origin": "https://rechtsprechung.vs.ch"}
 			
 	def lese_entscheid(self, struk,entscheid):
 		item={}

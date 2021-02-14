@@ -2,6 +2,8 @@
 import scrapy
 import re
 import logging
+import datetime
+import json
 from NeueScraper.spiders.basis import BasisSpider
 
 logger = logging.getLogger(__name__)
@@ -11,14 +13,33 @@ class ZH_OG(BasisSpider):
 	MINIMUM_PAGE_LEN = 148
 	MAX_PAGES = 10000
 	#RESULT_PAGE_URL='https://www.gerichte-zh.ch/typo3conf/ext/frp_entscheidsammlung_extended/res/php/livesearch.php?q=&geschaeftsnummer=&gericht=gerichtTitel&kammer=kammerTitel&entscheiddatum_von={datum}&erweitert=1&usergroup=0&sysOrdnerPid=0&sucheErlass=Erlass&sucheArt=Art.&sucheAbs=Abs.&sucheZiff=Ziff./lit.&sucheErlass2=Erlass&sucheArt2=Art.&sucheAbs2=Abs.&sucheZiff2=Ziff./lit.&sucheErlass3=Erlass&sucheArt3=Art.&sucheAbs3=Abs.&sucheZiff3=Ziff./lit.&suchfilter=1'
-	RESULT_PAGE_URL='https://www.gerichte-zh.ch/typo3conf/ext/frp_entscheidsammlung_extended/res/php/livesearch.php?q=&geschaeftsnummer=&gericht=gerichtTitel&kammer=kammerTitel&entscheiddatum_von={datum}&entscheiddatum_bis=31.12.2100&erweitert=1&usergroup=0&sysOrdnerPid=0&sucheErlass=Erlass&sucheArt=Art.&sucheAbs=Abs.&sucheZiff=Ziff./lit.&sucheErlass2=Erlass&sucheArt2=Art.&sucheAbs2=Abs.&sucheZiff2=Ziff./lit.&sucheErlass3=Erlass&sucheArt3=Art.&sucheAbs3=Abs.&sucheZiff3=Ziff./lit.&suchfilter=1'
+	RESULT_PAGE_URL='https://www.gerichte-zh.ch/typo3conf/ext/frp_entscheidsammlung_extended/res/php/livesearch.php?q=&geschaeftsnummer=&gericht=gerichtTitel&kammer=kammerTitel&entscheiddatum_von={datum_ab}&entscheiddatum_bis={datum_bis}&erweitert=1&usergroup=0&sysOrdnerPid=0&sucheErlass=Erlass&sucheArt=Art.&sucheAbs=Abs.&sucheZiff=Ziff./lit.&sucheErlass2=Erlass&sucheArt2=Art.&sucheAbs2=Abs.&sucheZiff2=Ziff./lit.&sucheErlass3=Erlass&sucheArt3=Art.&sucheAbs3=Abs.&sucheZiff3=Ziff./lit.&suchfilter=1'
 	PDF_BASE='https://www.gerichte-zh.ch'
-	AB_DEFAULT='01.01.1900'
+	AB_DEFAULT='01.01.1980'
+	TAGSCHRITTE = 500
+	AUFSETZTAG = "01.01.2000"
+	DELTA=datetime.timedelta(days=TAGSCHRITTE-1)
+	EINTAG=datetime.timedelta(days=1)
 
-	def request_generator(self):
-		""" Generates scrapy frist request
-		"""
-		return [scrapy.Request(url=self.RESULT_PAGE_URL.format(datum=self.ab), callback=self.parse_page, errback=self.errback_httpbin)]
+
+
+	def mache_request(self, ab, bis):
+		request = scrapy.Request(url=self.RESULT_PAGE_URL.format(datum_ab=ab, datum_bis=bis), callback=self.parse_page, errback=self.errback_httpbin)
+		return request		
+
+	def request_generator(self,ab=None):
+		requests=[]
+		if ab is None:
+			requests=[self.mache_request("",self.AUFSETZTAG)]
+			von=(datetime.datetime.strptime(self.AUFSETZTAG,"%d.%m.%Y")+self.EINTAG).date()
+		else:
+			von=datetime.datetime.strptime(ab,"%d.%m.%Y").date()
+		heute=datetime.date.today()
+		while von<heute:
+			bis=von+self.DELTA
+			requests.append(self.mache_request(von.strftime("%d.%m.%Y"),bis.strftime("%d.%m.%Y")))
+			von=bis+self.EINTAG
+		return requests
 
 	def __init__(self,ab=AB_DEFAULT):
 		super().__init__()
@@ -100,7 +121,7 @@ class ZH_OG(BasisSpider):
 								'VKammer': vkammer,
 								'Gericht': gericht,
 								'VGericht': vgericht,
-								'EDatum': EDatum,
+								'EDatum': self.norm_datum(EDatum),
 								'Titel': Titel,
 								'DocId': idE,
 								'Weiterzug': Weiterzug,
@@ -109,6 +130,7 @@ class ZH_OG(BasisSpider):
 								'PDFUrls': [PDFUrl],
 								'Signatur': signatur
 							}
+							logger.info("Eintrag: "+json.dumps(item))
 							yield(item)
 						else:
 							logging.error("Entscheid wird wegen fehlender Angaben ignoriert, Dokument-ID: "+idE+" Geschäftsnummer: "+Num+" Raw: "+Raw)

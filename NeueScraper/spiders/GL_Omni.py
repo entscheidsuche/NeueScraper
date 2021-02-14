@@ -29,7 +29,7 @@ class GL_Omni(BasisSpider):
 		"Parametername": "WEB",
 		"Aufruf": "search",
 		"cTemplate": "simple/search_result.fiw",
-		"cTemplate_ValidationError": "simple/search.html",		
+		"cTemplate_ValidationError": "simple/search.fiw",		
 		"cSprache": "DE",
 		"nSeite": "1",
 		"cGeschaeftsart": "",
@@ -96,10 +96,10 @@ class GL_Omni(BasisSpider):
 			if self.reNum2.search(num2):
 				item['Num2']=self.reNum2.search(num2).group("Num2")
 			edatum_roh=PH.NC(entscheid.xpath("./tr/td[@align='right']/text()[contains(.,'Entscheiddatum:')]").get(), info="kein Entscheiddatum in "+text)
-			if self.reDatum.search(edatum_roh):
+			if self.reDatumEinfach.search(edatum_roh):
 				item['EDatum']=self.norm_datum(edatum_roh)
 			pdatum_roh=PH.NC(entscheid.xpath("./tr/td[@colspan='2' and @align='right']/text()[contains(.,'datum:')]").get(), info="kein Publikationsdatum in "+text)
-			if self.reDatum.search(pdatum_roh):
+			if self.reDatumEinfach.search(pdatum_roh):
 				item['PDatum']=self.norm_datum(pdatum_roh)
 			item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",item['Num'][:2],item['Num'])
 			logger.info("Entscheid: "+json.dumps(item))

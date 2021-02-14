@@ -23,6 +23,7 @@ NeueScraper/spiders/GE_Gerichte.py
 NeueScraper/spiders/GL_Omni.py
 NeueScraper/spiders/GR_Gerichte.py
 NeueScraper/spiders/JU_Gerichte.py
+NeueScraper/spiders/LU_Gerichte.py
 NeueScraper/spiders/NE_Omni.py
 NeueScraper/spiders/NW_Gerichte.py
 NeueScraper/spiders/OW_Gerichte.py

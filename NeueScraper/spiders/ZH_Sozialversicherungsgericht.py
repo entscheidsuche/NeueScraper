@@ -150,7 +150,7 @@ class ZurichSozversSpider(BasisSpider):
 				item = {
 					'Kanton': self.kanton_kurz,
 					'Gericht' : gericht,
-					'EDatum': attribute[1],
+					'EDatum': self.norm_datum(attribute[1]),
 					'Titel': titel,
 					'Num': num,
 					'HTMLUrls': [url],
@@ -159,7 +159,6 @@ class ZurichSozversSpider(BasisSpider):
 				}
 				request=scrapy.Request(url=url, callback=self.parse_page, errback=self.errback_httpbin, meta = {'item':item})
 				yield(request)
-				yield(item)
 			geholt=geholt+trefferAufSeite
 			if geholt<trefferZahl:
 				logging.info("search_request für Treffer "+str(geholt)+"+ von "+str(trefferZahl)+" mit viewId "+viewId)

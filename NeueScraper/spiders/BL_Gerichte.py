@@ -76,10 +76,9 @@ class BL_Gerichte(BasisSpider):
 				url=entscheid.xpath("./td//a/@href").get()
 				item['VGericht']=response.meta['Gericht']
 				edatum=entscheid.xpath("string(./td//a)").get()
-				if self.reDatum.search(edatum):
-					item['EDatum']=self.norm_datum(edatum)
-				else:
-					logger.warning("Kein Datum identifiziert in: "+edatum)
+				norm=self.norm_datum(edatum, warning="Kein Datum identifiziert")
+				if norm!="nodate":
+					item['EDatum']=norm
 				regeste=entscheid.xpath("string(./td[preceding-sibling::*])").get()
 				if regeste:
 					item['Leitsatz']=regeste.strip()

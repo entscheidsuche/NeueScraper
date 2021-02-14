@@ -132,7 +132,7 @@ class ZurichVerwgerSpider(BasisSpider):
 					'Kanton': self.kanton_kurz,
 					'Gericht' : gericht,
 					'VGericht' : vgericht,
-					'EDatum': edatum,
+					'EDatum': self.norm_datum(edatum),
 					'Titel': titel,
 					'Leitsatz': regeste.strip(),
 					'Num': num,

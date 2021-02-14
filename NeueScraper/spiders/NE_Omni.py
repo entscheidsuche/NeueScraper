@@ -138,10 +138,10 @@ class NE_Omni(BasisSpider):
 					logger.error("Weder Num noch Num2 gefunden	")
 				
 			edatum_roh=PH.NC(entscheid.xpath("./tr/td[@align='right']/text()[contains(.,'Date décision:')]").get(), info="kein Entscheiddatum in "+text)
-			if self.reDatum.search(edatum_roh):
+			if self.reDatumEinfach.search(edatum_roh):
 				item['EDatum']=self.norm_datum(edatum_roh)
 			pdatum_roh=PH.NC(entscheid.xpath("./tr/td[@colspan='2' and @align='right']/text()[contains(.,'Publié le:')]").get(), info="kein Publikationsdatum in "+text)
-			if self.reDatum.search(pdatum_roh):
+			if self.reDatumEinfach.search(pdatum_roh):
 				item['PDatum']=self.norm_datum(pdatum_roh)
 			item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",item['Num'][:2],item['Num'])
 			logger.info("Entscheid: "+json.dumps(item))

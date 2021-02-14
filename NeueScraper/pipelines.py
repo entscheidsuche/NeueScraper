@@ -127,8 +127,10 @@ class MyWriterPipeline:
 		MyFilesPipeline.common_store.persist_file(pfad_index, BytesIO(json_index.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
 		# Nachdem die Pipeline durchgelaufen ist, den Index-Request synchron machen
 		try:
-			antwort=requests.post("https://entscheidsuche.pansoft.de", data=json_jobs, headers= {'Content-Type': 'application/json'}, timeout=300)
+			antwort=requests.post("http://entscheidsuche.pansoft.de:8000", data=json_jobs, headers= {'Content-Type': 'application/json'}, timeout=2000)
 			logger.info("Indexierungsrequest mit Antwort: "+str(antwort.status_code))
+			if antwort.status_code >=300:
+				logger.error("Indexierungsfehler: "+antwort.text)
 		except Exception as e:
 			# Später hier zwischen Fehler und Timeout unterscheiden
 			logger.error("Fehler beim Indexieren: " + str(e.__class__))
@@ -149,7 +151,7 @@ class MyWriterPipeline:
 			contentType='text/xml'
 			logFlag=False
 		elif 'Facetten' in item:
-			upload_file_key="Facetten.json"
+			upload_file_key="Facetten_alle.json"
 			upload_file_content=item['Facetten']
 			contentType='application/json'
 			logFlag=False
@@ -165,22 +167,27 @@ class MyWriterPipeline:
 			else:
 				logger.warning("keine Geschäftsnummer!")
 				item['Num']='unknown'
-			if not('PDFFiles' in item and item['PDFFiles']) and not('HTMLFiles' in item and item['HTMLFiles']):
-				logger.warning("weder PDF noch HTML geholt")
+			pdf_da = ('PDFFiles' in item and item['PDFFiles'])
+			if pdf_da: # Schauen ob das PDF wirklich da ist
+				if not (item['PDFFiles'][0]['path'] in spider.files_written):
+					logger.warning(item['PDFFiles'][0]['path']+" wurde nicht geschrieben.")
+					pdf_da=False
+			if not(pdf_da) and not('HTMLFiles' in item and item['HTMLFiles']):
+				logger.warning("weder PDF noch HTML geholt ("+item['Num']+")")
 				# Sollen wir Urteile ohne Text auch nehmen?
 				raise DropItem(f"Missing File for {item['Num']}")
-
-			#upload_file_content=PipelineHelper.make_xml(item,spider)
-			#vorher noch das json Schreiben
-			json_content, json_checksum = PipelineHelper.make_json(item,spider)
-			json_contentType="application/json"
-			json_file_key=PipelineHelper.file_path(item, spider)+".json"
-			#MyS3FilesStore.shared_store.persist_file(json_file_key, BytesIO(json_content.encode(encoding='UTF-8')), info=None, spider=spider, meta=None, headers=None, item=item, ContentType=json_contentType, LogFlag=logFlag, checksum=json_checksum)
-			MyFilesPipeline.common_store.persist_file(json_file_key, BytesIO(json_content.encode(encoding='UTF-8')), info=None, spider=spider, meta=None, headers=None, item=item, ContentType=json_contentType, LogFlag=logFlag, checksum=json_checksum)
+			else:
+				#upload_file_content=PipelineHelper.make_xml(item,spider)
+				#vorher noch das json Schreiben
+				json_content, json_checksum = PipelineHelper.make_json(item,spider)
+				json_contentType="application/json"
+				json_file_key=PipelineHelper.file_path(item, spider)+".json"
+				#MyS3FilesStore.shared_store.persist_file(json_file_key, BytesIO(json_content.encode(encoding='UTF-8')), info=None, spider=spider, meta=None, headers=None, item=item, ContentType=json_contentType, LogFlag=logFlag, checksum=json_checksum)
+				MyFilesPipeline.common_store.persist_file(json_file_key, BytesIO(json_content.encode(encoding='UTF-8')), info=None, spider=spider, meta=None, headers=None, item=item, ContentType=json_contentType, LogFlag=logFlag, checksum=json_checksum)
 			
-			#contentType="text/xml"
-			#upload_file_key=PipelineHelper.file_path(item, spider)+".xml"
-			upload_file_key=None
+				#contentType="text/xml"
+				#upload_file_key=PipelineHelper.file_path(item, spider)+".xml"
+				upload_file_key=None
 
 		#MyS3FilesStore.shared_store.persist_file(upload_file_key, BytesIO(upload_file_content.encode(encoding='UTF-8')), info=None, spider=spider, meta=None, headers=None, item=item, ContentType=contentType, LogFlag=logFlag)
 		if upload_file_key:
@@ -195,6 +202,9 @@ class SFTPFilesStore:
 	SFTP_PASSWORD = None
 	BASEDIR='/home/entsche1/public_html/entscheide/docs'
 	instanz = None
+	sftp_instanz = None
+	sftp_instanz_dir = None
+	sftp_usage_count = 0
 
 	def __init__(self, uri=None):
 		if uri is None:
@@ -229,7 +239,7 @@ class SFTPFilesStore:
 		existiert_bereits=PipelineHelper.checkfile(spider, path, buf, checksum,LogFlag)
 		if not existiert_bereits:
 			fullpath = f'{self.basedir}/{path}'
-			return threads.deferToThread(SFTPFilesStore.sftp_store_file, path=fullpath, file=buf, host=self.host, username=self.username, password=self.password)
+			SFTPFilesStore.sftp_store_file(path=fullpath, file=buf, host=self.host, username=self.username, password=self.password)
 
 	def stat_file(self, path, info):
 		return {}
@@ -261,13 +271,48 @@ class SFTPFilesStore:
 		cnopts=pysftp.CnOpts()
 		# Eigentlich sollte hier auf ein Hostsfile zugegriffen werden, aber das geht nicht so einfach.
 		cnopts.hostkeys = None
-		with pysftp.Connection(host=host, username=username, password=password, cnopts=cnopts) as sftp:
+		try:
+			sftp=None
 			file.seek(0)
 			dirname, filename = posixpath.split(path)
-			SFTPFilesStore.sftp_makedirs_cwd(sftp, dirname)
-			logger.info(f"Schreibe nun für Pfad {path} die Datei {filename}")
-			sftp.putfo(file,filename, confirm=False)
-			file.close()
+			sftp=None
+			if SFTPFilesStore.sftp_instanz and SFTPFilesStore.sftp_instanz_dir == dirname:
+				if SFTPFilesStore.sftp_usage_count > 1000: # ab und zu mal neue Verbindung verwenden
+					sftp=None
+					SFTPFilesStore.sftp_instanz=None
+					SFTPFilesStore.sftp_instanz_dir = None
+					SFTPFilesStore.sftp_usage_count = 0
+					sftp.close()
+				sftp=SFTPFilesStore.sftp_instanz
+				try:
+					logger.info(f"Schreibe nun in bereits geöfnnete sftp-Verbindung in Pfad {path} die Datei {filename}")
+					sftp.putfo(file,filename, confirm=False)
+					file.close()
+				except:
+					logger.error("Inner SFTP Exception mit bestehender Verbidnung " +str(e.__class__) +" occurred.")
+					logger.info("versuche es erneut")
+					file.seek(0)
+					sftp=None
+					SFTPFilesStore.sftp_instanz=None
+					SFTPFilesStore.sftp_instanz_dir = None
+			if sftp is None:
+				sftp=pysftp.Connection(host=host, username=username, password=password, cnopts=cnopts, log=True)
+				if sftp:
+					try:
+						SFTPFilesStore.sftp_makedirs_cwd(sftp, dirname)
+						logger.info(f"Schreibe in neue Verbindung für Pfad {path} die Datei {filename}")
+						sftp.putfo(file,filename, confirm=False)
+						file.close()
+						SFTPFilesStore.sftp_instanz=sftp
+						SFTPFilesStore.sftp_instanz_dir = dirname
+						SFTPFilesStore.sftp_usage_count = 0
+					except Exception as e:
+						logger.error("Inner SFTP Exception mit neuer Verbindung " +str(e.__class__) +" occurred.")
+				else:
+					logger.error("Konnte keine sftp-Verbindung öffnen.")
+		except Exception as e:
+			logger.error("Outer SFTP Exception " +str(e) +" occurred.")
+
 
 
 
@@ -472,6 +517,15 @@ class PipelineHelper:
 	@staticmethod
 	def checkfile(spider, path, buf, checksum,LogFlag):
 		buf.seek(0)
+		if path[-4:]=='.pdf':
+			ende = buf.getvalue()[-10:]
+			if not (b'%%EOF' in ende):
+				logger.error("Datei "+path+" enthält keine PDF-Endemarkierung in: "+ende.decode('iso-8859-1'))
+				if path in spider.files_written:
+					del spider.files_written[path]
+				return True
+			else:
+				buf.seek(0)
 		if checksum is None:
 			checksum=md5sum(buf)
 			buf.seek(0)
@@ -508,7 +562,7 @@ class PipelineHelper:
 	def file_path(item, spider=None):
 		try:
 			num=item['Num']
-			logger.debug('Geschäftsnummer: '+num)
+			logger.info('Geschäftsnummer: '+num)
 			if (not 'EDatum' in item) or item['EDatum'] is None:
 				if 'PDatum' in item and item['PDatum'] is not None:
 					edatum=item['PDatum']
@@ -523,7 +577,7 @@ class PipelineHelper:
 				logger.debug('Spider-Name: '+spider.name)
 				prefix=item['Signatur']
 			pfad=dir+"/"+prefix+"_"+filename
-			logger.debug('Pfad: '+pfad)
+			logger.info('Pfad: '+pfad)
 			return pfad
 		except Exception as e:
 			exc_type, exc_value, exc_traceback = sys.exc_info()
@@ -574,11 +628,12 @@ class PipelineHelper:
 		eintrag['Spider']=spider.name
 		if 'Sprache' in item:
 			eintrag['Sprache']=item['Sprache']
-		if 'EDatum' in item and item['EDatum'] and item['EDatum']!="nodate":
+		akt_jahr=datetime.datetime.today().year
+		if 'EDatum' in item and item['EDatum'] and item['EDatum']!="nodate" and int(item['EDatum'][:4])<=akt_jahr:
 			eintrag['Datum']=item['EDatum']
-		elif 'PDatum' in item and item['PDatum']  and item['PDatum']!="nodate":
+		elif 'PDatum' in item and item['PDatum']  and item['PDatum']!="nodate" and int(item['PDatum'][:4])<=akt_jahr:
 			eintrag['Datum']=item['PDatum']
-		elif 'SDatum' in item and item['SDatum']  and item['SDatum']!="nodate":
+		elif 'SDatum' in item and item['SDatum']  and item['SDatum']!="nodate" and int(item['SDatum'][:4])<=akt_jahr:
 			eintrag['Datum']=item['SDatum']
 		else:
 			eintrag['Datum']=spider.ERSATZDATUM

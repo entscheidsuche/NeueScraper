@@ -82,7 +82,7 @@ class CH_BGer(BasisSpider):
 				item['VKammer']=PH.NC(entscheid.xpath("./div/div[1]/text()").get(), warning="Kammerzeile nicht geparst: "+text)
 				item['Rechtsgebiet']=PH.NC(entscheid.xpath("./div/div[2]/text()").get(), warning="Rechtsgebietszeile nicht geparst: "+text)
 			
-				if self.reDatum.search(meta) is None:
+				if self.reDatumEinfach.search(meta) is None:
 					logger.error("Konnte Datum in meta nicht erkennen: "+meta)
 				else:
 					item['EDatum']=self.norm_datum(meta)

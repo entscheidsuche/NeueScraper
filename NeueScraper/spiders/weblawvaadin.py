@@ -40,7 +40,7 @@ class WeblawVaadinSpider(BasisSpider):
 		logger.info("parse_suchform response.status "+str(response.status))
 		antwort=response.body_as_unicode()
 		logger.info("parse_suchform Rohergebnis "+str(len(antwort))+" Zeichen")
-		logger.debug("parse_suchform Rohergebnis: "+antwort[:30000])
+		logger.info("parse_suchform Rohergebnis: "+antwort[:30000])
 		struktur=json.loads(antwort)
 		antwort_uidl=struktur['uidl']
 		struktur_uidl=json.loads(antwort_uidl)

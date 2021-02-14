@@ -19,11 +19,15 @@ logger = logging.getLogger(__name__)
 class BasisSpider(scrapy.Spider):
 	elementchars=re.compile("[^-a-zA-Z0-9_]")
 	elementre=re.compile("^[a-zA-Z][-a-zA-Z0-9_]+$")
-	reDatum=re.compile("(?P<Tag>\d\d?)\s*\.\s*(?P<Monat>\d\d?)\s*\.\s*(?P<Jahr>(?:19|20)\d\d)")
+	reDatumEinfach=re.compile("(?P<Tag>\d\d?)\s*\.\s*(?P<Monat>\d\d?)\s*\.\s*(?P<Jahr>(?:19|20)\d\d)")
 	MONATEfr = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
 	MONATEde = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember']
+	MONATEdeKurz = [m[:3] for m in MONATEde]
+	MONATEenKurz = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 	reDatumFR=re.compile(r"(?P<Tag>\d\d?)(?:er)?\s+(?P<Monat>(?:"+"|".join(MONATEfr)+r"))\s+(?P<Jahr>(?:19|20)\d\d)")
 	reDatumDE=re.compile(r"(?P<Tag>\d\d?)\.\s*(?P<Monat>(?:"+"|".join(MONATEde)+r"))\s+(?P<Jahr>(?:19|20)\d\d)")
+	reDatumDEkurz=re.compile(r"(?P<Monat>"+"|".join(MONATEdeKurz)+")\s(?P<Tag>\d\d?),\s*(?P<Jahr>(?:19|20)\d\d)")
+	reDatumENkurz=re.compile(r"(?P<Monat>"+"|".join(MONATEenKurz)+")\s(?P<Tag>\d\d?),\s*(?P<Jahr>(?:19|20)\d\d)")
 	reDatumNurJahr=re.compile(r"(?:19|20)\d\d")	
 	reDatumOk=re.compile("(?:19|20)\d\d-\d\d-\d\d")
 	reSplitter=re.compile(r"[\w']+")
@@ -188,6 +192,7 @@ class BasisSpider(scrapy.Spider):
 		htaccess+="Header set Access-Control-Allow-Origin *\n"
 		htaccess+="RewriteEngine On\n"
 		htaccess+="RewriteBase /\n"
+		htaccess+='RewriteRule "^Facetten.json" "/docs/facetten.php" [L]\n'		
 		htaccess+='RewriteRule "^Index/([^/]+)/last$" "/docs/lese_index.php?spider=$1" [L]\n'
 		htaccess+='RewriteRule "^Jobs/([^/]+)/last$" "/docs/lese_job.php?spider=$1" [L]\n'
 		
@@ -458,10 +463,11 @@ class BasisSpider(scrapy.Spider):
 		logger.error("Signatur "+signatur+" nicht in "+str(len(eintrag))+" Einträge gefunden: "+",".join([e['Signatur'] for e in eintrag]))
 		# Hier kommt nichts zurück, daher der Fehler.		
 
-	def norm_datum(self,datum):
+	def norm_datum(self,datum,error=None, warning=None, info=None):
 		if not self.reDatumOk.match(datum):
-			dat=self.reDatum.search(datum)
+			dat=self.reDatumEinfach.search(datum)
 			if dat:
+				logger.info("Datumsmatch für "+datum)
 				neudat="{}-{:0>2}-{:0>2}".format(dat.group('Jahr'),dat.group('Monat'),dat.group('Tag'))
 				logger.debug("Konvertiere "+datum+" in "+neudat)
 			else:
@@ -479,13 +485,34 @@ class BasisSpider(scrapy.Spider):
 						neudat="{}-{:0>2}-{:0>2}".format(datde.group('Jahr'),monatzahl,datde.group('Tag'))
 						logger.debug("Konvertiere "+datum+" in "+neudat)
 					else:
-						nurJahr=self.reDatumNurJahr.search(datum)
-						if nurJahr:
-							logger.warning("Jahreszahl statt vollständiges Datum: "+datum)
-							neudat=nurJahr.group(0)
+						datde=self.reDatumDEkurz.search(datum)
+						if datde:
+							monat=datde.group('Monat')
+							monatzahl=self.MONATEdeKurz.index(monat)+1
+							neudat="{}-{:0>2}-{:0>2}".format(datde.group('Jahr'),monatzahl,datde.group('Tag'))
+							logger.debug("Konvertiere "+datum+" in "+neudat)
 						else:
-							logger.error("unbekanntes Datumsformat: "+datum)
-							neudat="nodate"
+							datde=self.reDatumENkurz.search(datum)
+							if datde:
+								monat=datde.group('Monat')
+								monatzahl=self.MONATEenKurz.index(monat)+1
+								neudat="{}-{:0>2}-{:0>2}".format(datde.group('Jahr'),monatzahl,datde.group('Tag'))
+								logger.debug("Konvertiere "+datum+" in "+neudat)
+							else:
+								nurJahr=self.reDatumNurJahr.search(datum)
+								if nurJahr:
+									logger.warning("Jahreszahl statt vollständiges Datum: "+datum)
+									neudat=nurJahr.group(0)
+								else:
+									if error:
+										logger.error(error + " unbekanntes Datumsformat: "+datum)
+									elif warning:
+										logger.warning(warning + "unbekanntes Datumsformat: "+datum)
+									elif info:
+										logger.info(info + "unbekanntes Datumsformat: "+datum)
+									else:
+										logger.error("unbekanntes Datumsformat: "+datum)
+									neudat="nodate"
 			datum=neudat
 		return datum
 
