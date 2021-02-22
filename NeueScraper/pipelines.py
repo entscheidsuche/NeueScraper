@@ -162,16 +162,28 @@ class MyWriterPipeline:
 			logFlag=False
 
 		else:
+			pfad=PipelineHelper.file_path(item, spider)
 			if 'Num' in item:
 				logger.info("Geschäftsnummer: "+item['Num'])
 			else:
 				logger.warning("keine Geschäftsnummer!")
 				item['Num']='unknown'
 			pdf_da = ('PDFFiles' in item and item['PDFFiles'])
+			zweitnum=[]
 			if pdf_da: # Schauen ob das PDF wirklich da ist
 				if not (item['PDFFiles'][0]['path'] in spider.files_written):
-					logger.warning(item['PDFFiles'][0]['path']+" wurde nicht geschrieben.")
+					logger.error(item['PDFFiles'][0]['path']+" wurde nicht geschrieben.")
 					pdf_da=False
+				else:
+					pdfpfad=item['PDFFiles'][0]['path'][:-4]
+					if not(pdfpfad==pfad):
+						logger.error("Pdf-file hat Pfad "+pdfpfad+" statt "+pfad+" und gehört bereits zu einem anderen Dokument.")
+						if pfad in spider.numliste:
+							zweitnum=spider.numliste[pfad]
+							pfad=pdfpfad
+						else:
+							logger.error("Dokument "+pdfpfad+" noch nicht eingetragen, joinen daher nicht möglich.")
+							raise DropItem(f"PDF hat Pfad {pdfpfad} statt {pfad} und Dateien können nicht zusammengeführt werden für {item['Num']}")
 			if not(pdf_da) and not('HTMLFiles' in item and item['HTMLFiles']):
 				logger.warning("weder PDF noch HTML geholt ("+item['Num']+")")
 				# Sollen wir Urteile ohne Text auch nehmen?
@@ -179,9 +191,9 @@ class MyWriterPipeline:
 			else:
 				#upload_file_content=PipelineHelper.make_xml(item,spider)
 				#vorher noch das json Schreiben
-				json_content, json_checksum = PipelineHelper.make_json(item,spider)
+				json_content, json_checksum = PipelineHelper.make_json(item,spider,pfad,zweitnum)
 				json_contentType="application/json"
-				json_file_key=PipelineHelper.file_path(item, spider)+".json"
+				json_file_key=pfad+".json"
 				#MyS3FilesStore.shared_store.persist_file(json_file_key, BytesIO(json_content.encode(encoding='UTF-8')), info=None, spider=spider, meta=None, headers=None, item=item, ContentType=json_contentType, LogFlag=logFlag, checksum=json_checksum)
 				MyFilesPipeline.common_store.persist_file(json_file_key, BytesIO(json_content.encode(encoding='UTF-8')), info=None, spider=spider, meta=None, headers=None, item=item, ContentType=json_contentType, LogFlag=logFlag, checksum=json_checksum)
 			
@@ -570,7 +582,7 @@ class PipelineHelper:
 					edatum='nodate'
 			else:
 				edatum=item['EDatum']
-			filename=filenamechars.sub('-',num)+"_"+filenamechars.sub('-',edatum)
+			filename=filenamechars.sub('-',num[:20])+"_"+filenamechars.sub('-',edatum)
 			dir = "undefined"
 			if spider:
 				dir=spider.name
@@ -622,7 +634,7 @@ class PipelineHelper:
 
 
 	@staticmethod
-	def make_json(item,spider):
+	def make_json(item,spider,pfad,zweitnum):
 		eintrag={}
 		eintrag['Signatur']=item['Signatur']
 		eintrag['Spider']=spider.name
@@ -644,9 +656,13 @@ class PipelineHelper:
 		if 'HTMLFiles' in item and item['HTMLFiles']:
 			eintrag['HTML']={'Datei': item['HTMLFiles'][0]['path'], 'URL': item['HTMLFiles'][0]['url'], 'Checksum': item['HTMLFiles'][0]['checksum']}
 		if	'Num2' in item:
-			eintrag['Num']=[item['Num'],item['Num2']]
+			eintrag['Num']=[item['Num'],item['Num2']]+zweitnum
 		else:
-			eintrag['Num']=[item['Num']]
+			eintrag['Num']=[item['Num']]+zweitnum
+		if len(eintrag['Num'])==1 and eintrag['Num'][0]=='':
+			spider.numliste[pfad]=[]
+		else:
+			spider.numliste[pfad]=eintrag['Num']
 		# über die Sprache iterieren
 		kopfzeile=[]
 		missing=[]

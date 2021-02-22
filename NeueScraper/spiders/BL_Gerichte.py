@@ -103,9 +103,10 @@ class BL_Gerichte(BasisSpider):
 						if len(item['Num'])<6:
 							item['Num']=url.split("/")[-2]+"/"+item['Num']
 						item['Signatur'], item['Gericht'], item['Kammer']=self.detect(item['VGericht'],"",item['Num'])
-						request = scrapy.Request(url=url, callback=self.parse_document, errback=self.errback_httpbin, meta={'Gericht': response.meta['Gericht'], 'item': item})
-						logger.info("HTML-Item bis jetzt: "+json.dumps(item))
-						yield request
+						if self.check_blockliste(item):
+							request = scrapy.Request(url=url, callback=self.parse_document, errback=self.errback_httpbin, meta={'Gericht': response.meta['Gericht'], 'item': item})
+							logger.info("HTML-Item bis jetzt: "+json.dumps(item))
+							yield request
 				else:
 					logger.warning("falscher Link: "+url+". Urteil wird ignoriert.")	
 

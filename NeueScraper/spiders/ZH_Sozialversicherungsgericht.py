@@ -147,10 +147,11 @@ class ZurichSozversSpider(BasisSpider):
 				vgericht=''
 				num=attribute[0]
 				signatur, gericht, kammer=self.detect(vgericht, vkammer, num)
+				edatum=self.norm_datum(attribute[1])
 				item = {
 					'Kanton': self.kanton_kurz,
 					'Gericht' : gericht,
-					'EDatum': self.norm_datum(attribute[1]),
+					'EDatum': edatum,
 					'Titel': titel,
 					'Num': num,
 					'HTMLUrls': [url],
@@ -159,6 +160,7 @@ class ZurichSozversSpider(BasisSpider):
 				}
 				request=scrapy.Request(url=url, callback=self.parse_page, errback=self.errback_httpbin, meta = {'item':item})
 				yield(request)
+					
 			geholt=geholt+trefferAufSeite
 			if geholt<trefferZahl:
 				logging.info("search_request für Treffer "+str(geholt)+"+ von "+str(trefferZahl)+" mit viewId "+viewId)
@@ -179,7 +181,8 @@ class ZurichSozversSpider(BasisSpider):
 			logging.info("Weiter mit Jahr "+str(jahr))
 			request=self.initial_request(jahr)
 			self.cookie_debug(request, response, "neues Jahr "+str(jahr))
-			yield(request)
+			if self.check_blockliste(item):
+				yield(request)
 		else:
 			logging.info("Beende Scrapen bei Jahr "+str(jahr))
 

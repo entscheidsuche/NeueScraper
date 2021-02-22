@@ -15,9 +15,8 @@ class ZH_OG(BasisSpider):
 	#RESULT_PAGE_URL='https://www.gerichte-zh.ch/typo3conf/ext/frp_entscheidsammlung_extended/res/php/livesearch.php?q=&geschaeftsnummer=&gericht=gerichtTitel&kammer=kammerTitel&entscheiddatum_von={datum}&erweitert=1&usergroup=0&sysOrdnerPid=0&sucheErlass=Erlass&sucheArt=Art.&sucheAbs=Abs.&sucheZiff=Ziff./lit.&sucheErlass2=Erlass&sucheArt2=Art.&sucheAbs2=Abs.&sucheZiff2=Ziff./lit.&sucheErlass3=Erlass&sucheArt3=Art.&sucheAbs3=Abs.&sucheZiff3=Ziff./lit.&suchfilter=1'
 	RESULT_PAGE_URL='https://www.gerichte-zh.ch/typo3conf/ext/frp_entscheidsammlung_extended/res/php/livesearch.php?q=&geschaeftsnummer=&gericht=gerichtTitel&kammer=kammerTitel&entscheiddatum_von={datum_ab}&entscheiddatum_bis={datum_bis}&erweitert=1&usergroup=0&sysOrdnerPid=0&sucheErlass=Erlass&sucheArt=Art.&sucheAbs=Abs.&sucheZiff=Ziff./lit.&sucheErlass2=Erlass&sucheArt2=Art.&sucheAbs2=Abs.&sucheZiff2=Ziff./lit.&sucheErlass3=Erlass&sucheArt3=Art.&sucheAbs3=Abs.&sucheZiff3=Ziff./lit.&suchfilter=1'
 	PDF_BASE='https://www.gerichte-zh.ch'
-	AB_DEFAULT='01.01.1980'
 	TAGSCHRITTE = 500
-	AUFSETZTAG = "01.01.2000"
+	AUFSETZTAG = "01.01.1980"
 	DELTA=datetime.timedelta(days=TAGSCHRITTE-1)
 	EINTAG=datetime.timedelta(days=1)
 
@@ -41,10 +40,10 @@ class ZH_OG(BasisSpider):
 			von=bis+self.EINTAG
 		return requests
 
-	def __init__(self,ab=AB_DEFAULT):
+	def __init__(self,ab=None):
 		super().__init__()
 		self.ab = ab
-		self.request_gen = self.request_generator()
+		self.request_gen = self.request_generator(ab)
 
 	def parse_page(self, response):	
 		""" Parses the current search result page, downloads documents and yields the request for the next search
@@ -112,8 +111,7 @@ class ZH_OG(BasisSpider):
 								vkammer=kammer
 							if vgericht=='':
 								vgericht=gericht
-						
-
+							edatum=self.norm_datum(EDatum)
 							item = {
 								'Kanton': self.kanton_kurz,
 								'Num': Num ,
@@ -121,7 +119,7 @@ class ZH_OG(BasisSpider):
 								'VKammer': vkammer,
 								'Gericht': gericht,
 								'VGericht': vgericht,
-								'EDatum': self.norm_datum(EDatum),
+								'EDatum': edatum,
 								'Titel': Titel,
 								'DocId': idE,
 								'Weiterzug': Weiterzug,
@@ -131,7 +129,8 @@ class ZH_OG(BasisSpider):
 								'Signatur': signatur
 							}
 							logger.info("Eintrag: "+json.dumps(item))
-							yield(item)
+							if self.check_blockliste(item):
+								yield(item)
 						else:
 							logging.error("Entscheid wird wegen fehlender Angaben ignoriert, Dokument-ID: "+idE+" Geschäftsnummer: "+Num+" Raw: "+Raw)
 							

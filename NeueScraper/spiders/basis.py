@@ -46,6 +46,9 @@ class BasisSpider(scrapy.Spider):
 	#JOBS_URL=JOBS_HOST+'?list-type=2&prefix=scraper%2F'
 	JOBS_HOST='https://entscheidsuche.ch'
 	JOBS_URL=JOBS_HOST+'/docs/Jobs/'
+	BLOCKLISTE='https://entscheidsuche.ch/docs/Blockliste.json'
+	blockliste={}
+	numliste={}
 	
 	kammerfallback=None
 	files_written ={}
@@ -344,9 +347,7 @@ class BasisSpider(scrapy.Spider):
 			yield scrapy.Request(url=self.JOBS_HOST+jobs[0], callback=self.parse_dateiliste, errback=self.errback_httpbin)
 		else:
 			logger.info("Kein vorheriger Job gefunden. Erster Lauf von: "+self.name)
-			logger.info("Starte nun "+str(len(self.request_gen))+" Requests.")	
-			for req in self.request_gen:
-				yield req
+			yield scrapy.Request(url=self.BLOCKLISTE, callback=self.parse_blockliste, errback=self.errback_httpbin)
 
 	def parse_dateiliste(self, response):
 		logger.info("parse_dateiliste response.status "+str(response.status))
@@ -366,10 +367,23 @@ class BasisSpider(scrapy.Spider):
 				self.files_written[pfad]={'checksum': checksum, 'status': status, 'quelle': quelle, 'last_change': last_change}
 		else:
 			logger.info("Kein vorheriger Job gefunden. Erster Lauf von: "+self.name)
+		yield scrapy.Request(url=self.BLOCKLISTE, callback=self.parse_blockliste, errback=self.errback_httpbin)
 
+
+	def parse_blockliste(self, response):
+		logger.info("parse_blockliste response.status "+str(response.status))
+		logger.info("parse_blockliste Rohergebnis "+str(len(response.body))+" Zeichen")
+		logger.info("parse_blockliste Rohergebnis: "+response.body_as_unicode()[:10000])
+		blockliste=json.loads(response.body_as_unicode())
+		if self.name in blockliste:
+			self.blockliste=blockliste[self.name]
+			logger.info("Blocklisteneinträge gefunden: "+json.dumps(blockliste[self.name]))
+		else:
+			logger.info("keine Blocklisteneinträge für "+self.name)
 		logger.info("Starte nun "+str(len(self.request_gen))+" Requests.")
 		for req in self.request_gen:
 			yield req
+
 
 	def detect(self,vgericht,vkammer,num):
 		logger.info(num+": vgericht='"+vgericht+"', vkammer='"+vkammer+"'")
@@ -516,6 +530,13 @@ class BasisSpider(scrapy.Spider):
 			datum=neudat
 		return datum
 
+	def check_blockliste(self, item):
+		pfad=PipelineHelper.file_path(item, self)
+		if pfad in self.blockliste:
+			logger.error("Dokument geblockt: "+pfad)
+			return False
+		else:
+			return True
 
 	def errback_httpbin(self, failure):
 		# log all errback failures,
