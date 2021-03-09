@@ -43,7 +43,8 @@ class TribunaSpider(BasisSpider):
 		body=self.get_next_request()
 		return [scrapy.Request(url=self.RESULT_PAGE_URL, method="POST", body=body, headers=self.HEADERS, callback=self.parse_page, errback=self.errback_httpbin)]
 
-	def __init__(self,ab=None):
+	def __init__(self,ab=None, neu=None):
+		self.neu=neu
 		logger.info("__init__ in tribuna: Self ist vom Typ: "+str(type(self)))			
 		super().__init__()
 		self.ab = ab

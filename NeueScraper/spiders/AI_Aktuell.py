@@ -20,7 +20,7 @@ class AI_Aktuell(BasisSpider):
 		request = scrapy.Request(url=self.URL, callback=self.parse_trefferliste, errback=self.errback_httpbin)
 		return [request]
 	
-	def __init__(self):
+	def __init__(self, neu=None):
 		super().__init__()
 		# Hier stehen immer nur die neuen Entscheide. Daher nie gesamt holen und austauschen.
 		self.ab="gesetzt"

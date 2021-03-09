@@ -46,9 +46,9 @@ class CH_BGE(BasisSpider):
 			requests.append(self.mache_request(jahr))
 		return requests
 	
-	def __init__(self, ab=None):
+	def __init__(self, ab=None, neu=None):
 		super().__init__()
-		# Hier stehen immer nur die neuen Entscheide. Daher nie gesamt holen und austauschen.
+		self.neu=neu
 		self.ab=ab
 		self.request_gen = self.request_generator(ab)
 

@@ -73,9 +73,10 @@ class ZurichSozversSpider(BasisSpider):
 		logging.info("Generiere Initialrequest für Suchseite für Jahr "+str(jahr))
 		return scrapy.Request(url=self.SEARCH_PAGE_URL, callback=self.parse_searchform, errback=self.errback_httpbin, dont_filter=True, meta={"jahr":jahr})
 
-	def __init__(self,ab=AB_DEFAULT):
+	def __init__(self,ab=AB_DEFAULT, neu=None):
 		super().__init__()
 		self.ab = ab
+		self.neu = neu
 		self.request_gen = self.request_generator()
 
 	def parse_searchform(self, response):

@@ -58,8 +58,9 @@ class GenfSpider(BasisSpider):
 			request_liste.append(self.mache_request(g))
 		return request_liste
 
-	def __init__(self, ab=None):
+	def __init__(self, ab=None, neu=None):
 		super().__init__()
+		self.neu=neu
 		if ab:
 			self.ab=ab
 		self.request_gen = self.request_generator()

@@ -31,9 +31,10 @@ class SG_Gerichte(BasisSpider):
 			request=scrapy.Request(url=self.HOST+self.SUCH_URL, headers=self.HEADERS, callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'gesehen': 0})
 		return request
 	
-	def __init__(self, ab=None):
+	def __init__(self, ab=None, neu=None):
 		super().__init__()
 		self.ab=ab
+		self.neu=neu
 		self.request_gen = [self.get_next_request(ab)]
 
 

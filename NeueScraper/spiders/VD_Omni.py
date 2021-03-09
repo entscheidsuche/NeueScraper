@@ -65,8 +65,9 @@ class VD_Omni(BasisSpider):
 			del self.HERKUNFT[0]
 		return request
 	
-	def __init__(self, ab=None):
+	def __init__(self, ab=None, neu=None):
 		super().__init__()
+		self.neu=neu
 		if ab:
 			self.ab=ab
 			self.FORMDATA['dPublikationsdatum']=ab

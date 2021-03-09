@@ -34,8 +34,9 @@ class BL_Gerichte(BasisSpider):
 			requests.append(request)
 		return requests
 	
-	def __init__(self, ab=None):
+	def __init__(self, ab=None, neu=None):
 		self.ab=ab
+		self.neu=neu
 		super().__init__()
 		self.request_gen = self.request_generator()
 
@@ -95,8 +96,9 @@ class BL_Gerichte(BasisSpider):
 							
 						item['PDFUrls']=[url]
 							
-						logger.info("PDF-Item: "+json.dumps(item))
-						yield item
+						if self.check_blockliste(item):
+							logger.info("PDF-Item: "+json.dumps(item))
+							yield item
 					else:
 						item['HTMLUrls']=[url]
 						item['Num']=url.split("/")[-1]

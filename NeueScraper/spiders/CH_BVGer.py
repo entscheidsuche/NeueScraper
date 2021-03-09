@@ -77,10 +77,11 @@ class CH_BVGer(BasisSpider):
 			del self.requeststack[0]
 		return request
 		
-	def __init__(self,ab=None,bis=None):
+	def __init__(self,ab=None,bis=None,neu=None):
 		super().__init__()
 		self.ab = ab
 		self.bis = bis
+		self.neu = neu
 		self.request_gen = self.request_generator(ab, bis)
 
 	def parse_suchform(self,response):

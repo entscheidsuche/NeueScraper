@@ -32,8 +32,9 @@ class WeblawVaadinSpider(BasisSpider):
 		request=scrapy.Request(url=self.HOST+self.SUCHFORM.format(str(random.randint(1000000000000000,9999999999999999))), method="POST", callback=self.parse_suchform, errback=self.errback_httpbin)
 		return request
 	
-	def __init__(self, ab=None):
+	def __init__(self, ab=None, neu=None):
 		super().__init__()
+		self.neu=neu
 		self.request_gen = [self.generate_request()]
 
 	def parse_suchform(self, response):

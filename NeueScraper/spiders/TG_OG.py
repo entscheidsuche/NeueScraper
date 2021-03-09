@@ -25,8 +25,9 @@ class TG_OG(BasisSpider):
 		request=scrapy.FormRequest(url=self.HOST+self.SUCH_URL, callback=self.parse_trefferliste, errback=self.errback_httpbin)
 		return request
 	
-	def __init__(self):
+	def __init__(self, neu=None):
 		super().__init__()
+		self.neu=neu
 		self.request_gen = [self.get_next_request()]
 
 

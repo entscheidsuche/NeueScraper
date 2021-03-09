@@ -71,10 +71,11 @@ class SO_Omni(BasisSpider):
 		request=scrapy.FormRequest(url=self.HOST+self.SUCH_URL, formdata=self.FORMDATA, method="POST", callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': 1})
 		return request
 	
-	def __init__(self, ab=None):
+	def __init__(self, ab=None, neu=None):
 		super().__init__()
 		if ab:
 			self.ab=ab
+			self.neu=neu
 			self.FORMDATA['dPublikationsdatum']=ab
 			self.FORMDATA['bHasPublikationsdatumBis']="1"
 		self.request_gen = [self.get_next_request()]

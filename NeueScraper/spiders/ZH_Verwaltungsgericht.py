@@ -69,9 +69,10 @@ class ZurichVerwgerSpider(BasisSpider):
 		return request
 
 
-	def __init__(self, ab=None):
+	def __init__(self, ab=None, neu=None):
 		super().__init__()
 		self.ab=ab
+		self.neu=neu
 		if ab is None:
 			self.request_gen=[self.request_generator()]
 		else:

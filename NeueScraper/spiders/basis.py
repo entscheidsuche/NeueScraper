@@ -55,6 +55,7 @@ class BasisSpider(scrapy.Spider):
 	previous_run={}
 	previous_job=None
 	ab=None
+	neu=None
 	# Für alle Dokumente, für die wir keine Daten herbekommen können
 	ERSATZDATUM='2020-01-01'
 
@@ -204,6 +205,8 @@ class BasisSpider(scrapy.Spider):
 				for k in json_kantone[c]['gerichte'][g]['kammern']:
 					s=json_kantone[c]['gerichte'][g]['kammern'][k]['spider']
 					htaccess+=f'RewriteRule "^({k}_.*)$" "/docs/{s}/$1" [L]\n'
+					htaccess+='RewriteCond %{HTTP_REFERER} !^.*entscheidsuche.ch.* [NC]\n'
+					htaccess+=f'RewriteRule "^{s}/(.+\.(html|pdf))$" "/doc.php?spider={s}&doc=$1" [L]\n'
 					
 		item= { 'htaccess': htaccess}
 		yield(item)
@@ -329,13 +332,20 @@ class BasisSpider(scrapy.Spider):
 			logger.info("Generiertes Kammerfallback "+str(self.kammerfallback)+": "+json.dumps(row))
 			self.gerichte[self.name].append(row)
 		
-		logger.debug("Gerichtsliste verarbeitet, hole nun die Jobliste.")
+		logger.debug("Gerichtsliste verarbeitet")
 		
-		# Nun einlesen, was an Dateien vom letzten Spidern vorhanden ist
-		#jobs_url=self.JOBS_URL+self.name+"%2FJob_"
-		jobs_url=self.JOBS_URL+self.name+"/last"
-		logger.info("Jobs-URL: "+jobs_url)
-		yield scrapy.Request(url=jobs_url, callback=self.parse_dateiliste, errback=self.errback_httpbin, meta={'handle_httpstatus_list': [404]})
+		if self.neu=="neu":
+			logger.debug("Neuer Job, hole nun die Blockliste.")
+			yield scrapy.Request(url=self.BLOCKLISTE, callback=self.parse_blockliste, errback=self.errback_httpbin)
+		
+		else:
+			logger.debug("hole nun die Jobliste.")
+	
+			# Nun einlesen, was an Dateien vom letzten Spidern vorhanden ist
+			#jobs_url=self.JOBS_URL+self.name+"%2FJob_"
+			jobs_url=self.JOBS_URL+self.name+"/last"
+			logger.info("Jobs-URL: "+jobs_url)
+			yield scrapy.Request(url=jobs_url, callback=self.parse_dateiliste, errback=self.errback_httpbin, meta={'handle_httpstatus_list': [404]})
 		
 	def parse_jobliste_S3(self, response):
 		logger.debug("parse_jobliste_S3 response.status "+str(response.status))
@@ -434,30 +444,30 @@ class BasisSpider(scrapy.Spider):
 				logger.info("Eindeutiger Kammermatch "+str(kammermatch)+" ["+self.gerichte[self.name][kammermatch]['Signatur']+"]")					
 		else:
 			kammermatch=0
-		self.metamatch=self.gerichte[self.name][kammermatch]
-		signatur=self.metamatch['Signatur']
+		metamatch=self.gerichte[self.name][kammermatch]
+		signatur=metamatch['Signatur']
 		logger.info("Kammermatch: "+str(kammermatch)+" Signatur: "+signatur)
 		gericht=''
-		if self.metamatch['Stufe 2 de']:
-			gericht=self.metamatch['Stufe 2 de']
-		elif self.metamatch['Stufe 2 fr']:
-			gericht=self.metamatch['Stufe 2 fr']
-		elif self.metamatch['Stufe 2 it']:
-			gericht=self.metamatch['Stufe 2 it']
+		if metamatch['Stufe 2 de']:
+			gericht=metamatch['Stufe 2 de']
+		elif metamatch['Stufe 2 fr']:
+			gericht=metamatch['Stufe 2 fr']
+		elif metamatch['Stufe 2 it']:
+			gericht=metamatch['Stufe 2 it']
 		kammer=''
-		if self.metamatch['Stufe 3 de']:
-			kammer=self.metamatch['Stufe 3 de']
-		elif self.metamatch['Stufe 3 fr']:
-			kammer=self.metamatch['Stufe 3 fr']
-		elif self.metamatch['Stufe 3 it']:
-			kammer=self.metamatch['Stufe 3 it']
+		if metamatch['Stufe 3 de']:
+			kammer=metamatch['Stufe 3 de']
+		elif metamatch['Stufe 3 fr']:
+			kammer=metamatch['Stufe 3 fr']
+		elif metamatch['Stufe 3 it']:
+			kammer=metamatch['Stufe 3 it']
 		return signatur,gericht,kammer	
 		
 	def detect_by_signatur(self,signatur):
 		eintrag=self.gerichte[self.name]
 		for e in eintrag:
 			if e['Signatur']==signatur:
-				self.metamatch=e
+				metamatch=e
 				gericht=''
 				if e['Stufe 2 de']:
 					gericht=e['Stufe 2 de']
@@ -478,7 +488,10 @@ class BasisSpider(scrapy.Spider):
 		# Hier kommt nichts zurück, daher der Fehler.		
 
 	def norm_datum(self,datum,error=None, warning=None, info=None):
-		if not self.reDatumOk.match(datum):
+		match=self.reDatumOk.match(datum)
+		if match:
+			neudat=match.group(0)
+		else:
 			dat=self.reDatumEinfach.search(datum)
 			if dat:
 				logger.info("Datumsmatch für "+datum)
@@ -527,11 +540,12 @@ class BasisSpider(scrapy.Spider):
 									else:
 										logger.error("unbekanntes Datumsformat: "+datum)
 									neudat="nodate"
-			datum=neudat
+		datum=neudat
 		return datum
 
 	def check_blockliste(self, item):
-		pfad=PipelineHelper.file_path(item, self)
+		pfad=PipelineHelper.file_path(item, self).split("/",1)[1]
+		logger.debug("Teste "+pfad+" auf Blockliste")
 		if pfad in self.blockliste:
 			logger.error("Dokument geblockt: "+pfad)
 			return False

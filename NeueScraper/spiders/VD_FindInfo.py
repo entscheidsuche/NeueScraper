@@ -52,9 +52,10 @@ class ZurichVerwgerSpider(BasisSpider):
 		return request
 
 
-	def __init__(self, ab=None):
+	def __init__(self, ab=None, neu=None):
 		super().__init__()
 		self.ab=ab
+		self.neu=neu
 		self.request_gen=[self.request_generator(ab)]
 
 	def parse_trefferliste(self, response):

@@ -27,8 +27,9 @@ class WeblawSpider(BasisSpider):
 		request=scrapy.Request(url=self.DOMAIN+self.SUCH_URL, headers=self.HEADERS, callback=self.parse_suchform, errback=self.errback_httpbin)
 		return [request]
 
-	def __init__(self, ab=None):
+	def __init__(self, ab=None, neu=None):
 		self.ab=ab
+		self.neu=neu
 		super().__init__()
 		self.request_gen = self.request_generator(self.ab)
 

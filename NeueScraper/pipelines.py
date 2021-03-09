@@ -67,8 +67,12 @@ class MyWriterPipeline:
 					job_typ="unvollständig"
 					logger.error("vorher {} Dateien, nun {} Dateien gelesen {:.2f}%".format(vorher, gelesen, prozentsatz))
 			else:
-				job_typ="neu"
-				logger.info("keine Dokumente eines vorherigen Laufes gefunden.")
+				if spider.neu == 'neu':
+					job_typ="neu"
+					logger.info("Löschlauf")
+				else:
+					job_typ="komplett"
+					logger.info("keine Dokumente eines vorherigen Laufes gefunden.")
 
 		gesamt={'gesamt':0}
 		to_index={}
@@ -121,13 +125,19 @@ class MyWriterPipeline:
 						gesamt['gesamt']=gesamt['gesamt']+1
 		files_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "dateien": spider.files_written, 'signaturen': signaturen, 'gesamt': gesamt }
 		json_jobs=json.dumps(files_log)
+		sitemaps=PipelineHelper.gen_sitemap(spider.files_written)
+		zahl=1
+		for sitemap in sitemaps:
+			pfad_sitemap="Sitemaps/"+spider.name+"_"+str(zahl)+".xml"
+			MyFilesPipeline.common_store.persist_file(pfad_sitemap, BytesIO(sitemap.encode(encoding='UTF-8')), info=None, ContentType='text/xml', LogFlag=False)
+			zahl += 1
 		MyFilesPipeline.common_store.persist_file(pfad_job, BytesIO(json_jobs.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
 		index_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "actions": to_index, 'signaturen': signaturen, 'gesamt': gesamt }
 		json_index=json.dumps(index_log)
 		MyFilesPipeline.common_store.persist_file(pfad_index, BytesIO(json_index.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
 		# Nachdem die Pipeline durchgelaufen ist, den Index-Request synchron machen
 		try:
-			antwort=requests.post("http://entscheidsuche.pansoft.de:8000", data=json_jobs, headers= {'Content-Type': 'application/json'}, timeout=2000)
+			antwort=requests.post("http://entscheidsuche.pansoft.de:8000", data=json_jobs, headers= {'Content-Type': 'application/json'}, timeout=3600)
 			logger.info("Indexierungsrequest mit Antwort: "+str(antwort.status_code))
 			if antwort.status_code >=300:
 				logger.error("Indexierungsfehler: "+antwort.text)
@@ -178,8 +188,8 @@ class MyWriterPipeline:
 					pdfpfad=item['PDFFiles'][0]['path'][:-4]
 					if not(pdfpfad==pfad):
 						logger.error("Pdf-file hat Pfad "+pdfpfad+" statt "+pfad+" und gehört bereits zu einem anderen Dokument.")
-						if pfad in spider.numliste:
-							zweitnum=spider.numliste[pfad]
+						if pdfpfad in spider.numliste:
+							zweitnum=spider.numliste[pdfpfad]
 							pfad=pdfpfad
 						else:
 							logger.error("Dokument "+pdfpfad+" noch nicht eingetragen, joinen daher nicht möglich.")
@@ -663,53 +673,59 @@ class PipelineHelper:
 			spider.numliste[pfad]=[]
 		else:
 			spider.numliste[pfad]=eintrag['Num']
+			logger.info("Trage für "+pfad+" ein: "+json.dumps(eintrag['Num']))
 		# über die Sprache iterieren
 		kopfzeile=[]
 		missing=[]
-		for sp in spider.kantone:
-			# Nur wenn die Daten vorhanden in dieser Sprache vorhanden sind...
-			if spider.metamatch['Stufe 2 '+sp]:
-				anzeige=(spider.kanton[sp]+" " if spider.kanton_kurz!="CH" else "")+spider.metamatch['Stufe 2 '+sp]+(" "+spider.metamatch['Stufe 3 '+sp] if spider.metamatch['Stufe 3 '+sp] else "")
-				if 'EDatum' in item and item['EDatum'] and item['EDatum']!="nodate":
-					if len(item['EDatum'])==10:
-						anzeige+=" "+item['EDatum'][8:10]+"."+item['EDatum'][5:7]+"."+item['EDatum'][0:4]
-					else:
-						anzeige+=" "+item['EDatum']
-				elif 'PDatum' in item and item['PDatum'] and item['PDatum']!="nodate":
-					if len(item['PDatum'])==10:
-						anzeige+=" "+item['PDatum'][8:10]+"."+item['PDatum'][5:7]+"."+item['PDatum'][0:4]
-					else:
-						anzeige+=" "+item['PDatum']
-					anzeige+="("+spider.translation['publiziert'][sp]+")"
-				anzeige+=" "+item['Num']
-				if 'Num2' in item:
-					anzeige+=" ("+item['Num2']+")"
-				kopfzeile.append({'Sprachen': [sp], 'Text': anzeige})
-			else:
-				missing.append(sp)
-		kopfzeile[0]['Sprachen']+=missing
-		eintrag['Kopfzeile']=kopfzeile
-		
 		meta=[]
-		settings=spider.gerichte[spider.name]
-		for setting in settings:
-			if setting['Signatur']==item['Signatur']:
-				break;
-
-		gesamttext=""
-		for sp in spider.kantone:
-			text=spider.kanton[sp]+" "+setting['Stufe 2 '+sp]+" "+setting['Stufe 3 '+sp]
-			meta.append({'Sprachen': [sp], 'Text': text })
-			gesamttext+="#"+text
+		signatur=item['Signatur']
+		spider_entries=spider.gerichte[spider.name]
+		metamatches=[e for e in spider_entries if e['Signatur']==signatur]
+		if len(metamatches)>1:
+			logger.error("Mehrere Einträge für Signatur "+signatur+": "+json.dumps(metamatches))
+		elif len(metamatches)==0:
+			logger.error("Keine Einträge für Signatur "+signatur)
+		else:
+			metamatch=metamatches[0]
+			for sp in spider.kantone: # Schleife über die Sprachen
+				# Nur wenn die Daten vorhanden in dieser Sprache vorhanden sind...
+				if metamatch['Stufe 2 '+sp]:
+					anzeige=(spider.kanton[sp]+" " if spider.kanton_kurz!="CH" else "")+metamatch['Stufe 2 '+sp]+(" "+metamatch['Stufe 3 '+sp] if metamatch['Stufe 3 '+sp] else "")
+					if 'EDatum' in item and item['EDatum'] and item['EDatum']!="nodate":
+						if len(item['EDatum'])==10:
+							anzeige+=" "+item['EDatum'][8:10]+"."+item['EDatum'][5:7]+"."+item['EDatum'][0:4]
+						else:
+							anzeige+=" "+item['EDatum']
+					elif 'PDatum' in item and item['PDatum'] and item['PDatum']!="nodate":
+						if len(item['PDatum'])==10:
+							anzeige+=" "+item['PDatum'][8:10]+"."+item['PDatum'][5:7]+"."+item['PDatum'][0:4]
+						else:
+							anzeige+=" "+item['PDatum']
+						anzeige+="("+spider.translation['publiziert'][sp]+")"
+					anzeige+=" "+item['Num']
+					if 'Num2' in item:
+						anzeige+=" ("+item['Num2']+")"
+					kopfzeile.append({'Sprachen': [sp], 'Text': anzeige})
+				else:
+					missing.append(sp)
+				kopfzeile[0]['Sprachen']+=missing
+				logger.info("Setze Kopfzeile auf: "+json.dumps(kopfzeile))
+				eintrag['Kopfzeile']=kopfzeile
 		
-		alle_meta=""	
-		if 'VKammer' in item and item['VKammer'] and not(item['VKammer'] in gesamttext):
-			alle_meta=item['VKammer']
-		if 'VGericht' in item and item['VGericht'] and not(item['VGericht'] in gesamttext):
-			alle_meta+=" "+item['VGericht']
-		if alle_meta:
-			meta.append({'Sprachen': ['de', 'fr', 'it'], 'Text': alle_meta})
-		eintrag['Meta']=meta
+			gesamttext=""
+			for sp in spider.kantone:
+				text=spider.kanton[sp]+" "+metamatch['Stufe 2 '+sp]+" "+metamatch['Stufe 3 '+sp]
+				meta.append({'Sprachen': [sp], 'Text': text })
+				gesamttext+="#"+text
+		
+			alle_meta=""	
+			if 'VGericht' in item and item['VGericht'] and not(item['VGericht'] in gesamttext):
+				alle_meta=item['VGericht']
+			if 'VKammer' in item and item['VKammer'] and not(item['VKammer'] in gesamttext):
+				alle_meta+=(" " if alle_meta else "") + item['VKammer']
+			if alle_meta:
+				meta.append({'Sprachen': ['de', 'fr', 'it'], 'Text': alle_meta})
+			eintrag['Meta']=meta
 			
 
 		abstract=[]
@@ -833,6 +849,32 @@ class PipelineHelper:
 		xml_content = '<?xml version="1.0" encoding="UTF-8"?><?xml-stylesheet type="text/xsl" href="/Entscheid.xsl"?>\n'
 		xml_content = xml_content+str(etree.tostring(root, pretty_print=True),"ascii")
 		return xml_content
+
+	@staticmethod
+	def gen_sitemap(files):
+		dateien=[]
+		datum = datetime.datetime.now().strftime("%Y-%m-%d")
+		root=None
+		zahl=0
+		for f in files:
+			if root is None:
+				root = etree.Element('urlset')
+				root.set('xmlns', 'http://www.sitemaps.org/schemas/sitemap/0.9')
+			if not(files[f]['status']=='nichtmehrda' or f[-5:]=='.json'):
+				zahl+=1
+				url = etree.Element('url')
+				root.append(url)
+				PipelineHelper.xml_add_element(url,'loc','https://entscheidsuche.ch/docs/'+f)
+				if not('last_change' in files[f]):
+					PipelineHelper.xml_add_element(url,'lastmod',datum)
+				if zahl>49998:
+					dateien.append('<?xml version="1.0" encoding="UTF-8"?>'+str(etree.tostring(root, pretty_print=True),"ascii"))
+					root=None
+					zahl=0
+		if zahl>0:
+			dateien.append('<?xml version="1.0" encoding="UTF-8"?>'+str(etree.tostring(root, pretty_print=True),"ascii"))
+		return dateien
+
 
 class MyFilesPipeline(FilesPipeline):
 	common_store=None
