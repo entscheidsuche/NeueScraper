@@ -11,8 +11,8 @@ from NeueScraper.pipelines import PipelineHelper as PH
 
 logger = logging.getLogger(__name__)
 
-#Noch im Entwurfsstadium
-Standardmäßig nur 25 pro Seite und 100 insgesamt. Kann auf 50 pro Seite und 999 insgesamt hochgesetzt werden (Einstellungen)
+# Noch im Entwurfsstadium
+# Standardmäßig nur 25 pro Seite und 100 insgesamt. Kann auf 50 pro Seite und 999 insgesamt hochgesetzt werden (Einstellungen)
 
 class CH_VB(BasisSpider):
 	name = 'CH_VB'
@@ -26,18 +26,24 @@ class CH_VB(BasisSpider):
 	EINTAG=datetime.timedelta(days=1)
 
 	
-	def __init__(self, neu=None):
+	def __init__(self, ab=None, neu=None):
 		self.neu=neu
+		self.ab=ab
 		super().__init__()
-		self.request_gen = [scrapy.Request(url=self.HOST+self.URL,callback=self.parse_trefferliste, errback=self.errback_httpbin)]
+		if ab==None:
+			ab=self.STARTDATE
+		
+		self.request_gen = self.gen_requests(ab, self.ENDDATE)
 
-	def gen_requests(self, start, end):
+	def gen_requests(self, start, ende):
 		von=datetime.datetime.strptime(start,"%d.%m.%Y").date()
-		fertig=datetime.datetime.strptime(end,"%d.%m.%Y").date()
+		fertig=datetime.datetime.strptime(ende,"%d.%m.%Y").date()
 		requests=[]
 		while von<fertig:
 			bis=von+self.DELTA
-			requests.append(scrapy.Request(url=self.HOST+self.URL.format(von=von.strftime("%d.%m.%Y"), bis=bis.strftime("%d.%m.%Y")), callback=self.parse_trefferliste, errback=self.errback_httpbin))
+			bisstring=bis.strftime("%d.%m.%Y")
+			vonstring=von.strftime("%d.%m.%Y")
+			requests.append(scrapy.Request(url=self.HOST+self.URL.format(von=vonstring, bis=bisstring), callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={"range": vonstring+"-"+bisstring}))
 			von=bis+self.EINTAG
 		return requests
 
@@ -48,7 +54,7 @@ class CH_VB(BasisSpider):
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:80000])
 		urteile=response.xpath("//div[@class='mod mod-download']/p")
 		if len(urteile)==0:
-			logger.warning("Keine Entscheide gefunden für "+response.meta['Gericht'])
+			logger.warning("Keine Entscheide gefunden für "+response.meta['range'])
 		else:
 			for entscheid in urteile:
 				item={}

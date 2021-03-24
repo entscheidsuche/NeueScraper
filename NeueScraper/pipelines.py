@@ -708,9 +708,10 @@ class PipelineHelper:
 					kopfzeile.append({'Sprachen': [sp], 'Text': anzeige})
 				else:
 					missing.append(sp)
-				kopfzeile[0]['Sprachen']+=missing
-				logger.info("Setze Kopfzeile auf: "+json.dumps(kopfzeile))
-				eintrag['Kopfzeile']=kopfzeile
+			logger.debug("Eintrag: "+json.dumps(eintrag)+", missing: "+json.dumps(missing)+ ", kopfzeile: "+json.dumps(kopfzeile)+", metamatch: "+json.dumps(metamatch))
+			kopfzeile[0]['Sprachen']+=missing
+			logger.info("Setze Kopfzeile auf: "+json.dumps(kopfzeile))
+			eintrag['Kopfzeile']=kopfzeile
 		
 			gesamttext=""
 			for sp in spider.kantone:

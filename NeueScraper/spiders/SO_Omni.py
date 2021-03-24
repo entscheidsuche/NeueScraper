@@ -73,11 +73,10 @@ class SO_Omni(BasisSpider):
 	
 	def __init__(self, ab=None, neu=None):
 		super().__init__()
+		self.neu=neu
 		if ab:
 			self.ab=ab
-			self.neu=neu
-			self.FORMDATA['dPublikationsdatum']=ab
-			self.FORMDATA['bHasPublikationsdatumBis']="1"
+			self.FORMDATA['dEntscheiddatum']=ab
 		self.request_gen = [self.get_next_request()]
 
 
@@ -126,12 +125,12 @@ class SO_Omni(BasisSpider):
 			if self.reNum2.search(num2):
 				item['Num2']=self.reNum2.search(num2).group("Num2")
 			edatum_roh=PH.NC(entscheid.xpath("./tr/td[@align='right']/text()[contains(.,'Entscheiddatum:')]").get(), info="kein Entscheiddatum in "+text)
-			if self.reDatum.search(edatum_roh):
+			if self.reDatumEinfach.search(edatum_roh):
 				item['EDatum']=self.norm_datum(edatum_roh)
 			pdatum_roh=PH.NC(entscheid.xpath("./tr/td[@colspan='2' and @align='right']/text()[contains(.,'Erstpublikationsdatum:')]").get(), info="kein Publikationsdatum in "+text)
-			if self.reDatum.search(pdatum_roh):
+			if self.reDatumEinfach.search(pdatum_roh):
 				item['PDatum']=self.norm_datum(pdatum_roh)
-			item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",item['Num'][:2],item['Num'])
+			item['Signatur'], item['	'], item['Kammer'] = self.detect("",item['Num'][:2],item['Num'])
 			logger.info("Entscheid: "+json.dumps(item))
 			request=scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, meta={'item': item})
 			if Cookie:

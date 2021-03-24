@@ -20,6 +20,7 @@ NeueScraper/spiders/CH_BPatG.py
 NeueScraper/spiders/CH_BSTG.py
 NeueScraper/spiders/CH_BVGer.py
 NeueScraper/spiders/CH_EDOEB.py
+NeueScraper/spiders/CH_VB.py
 NeueScraper/spiders/CH_WEKO.py
 NeueScraper/spiders/FR_Gerichte.py
 NeueScraper/spiders/GE_Gerichte.py

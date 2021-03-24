@@ -206,7 +206,7 @@ class BasisSpider(scrapy.Spider):
 					s=json_kantone[c]['gerichte'][g]['kammern'][k]['spider']
 					htaccess+=f'RewriteRule "^({k}_.*)$" "/docs/{s}/$1" [L]\n'
 					htaccess+='RewriteCond %{HTTP_REFERER} !^.*entscheidsuche.ch.* [NC]\n'
-					htaccess+=f'RewriteRule "^{s}/(.+\.(html|pdf))$" "/doc.php?spider={s}&doc=$1" [L]\n'
+					# htaccess+=f'RewriteRule "^{s}/(.+\.(html|pdf))$" "/doc.php?spider={s}&doc=$1" [L]\n'
 					
 		item= { 'htaccess': htaccess}
 		yield(item)
@@ -310,10 +310,11 @@ class BasisSpider(scrapy.Spider):
 					for teil in gnMatch.split("|"):
 						# Schon vorhanden, Geschäftsnummernmatch muss nicht eindeutig sein.
 						if teil in self.GNmatch:
-							self.GNmatch[teil]=self.GNmatch[teil].append(i)
+							self.GNmatch[teil].append(i)
 						else:
 							self.GNmatch[teil]=[i]
-							
+
+			logger.info("GNmatch ist "+json.dumps(self.GNmatch))							
 			logger.info("kammerwahl ist "+json.dumps(self.kammerwahl))
 		
 		if self.kammerfallback is None and self.mehrfachspider: #Wenn kein Default spider angegeben, baue selbst einen aus dem Eintrag 0
