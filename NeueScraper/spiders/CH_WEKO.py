@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class CH_WEKO(BasisSpider):
 	name = 'CH_WEKO'
 
-	URL="/weko/de/home/aktuell/letzte-entscheide.html"
+	URL="/weko/de/home/praxis/publizierte-entscheide.html"
 	HOST="https://www.weko.admin.ch"
 	
 	def __init__(self, neu=None):
