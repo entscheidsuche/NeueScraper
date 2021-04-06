@@ -527,7 +527,7 @@ class PipelineHelper:
 				html_content='<!DOCTYPE html>'+html_content
 
 		html_pfad=PipelineHelper.file_path(item, spider)+".html"
-		logger.debug("html_pfad: "+html_pfad)
+		logger.info("html_pfad: "+html_pfad)
 		# Die md5-Checksum bereits vorher berechnen, da das Abspeichern deferred erfolgt.
 		buf=BytesIO(html_content.encode(encoding='UTF-8'))
 		buf.seek(0)
@@ -585,6 +585,16 @@ class PipelineHelper:
 		try:
 			num=item['Num']
 			logger.info('Geschäftsnummer: '+num)
+			if num=="":
+				if 'Titel' in item:
+					num+=item['Titel']
+				if 'Rechtsgebiet' in item:
+					num+=item['Rechtsgebiet']
+				if 'VGericht' in item:
+					num+=item['VGericht']
+				if 'VKammer' in item:
+					num+=item['VKammer']
+				
 			if (not 'EDatum' in item) or item['EDatum'] is None:
 				if 'PDatum' in item and item['PDatum'] is not None:
 					edatum=item['PDatum']
