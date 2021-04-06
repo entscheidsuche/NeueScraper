@@ -21,6 +21,7 @@ class TribunaSpider(BasisSpider):
 	reRG=re.compile('[^0-9\\.:-]{3}.{3,}')
 	reTreffer=re.compile('(?<=^//OK\\[)[0-9]+')
 	reDecrypt=re.compile('(?<=//OK\\[1,\\[")[0-9a-f]+')
+	rePfad=re.compile(r'[A-Z]:(?:\\.+)+\.pdf')
 	page_nr=0
 	trefferzahl=0
 	ENCRYPTED=False
@@ -73,59 +74,92 @@ class TribunaSpider(BasisSpider):
 				logger.info("Wert " +str(i)+": "+ wert)
 				i=i+1
 
+			korrektur=0
 			brauchbar=True
-			if len(werte)<13:
-				korrektur=-2
-				vkammer=""
+			if self.reDatum.fullmatch(werte[len(werte)-1]):
+				publikationsdatum=werte[len(werte)-1]
+			elif self.reDatum.fullmatch(werte[len(werte)-2]):
+				publikationsdatum=werte[len(werte)-1]
 			else:
-				vkammer=werte[3]
-				korrektur=0
-				if len(vkammer)<9:
-					logger.warning("Type mismatch keine Kammer '"+vkammer+"'")
-					vkammer=""
-
-			if werte[4+korrektur]!="": korrektur+=-1
-			id_=werte[5+korrektur]
-			titel=werte[6+korrektur].replace("\\x27","'")
-			num=werte[7+korrektur]
-			entscheiddatum=werte[8+korrektur]
-			leitsatz=werte[9+korrektur].replace("\\x27","'")
-			pfad=werte[12+korrektur]
-			rechtsgebiet=werte[13+korrektur] if len(werte)>14+korrektur else ""
-			publikationsdatum=werte[len(werte)-1]
-			vgericht=""
-			if self.reDatum.fullmatch(publikationsdatum)==None: publikationsdatum=werte[len(werte)-2]
+				logger.warning("Type mismatch letzter und vorletzter Eintrag kein Publikationsdatum '"+werte[len(werte)-1]+"', '"+werte[len(werte)-2]+"'")
+				publikationsdatum=""
 			
-			if self.reID.fullmatch(id_)==None:
-				logger.error("Type mismatch keine ID '"+id_+"'")	
+			if self.reID.fullmatch(werte[3]):
+				id_=werte[3]
+			elif self.reID.fullmatch(werte[4]):
+				id_=werte[4]
+				korrektur=1
+			elif self.reID.fullmatch(werte[5]):
+				id_=werte[5]
+				korrektur=2
+			else:
+				logger.error("Type mismatch keine ID '"+werte[3]+"', '"+werte[3+1]+"', '"+werte[3+2]+"'")	
 				brauchbar=False
+
+			if korrektur>0 and len(werte[3])>8:
+				vkammer=werte[3]
+			else:
+				vkammer=""
+				logger.warning("Type mismatch keine Kammer '"+werte[3]+"'")
+			
+			titel=werte[4+korrektur].replace("\\x27","'")
 			if len(titel)<8:
 				logger.warning("Type mismatch kein Titel '"+titel+"'")
-				titel=""	 
-			if self.reNum.fullmatch(num)==None:
-				logger.error("Type mismatch keine Geschäftsnummer '"+num+"'")
+				titel=""
+				 
+			if self.reNum.fullmatch(werte[5+korrektur]):
+				num=werte[5+korrektur]
+			elif self.reNum.fullmatch(werte[5+korrektur+1]):
+				korrektur+=1
+				num=werte[5+korrektur]
+			else:
+				logger.error("Type mismatch keine Geschäftsnummer '"+werte[5+korrektur]+"', '"+werte[5+korrektur+1]+"'")
 				brauchbar=False
-			if self.reDatum.fullmatch(entscheiddatum)==None:
-				logger.error("Type mismatch kein Entscheiddatum '"+entscheiddatum+"'")
+
+			if self.reDatum.fullmatch(werte[6+korrektur]):
+				entscheiddatum=werte[6+korrektur]
+			elif self.reDatum.fullmatch(werte[6+korrektur+1]):
+				korrektur+=1
+				entscheiddatum=werte[6+korrektur]
+			else:
+				logger.error("Type mismatch kein Entscheiddatum '"+werte[6+korrektur]+"', '"+werte[6+korrektur+1]+"'")
 				brauchbar=False
+			
+			leitsatz=werte[7+korrektur].replace("\\x27","'")
 			if len(leitsatz)<11:
 				if leitsatz != '-':
 					logger.warning("Type mismatch kein Leitsatz '"+leitsatz+"'")
 				leitsatz=""
-			if rechtsgebiet and self.reRG.fullmatch(rechtsgebiet)==None:
-				logger.warning("Type mismatch kein Rechtsgebiet '"+rechtsgebiet+"'")
-				rechtsgebiet=""	   
-			if self.reDatum.fullmatch(publikationsdatum)==None:
-				logger.warning("Type mismatch letzter und vorletzter Eintrag kein Publikationsdatum '"+publikationsdatum+"'")
-				publikationsdatum=""
+
+			if self.rePfad.fullmatch(werte[8+korrektur]):
+				pfad=werte[8+korrektur]
+			elif self.rePfad.fullmatch(werte[8+korrektur+1]):
+				korrektur+=1
+				pfad=werte[8+korrektur]
+			elif self.rePfad.fullmatch(werte[8+korrektur+2]):
+				korrektur+=2
+				pfad=werte[8+korrektur]
+			else:
+				logger.error("Type mismatch keine Pfad '"+werte[8+korrektur]+"', '"+werte[8+korrektur+1]+"', '"+werte[8+korrektur+2]+"'")	
+				brauchbar=False
+
+			if len(werte)>10+korrektur and self.reRG.fullmatch(werte[9+korrektur]):
+				rechtsgebiet=werte[9+korrektur]
+			elif len(werte)>11+korrektur and self.reRG.fullmatch(werte[10+korrektur]):
+				rechtsgebiet=werte[10+korrektur]
+			else:
+				rechtsgebiet=""
+				if len(werte)>10+korrektur:
+					logger.warning("Type mismatch kein Rechtsgebiet '"+werte[9+korrektur]+"', '"+werte[10+korrektur]+"'")
+				else:
+					logger.warning("Type mismatch kein Rechtsgebiet '"+werte[9+korrektur]+"'")
 
 			if brauchbar:
 				numstr = num.replace(" ", "_")
 				#Ist die Signatur nicht eindeutig, so muss hier differenziert werden
-				signatur, gericht, kammer=self.detect(vgericht,vkammer,num)
+				signatur, gericht, kammer=self.detect("",vkammer,num)
 				
-				if not vgericht:
-					vgericht=gericht
+				vgericht=gericht
 				if not vkammer:
 					vkammer=kammer
 				
@@ -148,6 +182,7 @@ class TribunaSpider(BasisSpider):
 						
 				if self.ENCRYPTED:
 					body=self.DECRYPT_START+pfad+self.DECRYPT_END
+					logger.info("Decrpyt-Body: "+body)
 					yield scrapy.Request(url=self.DECRYPT_PAGE_URL, method="POST", body=body, headers=self.HEADERS, callback=self.decrypt_path, errback=self.errback_httpbin, meta={"item":item})
 				else:
 					href = self.PDF_PATTERN.format(self.DOWNLOAD_URL, numstr, id_,self.PDF_PATH, id_, numstr)
@@ -163,6 +198,7 @@ class TribunaSpider(BasisSpider):
 			logger.error("ungültige Antwort")
 
 	def decrypt_path(self, response):
+		logger.info("Decrypt-Request: "+response.request.url)
 		item=response.meta['item']
 		logger.info("Decrypt-Path für DocID "+item['DocId'])
 		if response.status == 200:
@@ -171,6 +207,7 @@ class TribunaSpider(BasisSpider):
 			if code:
 				numstr = item['Num'].replace(" ", "_")
 				href=self.PDF_PATTERN.format(self.DOWNLOAD_URL,numstr,item['DocId'],code.group(),numstr)
+				logger.info("PDF-URL: "+href)
 				item['PDFUrls']=[href]
 				yield item
 			else:
