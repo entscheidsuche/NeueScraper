@@ -393,6 +393,7 @@ class BasisSpider(scrapy.Spider):
 			logger.info("keine Blocklisteneinträge für "+self.name)
 		logger.info("Starte nun "+str(len(self.request_gen))+" Requests.")
 		for req in self.request_gen:
+			logger.info("Starte nun Request "+req.url)
 			yield req
 
 
