@@ -81,6 +81,7 @@ class SO_Omni(BasisSpider):
 
 
 	def parse_trefferliste(self, response):
+		logger.info(f"<X>Request-URL: '{response.request.url}', Headers: {json.dumps({ k.decode('UTF-8'): response.request.headers[k].decode('UTF-8') for k in response.request.headers})}, Body: '{response.request.body}'")
 		logger.info("parse_trefferliste response.status "+str(response.status))
 		Cookie=""
 		if 'Cookie' in response.request.headers:
@@ -94,7 +95,7 @@ class SO_Omni(BasisSpider):
 			logger.info("In der Trefferlistenresponse gibt es keine Cookies.")
 		antwort=response.body_as_unicode()
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
-		logger.info("parse_trefferliste Rohergebnis: "+antwort[:30000])
+		logger.info("parse_trefferliste Rohergebnis: "+antwort)
 	
 		treffer=PH.NC(response.xpath("//table[@width='100%' and @border='0' and @cellspacing='0' and @cellpadding='0']/tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0']/tr/td[@width='50%']").get(),error="keine Trefferzahl erkannt!")
 		logger.info("Trefferzahl: "+treffer)
@@ -132,7 +133,7 @@ class SO_Omni(BasisSpider):
 				item['PDatum']=self.norm_datum(pdatum_roh)
 			item['Signatur'], item['	'], item['Kammer'] = self.detect("",item['Num'][:2],item['Num'])
 			logger.info("Entscheid: "+json.dumps(item))
-			request=scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, meta={'item': item})
+			request=scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, meta={'item': item, 'org': item['HTMLUrls'][0]})
 			if Cookie:
 				request.headers['Cookie']=Cookie.encode('UTF-8')
 				logger.info("Cookie gesetzt: "+Cookie)
@@ -150,7 +151,11 @@ class SO_Omni(BasisSpider):
 				yield request
 								
 	def parse_document(self, response):
+		logger.info(f"<X>Request-URL: '{response.request.url}', Org-URL: '{response.meta['org']}', Headers: {json.dumps({ k.decode('UTF-8'): response.request.headers[k].decode('UTF-8') for k in response.request.headers})}, Body: '{response.request.body}'")
 		logger.info("parse_document response.status "+str(response.status))
+		antwort=response.body_as_unicode()
+		logger.info("parse_document Rohergebnis "+str(len(antwort))+" Zeichen")
+		logger.info("parse_document Rohergebnis: "+antwort)
 		if 'Cookie' in response.request.headers:
 			logger.debug("parse_document Cookie gesendet: "+response.request.headers['Cookie'].decode('UTF-8'))	
 		else:
