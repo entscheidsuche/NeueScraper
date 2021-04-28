@@ -286,11 +286,13 @@ class BasisSpider(scrapy.Spider):
 			self.kammerwahl = {}
 			self.GNmatch={}
 			for i in range(len(self.gerichte[self.name])):
-				if self.gerichte[self.name][i]['Signatur'][-4:]=="_999":
+				if self.gerichte[self.name][i]['Signatur'][-4:-1]=="_99":
 					self.kammerfallback=i
 				elif 'Matching' in self.gerichte[self.name][i] and self.gerichte[self.name][i]['Matching']!="":
 					matching=self.gerichte[self.name][i]['Matching'].split("|")
+					logger.info("Matchings: "+json.dumps(matching))
 					for m in matching:
+						logger.info("Bearbeite Matching: "+m)
 						if m in self.kammerwahl:
 							logger.error("Doppeltes Matching! Matchkey '"+m+"' bereits für "+str(self.kammerwahl[m])+"["+self.gerichte[self.name][self.kammerwahl[m]]['Signatur']+"] belegt und nun nochmal für "+str(i)+"["+self.gerichte[self.name][i]['Signatur']+"]!")
 						else:

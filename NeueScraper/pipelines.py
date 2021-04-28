@@ -29,6 +29,7 @@ import posixpath
 from scrapy.settings import Settings
 from scrapy.exceptions import IgnoreRequest, NotConfigured
 import requests
+import hashlib
 
 
 filenamechars=re.compile("[^-a-zA-Z0-9]")
@@ -586,15 +587,21 @@ class PipelineHelper:
 			num=item['Num']
 			logger.info('Geschäftsnummer: '+num)
 			if num=="":
+				if 'PFDUrls' in item:
+					num+=item['PDFUrls'][0]
+				if 'HTMLUrls' in item:
+					num+=item['HTMLUrls'][0]
 				if 'Titel' in item:
 					num+=item['Titel']
+				if 'Leitsatz' in item:				
+					num+=item['Leitsatz']
 				if 'Rechtsgebiet' in item:
 					num+=item['Rechtsgebiet']
 				if 'VGericht' in item:
 					num+=item['VGericht']
 				if 'VKammer' in item:
 					num+=item['VKammer']
-				
+				num=hashlib.md5(num.encode("UTF-8")).hexdigest()
 			if (not 'EDatum' in item) or item['EDatum'] is None:
 				if 'PDatum' in item and item['PDatum'] is not None:
 					edatum=item['PDatum']

@@ -122,7 +122,7 @@ class GenfSpider(BasisSpider):
 				else:
 					logger.error("keine Treffer bei Gesamtrecherche für "+subsite)
 			else:
-				logger.error("Weder Meldung keine Treffer noch Trefferzahl erkannt bei "+subsite+": "+antwort[:10000])
+				logger.error("Weder Meldung keine Treffer noch Trefferzahl erkannt bei "+subsite+" ("+response.request.url+"): "+antwort[:50000])
 						
 	def parse_document(self, response):
 		logger.info("parse_document response.status "+str(response.status))

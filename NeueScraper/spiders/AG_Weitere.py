@@ -75,7 +75,7 @@ class AG_Weitere(BasisSpider):
 					metas=self.reMeta.search(meta)
 					if metas:
 						item['Entscheidart']=metas.group('Typ')
-						item['VGericht']=metas.group('Gericht')
+						item['VGericht']=metas.group('Gericht').replace('\ufeff','')
 						item['EDatum']=self.norm_datum(metas.group('Datum'))
 						item['Num']=""
 						rechtskraft=e.xpath("following-sibling::p[position()=1][not(a)]/text()")

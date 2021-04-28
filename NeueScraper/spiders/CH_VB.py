@@ -92,6 +92,7 @@ class CH_VB(BasisSpider):
 				detailurl=entscheid.xpath(".//a[@class='docsTitleLink']/@href").get()
 				pdfurl=entscheid.xpath(".//a[img[@src='images/icons/c_launch_pdf.gif']]/@href").get()
 				item['PDFUrls']=[self.HOST+"/"+pdfurl]
+				item['VKammer']=PH.NC(entscheid.xpath(".//td[a[@target='_blank']]/preceding-sibling::td[1]/text()").get(),error="Keine Kammer gefunden")
 				request=scrapy.Request(url=self.HOST+"/"+detailurl, callback=self.parse_detail, errback=self.errback_httpbin, meta={"item": item})
 				if Cookie:
 					request.headers['Cookie']=Cookie.encode('UTF-8')
@@ -110,7 +111,7 @@ class CH_VB(BasisSpider):
 		if metabereich:
 			metas=metabereich.xpath("./tr[@class='docsRow']/td[@class='metadataCell']")
 			item['Title']=PH.NC(metas[0].xpath("./text()").get(),error="Kein Titel gefunden")
-			item['VKammer']=PH.NC(metas[1].xpath("./text()").get(),error="Keine Kammer gefunden")
+			item['VGericht']=PH.NC(metas[1].xpath("./text()").get(),error="Kein Gericht gefunden")
 			item['EDatum']=self.norm_datum(PH.NC(metas[6].xpath("./a[@class='high']/text()").get(),error="Kein Datum gefunden"))
 			pretext=PH.NC(response.xpath("//pre/text()").get(), error="Kein pre-Text gefunden")
 			logger.info("pretext-Beginn: "+pretext[:100])
@@ -123,6 +124,6 @@ class CH_VB(BasisSpider):
 			if len(num)<4 or len(num)>20:
 				num=PH.NC(metas[9].xpath("./text()").get(),error="keine Ersatznum gefunden")
 			item['Num']=num
-			item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",item['VKammer'],item['Num'])
+			item['Signatur'], item['Gericht'], item['Kammer'] = self.detect(item['VGericht'],item['VKammer'],item['Num'])
 			logger.info("gelesen Item: "+json.dumps(item))
 			yield item

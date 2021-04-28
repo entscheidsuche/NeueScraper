@@ -96,11 +96,12 @@ class TribunaSpider(BasisSpider):
 				logger.error("Type mismatch keine ID '"+werte[3]+"', '"+werte[3+1]+"', '"+werte[3+2]+"'")	
 				brauchbar=False
 
-			if korrektur>0 and len(werte[3])>8:
-				vkammer=werte[3]
-			else:
-				vkammer=""
-				logger.warning("Type mismatch keine Kammer '"+werte[3]+"'")
+			vkammer=""
+			if korrektur>0:
+				if len(werte[3])>8:
+					vkammer=werte[3]
+				else:
+					logger.warning("Type mismatch keine Kammer '"+werte[3]+"'")
 			
 			titel=werte[4+korrektur].replace("\\x27","'")
 			if len(titel)<8:
@@ -139,8 +140,11 @@ class TribunaSpider(BasisSpider):
 			elif self.rePfad.fullmatch(werte[8+korrektur+2]):
 				korrektur+=2
 				pfad=werte[8+korrektur]
+			elif self.rePfad.fullmatch(werte[8+korrektur+3]):
+				korrektur+=3
+				pfad=werte[8+korrektur]
 			else:
-				logger.error("Type mismatch keine Pfad '"+werte[8+korrektur]+"', '"+werte[8+korrektur+1]+"', '"+werte[8+korrektur+2]+"'")	
+				logger.error("Type mismatch kein Pfad '"+werte[8+korrektur]+"', '"+werte[8+korrektur+1]+"', '"+werte[8+korrektur+2]+"'")	
 				brauchbar=False
 
 			if len(werte)>10+korrektur and self.reRG.fullmatch(werte[9+korrektur]):
