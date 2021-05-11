@@ -5,12 +5,15 @@ NeueScraper/middlewares.py
 NeueScraper/pipelines.py
 NeueScraper/settings.py
 NeueScraper/spiders/AG_Gerichte.py
+NeueScraper/spiders/AG_Weitere.py
 NeueScraper/spiders/AI_Aktuell.py
 NeueScraper/spiders/AI_Bericht.py
 NeueScraper/spiders/AR_Gerichte.py
 NeueScraper/spiders/BE_Anwaltsaufsicht.py
+NeueScraper/spiders/BE_BVD.py
 NeueScraper/spiders/BE_Steuerrekurs.py
 NeueScraper/spiders/BE_Verwaltungsgericht.py
+NeueScraper/spiders/BE_Weitere.py
 NeueScraper/spiders/BE_ZivilStraf.py
 NeueScraper/spiders/BL_Gerichte.py
 NeueScraper/spiders/BS_Omni.py

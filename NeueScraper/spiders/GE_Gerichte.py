@@ -6,7 +6,7 @@ import json
 from scrapy.http.cookies import CookieJar
 import datetime
 from NeueScraper.spiders.basis import BasisSpider
-from NeueScraper.pipelines import PipelineHelper
+from NeueScraper.pipelines import PipelineHelper as PH
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +16,8 @@ class GenfSpider(BasisSpider):
 	MINIMUM_PAGE_LEN = 148
 	MAX_PAGES = 10000
 	TREFFER_PRO_SEITE = 500
-	SUCH_URL='/justice/donnees/decis/{gericht}/search?decision_from={datum}&sort_by=date&page_size={treffer_pro_seite}&search_meta=dt_decision:[{datum} TO *]&Chercher=Chercher&page={seite}'
-	HOST ="http://ge.ch"
+	SUCH_URL='/apps/decis/fr/{gericht}/search?search_meta=dt_decision%3A[{datum}+TO+{bis}]&decision_from={datum}&decision_to={bis}&sort_by=date&page_size={treffer_pro_seite}&page={seite}'
+	HOST ="http://justice.ge.ch"
 	suchseiten={ 'capj': "GE_CAPJ_001",
 				'acjc': "GE_CJ_001",
 				'sommaires': "GE_CJ_002",
@@ -42,9 +42,10 @@ class GenfSpider(BasisSpider):
 	#reTrefferzahl=re.compile(r'Votre requête : <strong>(?P<trefferzahl>\d+)</strong> enregistrement')
 	reAngaben=re.compile(r'du (?P<tag>\d\d?)\.(?P<monat>\d\d?)\.(?P<jahr>(?:19|20)\d\d)\s+(?:sur\s(?P<vorinstanz>[^ ]+)\s+)?(?:\([^\)]+\)\s+)?(?:,\s+(?P<ergebnis>[^ ]+))?')
 	
-	def mache_request(self,gericht,trefferseite=1):
-		start_datum=self.ab if self.ab else '01.01.1900'
-		request=scrapy.Request(url=self.HOST+self.SUCH_URL.format(datum=start_datum, gericht=gericht, seite=trefferseite, treffer_pro_seite=self.TREFFER_PRO_SEITE), callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'subsite': gericht, 'page': trefferseite})
+	def mache_request(self,gericht,start_datum,trefferseite=1):
+		jahr=start_datum[-4:]
+		end_datum='31.12.'+jahr
+		request=scrapy.Request(url=self.HOST+self.SUCH_URL.format(datum=start_datum, bis=end_datum, gericht=gericht, seite=trefferseite, treffer_pro_seite=self.TREFFER_PRO_SEITE), callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'subsite': gericht, 'page': trefferseite, 'start_datum': start_datum})
 		return request
 	
 	def request_generator(self):
@@ -54,8 +55,14 @@ class GenfSpider(BasisSpider):
 		# Erst einmal den Basisrequest machen, um Cookie zu setzen
 
 		request_liste=[]
-		for g in self.suchseiten:
-			request_liste.append(self.mache_request(g))
+		start_datum=self.ab if self.ab else '01.01.1995'
+		jahr=int(start_datum[-4:],10)
+		akt_jahr=datetime.date.today().year
+		while jahr <= akt_jahr:
+			for g in self.suchseiten:
+				request_liste.append(self.mache_request(g, start_datum))
+			jahr+=1
+			start_datum='01.01.'+str(jahr)
 		return request_liste
 
 	def __init__(self, ab=None, neu=None):
@@ -68,59 +75,57 @@ class GenfSpider(BasisSpider):
 	def parse_trefferliste(self, response):
 		logger.info("parse_trefferliste response.status "+str(response.status))
 		antwort=response.body_as_unicode()
-		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
+		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen für: "+response.request.url)
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:10000])
 		
-		entscheide=response.xpath("//div[@class='row']")
+		entscheide=response.xpath("//div[@class='list-block col-lg-12 mb-5']")
 		subsite=response.meta['subsite']
-		trefferzahl=response.xpath("//strong[contains(preceding-sibling::text(),'Votre requête')]/text()").get()
+		start_datum=response.meta['start_datum']
+		trefferzahl=response.xpath("//div[@class='mb-3 mt-3']/strong[contains(following-sibling::text(),'resultats')]/text()").get()
 		if trefferzahl:
 			logger.info(subsite+": "+trefferzahl+" Treffer angegeben, auf der 1. Seite "+str(len(entscheide))+" identifiziert.")
 			for entscheid in entscheide:
 				item={}
-				Num=entscheid.xpath(".//span[@class='float_right txt_gras']/text()").get()
-				if Num:
-					item['Num']=Num.strip()
-					item['HTMLUrls']=[self.HOST+entscheid.xpath(".//div[@class='head']/b/a/@href").get()]
-					if item['HTMLUrls']==[]:
-						logger.error("Für "+Num+" keine URL gefunden in "+entscheid.get())
-					else:
-						angaben=entscheid.xpath(".//div[@class='head']/text()[contains(.,' du ')]").getall()
-						if len(angaben)==1:
-							angabenstring=angaben[0].replace("\n","")
-							a=self.reAngaben.search(angabenstring)
-							if a:
-								item['EDatum']=a['jahr']+"-"+a['monat']+"-"+a['tag']
-								item['Vorinstanz']=a['vorinstanz'] if a['vorinstanz'] else ""
-								n=entscheid.xpath("substring-after(.//div[@class='data']/div/b[.='Normes']/following-sibling::text(),':')").get()
-								if n:
-									item['Normen']=n.replace("\n","").strip()
-								n=entscheid.xpath("substring-after(.//div[@class='data']/div/b[.='Descripteurs']/following-sibling::text(),':')").get()
-								if n:
-									item['Titel']=n.replace("\n","").strip()
-								n=entscheid.xpath("substring-after(.//div[@class='data']/div/b[.='Résumé']/following-sibling::text(),':')").get()
-								if n:
-									item['Leitsatz']=n.replace("\n","").strip()
-								subsite=response.meta['subsite']
-								item['Signatur']=self.suchseiten[subsite]
-								item['Gericht'], item['Kammer']=self.detect_by_signatur(item['Signatur'])
-								logger.info("Item gelesen: "+json.dumps(item))
-								request=scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, meta={'subsite': subsite, 'item': item})
-								yield(request)
-							else:
-								logger.error("Für "+Num+" Angabenstring "+angabenstring+" gefunden, regex aber nicht gefunden")
+				text=entscheid.get()
+				item['Num']=PH.NC(entscheid.xpath(".//div[@class='decis-block__flag']/text()").get(),error="Keine Geschäftsnummer in "+text+" gefunden.")
+				if item['Num']:
+					item['HTMLUrls']=[PH.NC(self.HOST+entscheid.xpath("./div[@class='list-block__content row pb-3']/h3[@class='list-block__title col-lg-10']/a/@href").get(),error="keine URL in "+text+" gefunden.")]
+					angaben=entscheid.xpath("./div[@class='list-block__content row pb-3']/h3[@class='list-block__title col-lg-10']/text()[contains(.,' du ')]").getall()
+					if len(angaben)==1:
+						angabenstring=angaben[0].replace("\n","")
+						a=self.reAngaben.search(angabenstring)
+						if a:
+							item['EDatum']=a['jahr']+"-"+a['monat']+"-"+a['tag']
+							item['Vorinstanz']=a['vorinstanz'] if a['vorinstanz'] else ""
+							n=entscheid.xpath("substring-after(.//div[@class='col-lg-12']/div/b[.='Normes']/following-sibling::text(),':')").get()
+							if n:
+								item['Normen']=n.replace("\n","").strip()
+							n=entscheid.xpath("substring-after(.//div[@class='col-lg-12']/div/b[.='Descripteurs']/following-sibling::text(),':')").get()
+							if n:
+								item['Titel']=n.replace("\n","").strip()
+							n=entscheid.xpath("substring-after(.//div[@class='col-lg-12']/div/b[.='Résumé']/following-sibling::text(),':')").get()
+							if n:
+								item['Leitsatz']=n.replace("\n","").strip()
+							subsite=response.meta['subsite']
+							item['Signatur']=self.suchseiten[subsite]
+							item['Gericht'], item['Kammer']=self.detect_by_signatur(item['Signatur'])
+							logger.info("Item gelesen: "+json.dumps(item))
+							request=scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, meta={'subsite': subsite, 'item': item})
+							yield(request)
 						else:
-							logger.error("Für "+Num+" falsche Anzahl Angaben gefunfen: "+len(angaben))
+							logger.error("Für "+item['Num']+" Angabenstring "+angabenstring+" gefunden, regex aber nicht gefunden")
+					else:
+						logger.error("Für "+Num+" falsche Anzahl Angaben gefunfen: "+len(angaben))
 			akt_seite=response.meta['page']
 			if akt_seite*self.TREFFER_PRO_SEITE<int(trefferzahl,10):
-				request=self.mache_request(subsite,akt_seite+1)
+				request=self.mache_request(subsite,start_datum,akt_seite+1)
 				yield(request)
 		else:
-			if response.xpath("//div[@class='alert alert-warning']/h4[contains(.,'Aucun résultat ne correspond aux termes de recherche spécifiés')]"):
+			if response.xpath("//div[@class='module-title']/h2[contains(.,'Aucun résultat ne correspond aux termes de recherche spécifiés')]"):
 				if self.ab:
-					logger.info("keine Treffer für "+subsite+" ab "+self.ab)
+					logger.info("keine Treffer für "+subsite+" ab "+self.ab+" Zeitraum: "+start_datum+" bis Ende Jahr")
 				else:
-					logger.error("keine Treffer bei Gesamtrecherche für "+subsite)
+					logger.info("keine Treffer bei Gesamtrecherche für "+subsite+" Zeitraum: "+start_datum+" bis Ende Jahr")
 			else:
 				logger.error("Weder Meldung keine Treffer noch Trefferzahl erkannt bei "+subsite+" ("+response.request.url+"): "+antwort[:50000])
 						
@@ -131,14 +136,15 @@ class GenfSpider(BasisSpider):
 		logger.info("parse_document Rohergebnis: "+antwort[:10000])
 		
 		item=response.meta['item']			
-		html=response.xpath("//div[@class='pj']/div[@class='resultats']/div[@class='row']/table[@class='whitetable noicon']")
+		html=response.xpath("//div[@class='list-block col-lg-12 mb-5']")
 
-		if html.xpath("//table//div[@style='float:right']/a[img]/@href"):
-			item['PDFUrls']=[self.HOST+html.xpath("//table//div[@style='float:right']/a[img]/@href").get()]
+		pdf=html.xpath("//div[@class='col-lg-12 mt-4']/div[@style='float:right']/a[img]/@href")
+		if pdf:
+			item['PDFUrls']=[self.HOST+pdf.get()]
 		else:
 			logger.warning("kein PDF für "+item['Num'])
 
-		PipelineHelper.write_html(html.get(), item, self)
+		PH.write_html(html.get(), item, self)
 		yield(item)
 		
 
