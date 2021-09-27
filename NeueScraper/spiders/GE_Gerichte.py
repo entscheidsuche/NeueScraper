@@ -89,10 +89,11 @@ class GenfSpider(BasisSpider):
 				text=entscheid.get()
 				item['Num']=PH.NC(entscheid.xpath(".//div[@class='decis-block__flag']/text()").get(),error="Keine Geschäftsnummer in "+text+" gefunden.")
 				if item['Num']:
-					item['HTMLUrls']=[PH.NC(self.HOST+entscheid.xpath("./div[@class='list-block__content row pb-3']/h3[@class='list-block__title col-lg-10']/a/@href").get(),error="keine URL in "+text+" gefunden.")]
-					angaben=entscheid.xpath("./div[@class='list-block__content row pb-3']/h3[@class='list-block__title col-lg-10']/text()[contains(.,' du ')]").getall()
+					item['HTMLUrls']=[self.HOST+PH.NC(entscheid.xpath("./div[@class='list-block__content row pb-3']/h3[@class='list-block__title col-lg-10' or @class='list-block__title col-lg-8']/a/@href").get(),error="keine URL in "+text+" gefunden.")]
+					angaben=entscheid.xpath("./div[@class='list-block__content row pb-3']/h3[@class='list-block__title col-lg-10' or @class='list-block__title col-lg-8']/text()[contains(.,' du ')]").getall()
 					if len(angaben)==1:
 						angabenstring=angaben[0].replace("\n","")
+						logger.info("Angabenstring: "+angabenstring)
 						a=self.reAngaben.search(angabenstring)
 						if a:
 							item['EDatum']=a['jahr']+"-"+a['monat']+"-"+a['tag']
@@ -115,7 +116,7 @@ class GenfSpider(BasisSpider):
 						else:
 							logger.error("Für "+item['Num']+" Angabenstring "+angabenstring+" gefunden, regex aber nicht gefunden")
 					else:
-						logger.error("Für "+Num+" falsche Anzahl Angaben gefunfen: "+len(angaben))
+						logger.error("Für "+item['Num']+" falsche Anzahl Angaben gefunfen: "+str(len(angaben))+", "+text)
 			akt_seite=response.meta['page']
 			if akt_seite*self.TREFFER_PRO_SEITE<int(trefferzahl,10):
 				request=self.mache_request(subsite,start_datum,akt_seite+1)

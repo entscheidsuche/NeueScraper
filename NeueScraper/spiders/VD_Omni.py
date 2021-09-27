@@ -106,7 +106,8 @@ class VD_Omni(BasisSpider):
 			item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("","#"+response.meta['herkunft']+"#",item['Num'])
 			logger.info("Entscheid: "+json.dumps(item))
 			request=scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, meta={'item': item})
-			yield request
+			if self.check_blockliste(item):
+				yield request
 	
 		if seite*self.TREFFER_PRO_SEITE < trefferzahl:
 			href=response.xpath("//table[@width='98%' and @border='0' and @cellspacing='0' and @cellpadding='0']/tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0']/tr/td[@valign='top']/a/@href")

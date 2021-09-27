@@ -125,7 +125,8 @@ class ZurichVerwgerSpider(BasisSpider):
 			logger.debug("Item bislang: "+json.dumps(item))
 			logger.info("Hole nun "+url)
 			request=scrapy.Request(url=url, callback=self.parse_page, errback=self.errback_httpbin, meta = {'item':item})
-			yield(request)
+			if self.check_blockliste(item):
+				yield(request)
 		seite=response.meta['page']
 		if seite*self.TREFFER_PRO_SEITE<trefferZahl:
 			request=scrapy.Request(url=self.HOST+self.PAGE_URL+str(seite+1), callback=self.parse_trefferliste, errback=self.errback_httpbin, meta = {'page':seite+1})

@@ -20,7 +20,8 @@ class CH_BGer(BasisSpider):
 
 	SUCH_URL='/ext/eurospider/live/de/php/aza/http/index.php?lang=de&type=simple_query&query_words=&top_subcollection_aza=all&from_date={von}&to_date={bis}&x=22&y=14'
 	HOST='https://www.bger.ch'
-	
+
+
 
 	def mache_request(self,von="",bis="",seite=1):
 		if seite:
@@ -88,6 +89,11 @@ class CH_BGer(BasisSpider):
 				else:
 					item['EDatum']=self.norm_datum(meta)
 					item['Num']=meta[11:]
+					space=item['Num'].find(' ')
+					if space>1 and space < 5:
+						item['Num2']=item['Num'].replace(" ","_")
+						logger.info("Ersetze Leerzeichen in "+item['Num']+": "+item['Num2'])
+						
 					item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",item['VKammer'],item['Num'])
 					request = scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, meta={'item': item})
 					yield request
