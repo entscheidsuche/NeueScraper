@@ -43,7 +43,7 @@ class NW_Gerichte(BasisSpider):
 			strukt=json.loads(daten)
 			for entscheid in strukt['data']:
 				item={}
-				item['EDatum']=entscheid['datum-sort']
+				item['EDatum']=self.norm_datum(entscheid['datum-sort'])
 				item['Titel']=entscheid['name']
 				pdf=self.HOST+entscheid['_downloadBtn']
 				pdf_match=self.reURL.search(pdf)
