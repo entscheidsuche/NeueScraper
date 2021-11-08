@@ -49,7 +49,8 @@ class NeuescraperItem(scrapy.Item):
     Abstract_fr=scrapy.Field()
     Abstract_it=scrapy.Field()
     Formal_org=scrapy.Field()
-    Sprache=scapry.Field()
+    Sprache=scrapy.Field()
+    Upload=scrapy.Field()
     # pass
 
 

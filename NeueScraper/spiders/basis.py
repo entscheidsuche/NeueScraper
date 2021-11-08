@@ -96,28 +96,32 @@ class BasisSpider(scrapy.Spider):
 		for spidername in self.gerichte:
 			spidereintrag=self.gerichte[spidername]
 			logger.debug("Spider "+spidername+" hat "+str(len(spidereintrag))+ " Spidereinträge")
-			kantonskurz=spidereintrag[0]['Signatur'][:2]
-			if kantonskurz in self.kantone['de']:
-				if kantonskurz in kantone:
-					json_kanton=json_kantone[kantonskurz]				
-					kanton_e=kantone[kantonskurz]
-				else:
-					json_kanton={'de': self.kantone['de'][kantonskurz], 'fr': self.kantone['fr'][kantonskurz], 'it': self.kantone['it'][kantonskurz], 'gerichte': {}}
-					json_kantone[kantonskurz]=json_kanton
-					kanton_e=etree.SubElement(root_e,'Kanton')
-					kanton_e.set('Name',self.kantone['de'][kantonskurz])
-					kanton_e.set('Kurz',kantonskurz.lower())
-					kantone[kantonskurz]=kanton_e					
-				spider_e=etree.SubElement(kanton_e,'Spider')
-				spider_e.set('Name', spidername)
-				for signaturreihe in spidereintrag:
-					signatur=signaturreihe['Signatur']
-					signatur_e=etree.SubElement(spider_e,'Eintrag')
-					signatur_e.set('Name', signatur)
-					# JSON-Eintrag weitermachen
-					if not signaturreihe['Test'].lower=='test':
-						teile=signatur.split('_')
-						gerichtssignatur=teile[0]+"_"+teile[1]
+			for signaturreihe in spidereintrag:
+				signatur=signaturreihe['Signatur']
+				if not signaturreihe['Test'].lower=='test':
+					teile=signatur.split('_')
+					kantonskurz=teile[0]			
+					gerichtssignatur=teile[0]+"_"+teile[1]	
+					if kantonskurz in self.kantone['de']:
+						if kantonskurz in kantone:
+							json_kanton=json_kantone[kantonskurz]				
+							kanton_e=kantone[kantonskurz]
+						else:
+							json_kanton={'de': self.kantone['de'][kantonskurz], 'fr': self.kantone['fr'][kantonskurz], 'it': self.kantone['it'][kantonskurz], 'gerichte': {}}
+							json_kantone[kantonskurz]=json_kanton
+							kanton_e=etree.SubElement(root_e,'Kanton')
+							kanton_e.set('Name',self.kantone['de'][kantonskurz])
+							kanton_e.set('Kurz',kantonskurz.lower())
+							kantone[kantonskurz]=kanton_e
+						result=kanton_e.findall("./Spider[@Name='"+spidername+"']")
+						if result:
+							spider_e=result[0]
+						else:
+							spider_e=etree.SubElement(kanton_e,'Spider')
+							spider_e.set('Name', spidername)
+						signatur_e=etree.SubElement(spider_e,'Eintrag')
+						signatur_e.set('Name', signatur)
+						# JSON-Eintrag weitermachen
 						if not gerichtssignatur in json_kanton['gerichte']:
 							gerichtsname_de=signaturreihe['Stufe 2 de']
 							gerichtsname_fr=signaturreihe['Stufe 2 fr']
@@ -160,7 +164,6 @@ class BasisSpider(scrapy.Spider):
 							else:
 								json_kammer={'spider': spidername}
 							json_gericht['kammern'][signatur]=json_kammer
-					
 					for spalte in signaturreihe:
 						wert=signaturreihe[spalte]
 						if(wert):
@@ -188,7 +191,8 @@ class BasisSpider(scrapy.Spider):
 					erste_kammer=next(iter(json_kantone[k]['gerichte'][g]['kammern']))				
 					json_kantone[k]['gerichte'][g]['kammern'][g+'_999']={'de': "andere", 'fr': "autres", "it": "altro", 'spider': json_kantone[k]['gerichte'][g]['kammern'][erste_kammer]['spider']}
 		
-		json_content=json.dumps(json_kantone)
+		
+		json_content=json.dumps(json_kantone, sort_keys=True)
 		item= { 'Facetten': json_content}
 		yield(item)
 

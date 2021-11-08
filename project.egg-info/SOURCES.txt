@@ -46,6 +46,7 @@ NeueScraper/spiders/UR_Gerichte.py
 NeueScraper/spiders/VD_FindInfo.py
 NeueScraper/spiders/VD_Omni.py
 NeueScraper/spiders/VS_Gerichte.py
+NeueScraper/spiders/XX_Upload.py
 NeueScraper/spiders/ZG_Verwaltungsgericht.py
 NeueScraper/spiders/ZH_Baurekurs.py
 NeueScraper/spiders/ZH_Obergericht.py

@@ -709,7 +709,13 @@ class PipelineHelper:
 			for sp in spider.kantone: # Schleife über die Sprachen
 				# Nur wenn die Daten vorhanden in dieser Sprache vorhanden sind...
 				if metamatch['Stufe 2 '+sp]:
-					anzeige=(spider.kanton[sp]+" " if spider.kanton_kurz!="CH" else "")+metamatch['Stufe 2 '+sp]+(" "+metamatch['Stufe 3 '+sp] if metamatch['Stufe 3 '+sp] else "")
+					anzeige=(spider.kanton[sp]+" " if spider.kanton_kurz!="CH" else "")
+					if 'Upload' in item and item['Upload']==True and 'VGericht' in item:
+						anzeige += item['VGericht']
+						if 'VKammer' in item:
+							anzeige += ' ' + item['VKammer']
+					else:
+						anzeige+=metamatch['Stufe 2 '+sp]+(" "+metamatch['Stufe 3 '+sp] if metamatch['Stufe 3 '+sp] else "")
 					if 'EDatum' in item and item['EDatum'] and item['EDatum']!="nodate":
 						if len(item['EDatum'])==10:
 							anzeige+=" "+item['EDatum'][8:10]+"."+item['EDatum'][5:7]+"."+item['EDatum'][0:4]
