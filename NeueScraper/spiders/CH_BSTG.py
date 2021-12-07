@@ -2,108 +2,83 @@
 import scrapy
 import re
 import logging
-from scrapy.http.cookies import CookieJar
 import datetime
-from NeueScraper.spiders.weblaw import WeblawSpider
+import random
+import time
+import json
+from NeueScraper.spiders.basis import BasisSpider
+from NeueScraper.pipelines import PipelineHelper as PH
 
 logger = logging.getLogger(__name__)
 
-class CH_BSTG(WeblawSpider):
+class CH_BSTG(BasisSpider):
 	name = 'CH_BSTG'
+	HOST='https://bstger.weblaw.ch'
+	URL='/api/.netlify/functions/searchQueryService'
+	
+	JSON={"sortOrder":"desc","sortField":"publicationDate","size":60,"guiLanguage":"de","userID":"_9ynrsjyup","sessionDuration":1638755448,"origin":"Dashboard","aggs":{"fields":["rulingType","tipoSentenza","year","court","language","lex-ch-bund-srList","ch-jurivocList","jud-ch-bund-bgeList","jud-ch-bund-bguList","jud-ch-bund-bvgeList","jud-ch-bund-bvgerList","jud-ch-bund-tpfList","jud-ch-bund-bstgerList","lex-ch-bund-asList","lex-ch-bund-bblList","lex-ch-bund-abList","jud-ch-ag-agveList"],"size":10}}
 
-	DOMAIN='https://bstger.weblaw.ch'
-	SUCH_URL='/index.php?='
-	NEWS_URL='/index.php?method=news'
-	reTREFFER=re.compile(r'<td colspan=\"6\" class=\"table_data\"><nobr>\s+(?P<treffer>\d+) Treffer \(')
-	rePDF=re.compile(r"\'(?P<name>[^\']+)\'")
-	HEADERS={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:82.0) Gecko/20100101 Firefox/82.0',
-			'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-			'Accept-Language': 'en-US,en;q=0.5',
-			'Accept-Encoding': 'gzip, deflate, br',
-			'Content-Type': 'application/x-www-form-urlencoded',
-			'Origin:': 'https://bstger.weblaw.ch/',
-			'DNT': '1',
-			'Connection': 'keep-alive',
-			'Referer': 'https://bstger.weblaw.ch/',
-			'Upgrade-Insecure-Requests': '1',
-			'Pragma': 'no-cache',
-			'Cache-Control': 'no-cache',
-			'Cookie': '_ga=GA1.2.1816131663.1569870731; __gads=ID=c4a85440ac150faa:T=1569870731:S=ALNI_MYxfPvI28WiR7rAG9E8DUH5NZxACQ; lang=de'}
-
-	def request_generator(self, ab):
-		""" Generates scrapy frist request
-		"""
-		# return [scrapy.Request(url=self.RESULT_PAGE_URL, method="POST", body= self.RESULT_PAGE_PAYLOAD.format(Jahr=self.START_JAHR), headers=self.HEADERS, callback=self.parse_trefferliste_unsortiert, errback=self.errback_httpbin)]
-		# Erst einmal den Basisrequest machen, um Query Ticket zu holen
-
-		if ab is not None:
-			request=scrapy.Request(url=self.DOMAIN+self.NEWS_URL, headers=self.HEADERS, callback=self.parse_einzelseite, errback=self.errback_httpbin)		
-		else:
-			request=scrapy.Request(url=self.DOMAIN+self.SUCH_URL, headers=self.HEADERS, callback=self.parse_suchform, errback=self.errback_httpbin)
-		return [request]
-
-	def parse_einzelseite(self, response):
+	def get_next_request(self, fromwert=0):
+		userID='_'
+		random.seed()
+		while len(userID)<10:
+			userID+="0123456789abcdefghijklmnopqrstuvwxyz"[random.randint(0,35)]
+		epoch=str(int(time.mktime(time.localtime())))
+		self.JSON['userID']=userID
+		self.JSON['sessionDuration']=epoch
+		if fromwert>0: self.JSON['from']=fromwert
+		return scrapy.http.JsonRequest(url=self.HOST+self.URL, data=self.JSON, callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'from': fromwert})
+	
+	def __init__(self, ab=None, neu=None):
+		super().__init__()
+		self.ab=ab
+		if ab:
+			self.JSON['metadataDateMap']={'publicationDate' : { 'from': ab+'T00:00:00.000Z', 'to': '2051-12-31T22:59:59.999Z'}}
+		self.neu=neu
+		self.request_gen = [self.get_next_request(0)]
+		
+	def parse_trefferliste(self, response):
 		logger.info("parse_einzelseite response.status "+str(response.status))
-		logger.info("parse_einzelseite Rohergebnis "+str(len(response.body))+" Zeichen")
-		logger.info("parse_einzelseite Rohergebnis: "+response.body_as_unicode())
-		entscheide=response.xpath("//table/tr[td[@class='table_data head2 nowrap']]")
-		logger.info(str(len(entscheide))+" potentielle Entscheide gefunden.")
-		for e in entscheide:
-			zeilen=e.xpath("./td")
-			logger.info(str(len(zeilen))+" td in tr gefunden.")
-			if len(zeilen)==6:
-				logger.info("potentieller Entscheid: "+e.get())
-				item={}
-				item['Num']=e.xpath('./td[1]/a/text()').get().strip()
-				if item['Num']:
-					item['VGericht']=''
-					item['VKammer']=''
-					item['EDatum']=self.norm_datum(e.xpath('./td[3]/text()').get())
-					item['Leitsatz']=e.xpath('./td[6]/text()').get()
-					item['Weiterzug']=e.xpath('./td[4]/text()').get()
-					pdf=e.xpath('./td[2]/a/@onclick').get()
-					if pdf:
-						logger.info("PDF: "+pdf)
-						re=self.rePDF.search(pdf)
-						if re:
-							item['PDFUrls']=[self.DOMAIN+"/"+re.group('name')]
-					item['Signatur'], item['Gericht'], item['Kammer']=self.detect(item['VGericht'], item['VKammer'], item['Num'])
-					item['Kanton']=self.kanton_kurz
-					yield item
+		antwort=response.body_as_unicode()
+		logger.info("parse_einzelseite Rohergebnis "+str(len(antwort))+" Zeichen")
+		logger.info("parse_einzelseite Rohergebnis: "+antwort[0:50000])
+		
+		struktur=json.loads(antwort)
+		treffer=struktur['totalNumberOfDocuments']
+		logger.info(str(treffer)+" Entscheide insgesamt.")
+		entscheide=struktur['documents']
+		logger.info(str(len(entscheide))+" Entscheide in dieser Liste.")
+		for entscheid in entscheide:
+			item={}
+			item['Leitsatz']=PH.NC(entscheid['content'], error="keine Titelzeile in "+json.dumps(entscheid))
+			if 'tipoSentenza' in entscheid['metadataKeywordTextMap']:
+				item['Weiterzug']=PH.NC(entscheid['metadataKeywordTextMap']['tipoSentenza'][0], warning="keine Weiterzugsinfo in "+json.dumps(entscheid))			
+			item['Num']=PH.NC(entscheid['metadataKeywordTextMap']['dossiernummer'][0], error="keine Geschäftsnummer in "+json.dumps(entscheid))
+			item['PDFUrls']=[PH.NC(entscheid['metadataKeywordTextMap']['originalUrl'][0], error="keine URL in "+json.dumps(entscheid))]
+			if 'rulingDate' in entscheid['metadataDateMap']:
+				item['EDatum']=self.norm_datum(PH.NC(entscheid['metadataDateMap']['rulingDate'], error="kein Entscheiddatum in "+json.dumps(entscheid))[:10])
+			else:
+				logger.warning("kein Entscheiddatum in "+item['Num'])
+			if 'publicationDate' in entscheid['metadataDateMap']:
+				item['PDatum']=self.norm_datum(PH.NC(entscheid['metadataDateMap']['publicationDate'], warning="kein Publikationsdatum in "+json.dumps(entscheid))[:10])
+			else:
+				if 'year' in entscheid['metadataKeywordTextMap']:
+					item['PDatum']=self.norm_datum(PH.NC(entscheid['metadataKeywordTextMap']['year'][0], warning="kein Publikationsdatum und auch kein Jahr in "+json.dumps(entscheid))[:10])
 				else:
-					logger.error("Geschäftsnummer nicht gefunden in: "+e.get())
-
-
-
-	def process_liste(self, response, requests, items):
-		zahl=0
-		entscheide=response.xpath("//table/tr[td[@class='table_data head2 nowrap']]")
-		logger.debug(str(len(entscheide))+" potentielle Entscheide gefunden.")
-		for e in entscheide:
-			zeilen=e.xpath("./td")
-			logger.debug(str(len(zeilen))+" td in tr gefunden.")
-			if len(zeilen)>=7:
-				logger.debug("potentieller Entscheid: "+e.get())
-				item={}
-				item['Num']=e.xpath('./td[1]/a/text()').get().strip()
-				if item['Num']:
-					item['VGericht']=''
-					item['VKammer']=e.xpath('./td[4]/text()').get() if e.xpath('./td[4]/text()').get() else ''
-					item['EDatum']=self.norm_datum(e.xpath('./td[3]/text()').get())
-					item['Leitsatz']=e.xpath('./td[7]/text()').get()
-					item['Weiterzug']=e.xpath('./td[5]/text()').get()
-					pdf=e.xpath('./td[2]/a/@onclick').get()
-					if pdf:
-						logger.debug("PDF: "+pdf)
-						re=self.rePDF.search(pdf)
-						if re:
-							item['PDFUrls']=[self.DOMAIN+"/"+re.group('name')]
-					item['Signatur'], item['Gericht'], item['Kammer']=self.detect(item['VGericht'], item['VKammer'], item['Num'])
-					item['Kanton']=self.kanton_kurz
-					zahl=zahl+1
-					items.append(item)
-				else:
-					logger.error("Geschäftsnummer nicht gefunden in: "+e.get())
-		return zahl
-
-
+					logger.warning("kein Entscheiddatum in "+item['Num'])
+			item['VGericht']=''
+			item['VKammer']=''
+			item['Signatur'], item['Gericht'], item['Kammer']=self.detect(item['VGericht'], item['VKammer'], item['Num'])
+			item['Kanton']=self.kanton_kurz
+			if 'PDatum' in item or 'EDatum' in item:
+				yield item
+			else:
+				logger.error('Entscheid ohne Datum (weder EDatum, PDatum noch year) '+item['Num'])
+		neufrom=response.meta['from']+len(entscheide)
+		if neufrom < treffer:
+			request=self.get_next_request(neufrom)
+			logger.info("Hole Entscheide ab: "+str(neufrom))
+			yield request
+		else:
+			if neufrom > treffer:
+				logger.error("Mehr Entscheide geladen ("+str(neufrom)+") als Treffer ("+str(treffer)+").")
