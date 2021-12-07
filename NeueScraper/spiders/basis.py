@@ -57,7 +57,7 @@ class BasisSpider(scrapy.Spider):
 	ab=None
 	neu=None
 	# Für alle Dokumente, für die wir keine Daten herbekommen können
-	ERSATZDATUM='2020-01-01'
+	ERSATZDATUM='2021-01-01'
 
 	def __init__(self):
 		super().__init__()
@@ -191,8 +191,9 @@ class BasisSpider(scrapy.Spider):
 					erste_kammer=next(iter(json_kantone[k]['gerichte'][g]['kammern']))				
 					json_kantone[k]['gerichte'][g]['kammern'][g+'_999']={'de': "andere", 'fr': "autres", "it": "altro", 'spider': json_kantone[k]['gerichte'][g]['kammern'][erste_kammer]['spider']}
 		
-		
-		json_content=json.dumps(json_kantone, sort_keys=True)
+
+		# json_content=json.dumps(json_kantone, sort_keys=True)
+		json_content=json.dumps(json_kantone)
 		item= { 'Facetten': json_content}
 		yield(item)
 
