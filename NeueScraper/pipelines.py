@@ -726,7 +726,7 @@ class PipelineHelper:
 							anzeige+=" "+item['PDatum'][8:10]+"."+item['PDatum'][5:7]+"."+item['PDatum'][0:4]
 						else:
 							anzeige+=" "+item['PDatum']
-						anzeige+="("+spider.translation['publiziert'][sp]+")"
+						anzeige+=" ("+spider.translation['publiziert'][sp]+")"
 					anzeige+=" "+item['Num']
 					if 'Num2' in item:
 						anzeige+=" ("+item['Num2']+")"
