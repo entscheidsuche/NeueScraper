@@ -26,6 +26,7 @@ import datetime
 import operator
 import pysftp
 import posixpath
+import pathlib
 from scrapy.settings import Settings
 from scrapy.exceptions import IgnoreRequest, NotConfigured
 import requests
@@ -890,7 +891,8 @@ class PipelineHelper:
 				zahl+=1
 				url = etree.Element('url')
 				root.append(url)
-				PipelineHelper.xml_add_element(url,'loc','https://entscheidsuche.ch/docs/'+f)
+				entscheid=pathlib.Path(f).stem
+				PipelineHelper.xml_add_element(url,'loc','https://entscheidsuche.ch/view/'+entscheid)
 				if not('last_change' in files[f]):
 					PipelineHelper.xml_add_element(url,'lastmod',datum)
 				if zahl>49998:
