@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 
 class CH_BGE(BasisSpider):
 	name = 'CH_BGE'
-	TAGSCHRITTE = 20
 	AUFSETZJAHR = 1954
 
 
@@ -22,8 +21,9 @@ class CH_BGE(BasisSpider):
 	
 	SPRACHEN={"de": "D","fr": "F","it": "I"}
 	
-	reMeta=re.compile(r"^\d+\.\s+(?P<formal>.+(?:Urteil der|arrêt (?:de la|du)) (?P<VKammer>.+) (?:i\.S\.|dans la cause) [^_]+ (?P<Num2>\d+[A-F]?_\d+/(?:19|20)\d\d) (?:[^_]+ )?(?:vom|du) (?P<Datum>\d\d?\.?(?:er)?\s*(?:"+"|".join(BasisSpider.MONATEde+BasisSpider.MONATEfr)+r")\s+(?:19|20)\d\d))$")
-	reMetaSimple=re.compile(r"^\d+\.\s+(?P<Rest>.+)$")
+	reMeta=re.compile(r"^\d+\.\s+(?P<formal>.+(?:Urteil der|arrêt (?:de la|du)) (?P<VKammer>.+) (?:i\.S\.|dans la cause) [^_]+ (?P<Num2>\d+[A-F]?_\d+/(?:19|20)\d\d) (?:[^_]+ )?(?:vom|du)\s+(?P<Datum>\d\d?\.?(?:er)?\s*(?:"+"|".join(BasisSpider.MONATEde+BasisSpider.MONATEfr)+r")\s+(?:19|20)\d\d))$")
+	reMetaOhneGN=re.compile(r"^\d+\.\s+(?P<formal>.+(?:Urteil der|arrêt (?:de la|du)) (?P<VKammer>.+) (?:i\.S\.|dans la cause) [^_]+ (?:vom|du)\s+(?P<Datum>\d\d?\.?(?:er)?\s*(?:"+"|".join(BasisSpider.MONATEde+BasisSpider.MONATEfr)+r")\s+(?:19|20)\d\d))$")
+	reMetaSimple=re.compile(r"^\d+\s?\.\s+(?P<Rest>.+)$")
 	reRemoveDivs=re.compile(r"(</(div|span|a|artref)>)|(<(div|span|a|artref)[^>]+>)|(?:^<br>)|(?:<br>(?:(?=<br>)|$))")
 	reDoubleSpaces=re.compile(r"\s\s+")
 
@@ -82,12 +82,19 @@ class CH_BGE(BasisSpider):
 				meta=PH.NC(entscheid.xpath("./div[@class='rank_data']/div[@class='urt small normal']/text()").get(),error="keine Metadaten gefunden für "+item['Num']+": "+text)
 				meta_parse=self.reMeta.search(meta)
 				if meta_parse is None:
-					meta_simple=self.reMetaSimple.search(meta)
-					if meta_simple is None:
-						logger.error("Eintrag nicht matchbar "+item['Num']+": "+meta+"\nin: "+text)
+					meta_ohneGN=self.reMetaOhneGN.search(meta)
+					if meta_ohneGN is None:
+						meta_simple=self.reMetaSimple.search(meta)
+						if meta_simple is None:
+							logger.error("Eintrag nicht matchbar "+item['Num']+": "+meta+"\nin: "+text)
+						else:
+							logger.warning("Eintragsdetails nicht parsbar "+item['Num']+": "+meta+"\nin: "+text)
+							item['Formal_org']=meta_simple.group('Rest')
+							item['EDatum']=self.norm_datum(str(jahr))
 					else:
-						logger.warning("Eintragsdetails nicht parsbar "+item['Num']+": "+meta+"\nin: "+text)
-						item['Formal_org']=meta_simple.group('Rest')
+						logger.warning("Eintrags-Geschäftsnummer nicht parsbar "+ item['Num']+": "+meta+"\nin: "+text)
+						item['EDatum']=self.norm_datum(meta_parse.group('Datum'))
+						item['VKammer']=meta_parse.group('VKammer')					
 				else:
 					item['EDatum']=self.norm_datum(meta_parse.group('Datum'))
 					item['VKammer']=meta_parse.group('VKammer')

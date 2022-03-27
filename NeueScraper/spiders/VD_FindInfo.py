@@ -26,7 +26,7 @@ class ZurichVerwgerSpider(BasisSpider):
 	HTML_URL='/justice/findinfo-pub/html/'
 	PAGE_URL='/justice/findinfo-pub/internet/SimpleSearch.action?showPage=&page='
 	ab=None
-	reMeta=re.compile(r'<b>Cour</b>:\s<acronym title=\"(?P<VKammer>[^\"]+)\">(?P<Kurz>[^<]+)</acronym><br><b>Date\s(?:décision</b>:\s(?:<span class="highlight">)?(?P<EDatum>[^<]+)(?:</span>)?(?:<br><b>Date\s)?)?(?:publication</b>:\s(?:<span class="highlight">)?(?P<PDatum>[^<]+)(?:</span>)?)?<br>(?:<b>N°\sdécision</b>:\s+(?P<Num>[^<]+)<br>)?(?P<Rest>.+)$')
+	reMeta=re.compile(r'<b>Cour</b>:\s<acronym title=\"(?P<VKammer>[^\"]+)\">(?P<Kurz>[^<]+)</acronym>\s*<br>\s*<b>Date\s(?:décision</b>:\s(?:<span class="highlight">)?(?P<EDatum>[^<]+)(?:</span>)?(?:<br><b>Date\s)?)?(?:publication</b>:\s(?:<span class="highlight">)?(?P<PDatum>[^<]+)(?:</span>)?)?\s*<br>\s*(?:<b>N°\sdécision</b>:\s+(?P<Num>[^<]+)<br>\s*)?(?P<Rest>(?:.|\s)+)$')
 	#reMeta=re.compile(r'<b>Cour</b>:\s<acronym title=\"(?P<VKammer>[^\"]+)\">(?P<Kurz>[^<]+)</acronym><br>(?:<b>Date\s(?:décision</b>:\s(?P<EDatum>[^<]+)<br>(?:<b>Date\s)?)?(?:publication</b>:\s(?P<PDatum>[^<]+)<br>(?:<b>N°\sdécision</b>:\s+(?P<Num>[^<]+)<br>)?(?P<Rest>.+)$')
 	reURL=re.compile(r'/justice/findinfo-pub/internet/search/result.jsp\?path=(?P<URL>[^&]+)')
 
@@ -115,18 +115,18 @@ class ZurichVerwgerSpider(BasisSpider):
 					logger.warning("Long_Restmeta: "+rest)
 				else:
 					logger.info("Restmeta: "+rest)
-			normen=entscheid.xpath(".//td[@class='keywords' and div/text()='Article']/div[@class='odd' or @class='even']/text()").getall()
-			if len(normen)>0:
-				item['Normen']=", ".join([n.strip() for n in normen])
-			leitsatz=entscheid.xpath(".//td[@class='keywords' and div/text()='Jurivoc']/div[@class='odd' or @class='even']/text()").getall()
-			if len(leitsatz)>0:
-				item['Leitsatz']=", ".join([l.strip() for l in leitsatz])
-			item['Signatur'], item['Gericht'], item['Kammer']=self.detect("","#"+kurz+"#",item['Num'])
-			logger.debug("Item bislang: "+json.dumps(item))
-			logger.info("Hole nun "+url)
-			request=scrapy.Request(url=url, callback=self.parse_page, errback=self.errback_httpbin, meta = {'item':item})
-			if self.check_blockliste(item):
-				yield(request)
+				normen=entscheid.xpath(".//td[@class='keywords' and div/text()='Article']/div[@class='odd' or @class='even']/text()").getall()
+				if len(normen)>0:
+					item['Normen']=", ".join([n.strip() for n in normen])
+				leitsatz=entscheid.xpath(".//td[@class='keywords' and div/text()='Jurivoc']/div[@class='odd' or @class='even']/text()").getall()
+				if len(leitsatz)>0:
+					item['Leitsatz']=", ".join([l.strip() for l in leitsatz])
+				item['Signatur'], item['Gericht'], item['Kammer']=self.detect("","#"+kurz+"#",item['Num'])
+				logger.debug("Item bislang: "+json.dumps(item))
+				logger.info("Hole nun "+url)
+				request=scrapy.Request(url=url, callback=self.parse_page, errback=self.errback_httpbin, meta = {'item':item})
+				if self.check_blockliste(item):
+					yield(request)
 		seite=response.meta['page']
 		if seite*self.TREFFER_PRO_SEITE<trefferZahl:
 			request=scrapy.Request(url=self.HOST+self.PAGE_URL+str(seite+1), callback=self.parse_trefferliste, errback=self.errback_httpbin, meta = {'page':seite+1})

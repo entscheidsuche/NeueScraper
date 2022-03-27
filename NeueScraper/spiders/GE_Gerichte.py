@@ -112,7 +112,8 @@ class GenfSpider(BasisSpider):
 							item['Gericht'], item['Kammer']=self.detect_by_signatur(item['Signatur'])
 							logger.info("Item gelesen: "+json.dumps(item))
 							request=scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, meta={'subsite': subsite, 'item': item})
-							yield(request)
+							if self.check_blockliste(item):
+								yield(request)
 						else:
 							logger.error("Für "+item['Num']+" Angabenstring "+angabenstring+" gefunden, regex aber nicht gefunden")
 					else:
