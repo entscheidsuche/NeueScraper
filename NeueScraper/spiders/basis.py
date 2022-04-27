@@ -33,7 +33,7 @@ class BasisSpider(scrapy.Spider):
 	reSplitter=re.compile(r"[\w']+")
 
 	#name = 'Gerichtsdaten'
-	kantone = { 'de': {'CH':'Eidgenossenschaft','AG':'Aargau','AI':'Appenzell Innerrhoden','AR':'Appenzell Ausserrhoden','BE':'Bern','BL':'Basel-Land','BS':'Basel-Stadt','FR':'Freiburg','GE':'Genf','GL':'Glarus','GR':'Graubünden','JU':'Jura','LU':'Luzern','NE':'Neuenburg','NW':'Nidwalden','OW':'Obwalden','SG':'St.Gallen','SH':'Schaffhausen','SO':'Solothurn','SZ':'Schwyz','TG':'Thurgau','TI':'Tessin','UR':'Uri','VD':'Waadtland','VS':'Wallis','ZG':'Zug','ZH':'Zürich'},
+	kantone = { 'de': {'CH':'Eidgenossenschaft','AG':'Aargau','AI':'Appenzell Innerrhoden','AR':'Appenzell Ausserrhoden','BE':'Bern','BL':'Basel-Land','BS':'Basel-Stadt','FR':'Freiburg','GE':'Genf','GL':'Glarus','GR':'Graubünden','JU':'Jura','LU':'Luzern','NE':'Neuenburg','NW':'Nidwalden','OW':'Obwalden','SG':'St.Gallen','SH':'Schaffhausen','SO':'Solothurn','SZ':'Schwyz','TG':'Thurgau','TI':'Tessin','UR':'Uri','VD':'Waadt','VS':'Wallis','ZG':'Zug','ZH':'Zürich'},
 		'fr': {'CH':'Conféderation','AG':'Argovie','AI':'Appenzell Rhodes-Intérieures','AR':'Appenzell Rhodes-Extérieures','BE':'Berne','BL':'Bâle-Campagne','BS':'Bâle-Ville','FR':'Fribourg','GE':'Genève','GL':'Glaris','GR':'Grisons','JU':'Jura','LU':'Lucerne','NE':'Neuchâtel','NW':'Nidwald','OW':'Obwald','SG':'Saint-Gall','SH':'Schaffhouse','SO':'Soleure','SZ':'Schwytz','TG':'Thurgovie','TI':'Tessin','UR':'Uri','VD':'Vaud','VS':'Valais','ZG':'Zoug','ZH':'Zurich'},
 		'it': {'CH':'Confederazione','AG':'Argovia','AI':'Appenzello Interno','AR':'Appenzello Interno','BE':'Berna','BL':'Basilea Campagna','BS':'Basilea Città','FR':'Friburgo','GE':'Ginevra','GL':'Glarona','GR':'Grigioni','JU':'Giura','LU':'Lucerna','NE':'Neuchâtel','NW':'Nidvaldo','OW':'Obvaldo','SG':'San Gallo','SH':'Sciaffusa','SO':'Soletta','SZ':'Svitto','TG':'Turgovia','TI':'Ticino','UR':'Uri','VD':'Vaud','VS':'Vallese','ZG':'Zugo','ZH':'Zurigo'}}
 	kantonssprachen= {'CH':'','AG':'de','AI':'de','AR':'de','BE':'','BL':'de','BS':'de','FR':'','GE':'fr','GL':'de','GR':'','JU':'fr','LU':'de','NE':'fr','NW':'de','OW':'de','SG':'de','SH':'de','SO':'de','SZ':'de','TG':'de','TI':'it','UR':'de','VD':'fr','VS':'','ZG':'de','ZH':'de'}
@@ -398,9 +398,9 @@ class BasisSpider(scrapy.Spider):
 			logger.info("Blocklisteneinträge gefunden: "+json.dumps(blockliste[self.name]))
 		else:
 			logger.info("keine Blocklisteneinträge für "+self.name)
-		logger.info("Starte nun "+str(len(self.request_gen))+" Requests.")
+		logger.info(" "+str(len(self.request_gen))+" Requests.")
 		for req in self.request_gen:
-			logger.info("Starte nun Request "+req.url)
+			logger.info("Starte nun Request "+req.url+" mit Header "+PipelineHelper.mydumps(req.headers)+" und Body "+PipelineHelper.mydumps(req.body))
 			yield req
 
 
@@ -566,5 +566,7 @@ class BasisSpider(scrapy.Spider):
 		# in case you want to do something special for some errors,
 		# you may need the failure's type
 		logger.error(repr(failure))
+		
+
 		
 	
