@@ -66,7 +66,7 @@ class BL_Gerichte(BasisSpider):
 		else:
 			#Teilweise sind die Jahre nochmal aufgeteilt
 			if not "Teiljahr" in response.meta:
-				andere_monate=response.xpath(".//a[contains(text(),' bis ')]/@href")
+				andere_monate=response.xpath(".//a[contains(translate(.,'\xa0',' '),' bis ')]/@href")
 				for l in andere_monate:
 					logger.info("Andere Monate-URL: "+l.get())
 					request = scrapy.Request(url=l.get(), callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'Gericht': response.meta['Gericht'], 'Teiljahr': True})
@@ -84,7 +84,7 @@ class BL_Gerichte(BasisSpider):
 				if regeste:
 					item['Leitsatz']=regeste.strip()
 				if url[:8]=='https://':
-					if url[-4:]=='.pdf':
+					if url[-4:]=='.pdf' or 'downloads' in url:
 						item['Num']=url[:-4].split("/")[-1]
 						if len(item['Num'])<6:
 							item['Num']=url[:-4].split("/")[-2]+"/"+item['Num']
@@ -114,7 +114,7 @@ class BL_Gerichte(BasisSpider):
 
 	def parse_document(self, response):
 		logger.info("parse_document response.status "+str(response.status))
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_document Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_document Rohergebnis: "+antwort[:20000])
 		
