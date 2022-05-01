@@ -53,7 +53,7 @@ class CH_BPatG(BasisSpider):
 			for entscheid in urteile:
 				logger.info("Verarbeite nun: "+entscheid.get())
 				url=entscheid.xpath("./a/@href").get()
-				request = scrapy.Request(url=url, callback=self.parse_entry, errback=self.errback_httpbin)
+				request = scrapy.Request(url=self.HOST+url, callback=self.parse_entry, errback=self.errback_httpbin)
 				yield request
 
 
@@ -64,7 +64,7 @@ class CH_BPatG(BasisSpider):
 		logger.info("parse_entry Rohergebnis: "+antwort[:20000])
 		
 		item={}
-		item['PDFUrls']=[PH.NC(response.xpath("//table[@class='tx-is-courtcases']/tr/td[contains(.,'Entscheid als PDF')]/following-sibling::td/a/@href").get(),warning="kein PDF gefunden")]
+		item['PDFUrls']=[self.HOST+PH.NC(response.xpath("//table[@class='tx-is-courtcases']/tr/td[contains(.,'Entscheid als PDF')]/following-sibling::td/a/@href").get(),warning="kein PDF gefunden")]
 		item['Num']=PH.NC(response.xpath("//table[@class='tx-is-courtcases']/tr/td[contains(.,'Prozessnummer')]/following-sibling::td/text()").get(),warning="kein Geschäftsnummer")
 		item['EDatum']=self.norm_datum(PH.NC(response.xpath("//table[@class='tx-is-courtcases']/tr/td[contains(.,'Entscheiddatum')]/following-sibling::td/text()").get(),warning="kein Entscheiddatum"))
 		item['Entscheidart']=PH.NC(response.xpath("//table[@class='tx-is-courtcases']/tr/td[contains(.,'Art des Verfahrens')]/following-sibling::td/text()").get(),info="keine Verfahrensart")
