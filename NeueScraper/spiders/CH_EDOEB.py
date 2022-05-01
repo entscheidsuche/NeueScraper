@@ -45,7 +45,7 @@ class CH_EDOEB(BasisSpider):
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:80000])
 		urteile=response.xpath("//div[@class='mod mod-download']/p")
 		if len(urteile)==0:
-			logger.warning("Keine Entscheide gefunden für "+response.url")
+			logger.warning("Keine Entscheide gefunden für "+response.url)
 		else:
 			for entscheid in urteile:
 				item={}
