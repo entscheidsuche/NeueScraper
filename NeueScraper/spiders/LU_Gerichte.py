@@ -81,7 +81,7 @@ class LU_Gerichte(BasisSpider):
 		item=response.meta['item']	
 		textteile=response.xpath("//div[@id='JurisdictionPrintArea']")
 		text=textteile.get()
-		item['VGericht']=PH.NC(textteile.xpath(".//th[.='Gericht/Verwaltung:']/following-sibling::td/text()").get(),error="Gericht nicht gefunden in "+item['Num']+": '"+text+"'")
+		item['VGericht']=PH.NC(textteile.xpath(".//th[.='Gericht/Verwaltung:' or .='Instanz:']/following-sibling::td/text()").get(),error="Gericht nicht gefunden in "+item['Num']+": '"+text+"'")
 		vkammer=PH.NC(textteile.xpath(".//th[.='Abteilung:']/following-sibling::td/text()").get(),info="Kammer nicht gefunden in "+item['Num']+": '"+text+"'")
 		if len(vkammer)>3:
 			item['VKammer']=vkammer
