@@ -52,25 +52,26 @@ class BL_Gerichte(BasisSpider):
 			logger.info(str(len(jahre))+" Jahrgänge gefunden für "+response.meta['Gericht'])
 		for j in self.reJahre.finditer(antwort):
 			if self.ab is None or int(j.group('Jahr'))>=int(self.ab):
+				logger.info("Hole Jahr "+j.group('Jahr')+" für "+response.meta['Gericht'])
 				request = scrapy.Request(url=j.group('URL'), callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'Gericht': response.meta['Gericht']})
 				yield request			
 
 	def parse_trefferliste(self, response):
-		logger.info("parse_trefferliste response.status "+str(response.status))
+		logger.info("parse_trefferliste response.status "+str(response.status)+" für URL "+response.url)
 		antwort=response.body_as_unicode()
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:30000])
-		urteile=response.xpath("//table[@class='invisible' or @class='plain']/tbody/tr[td[1]//a]")
+		#Teilweise sind die Jahre nochmal aufgeteilt
+		if not "Teiljahr" in response.meta:
+			andere_monate=response.xpath(".//a[contains(translate(.,'\xa0',' '),' bis ')]/@href")
+			for l in andere_monate:
+				logger.info("Andere Monate-URL: "+l.get())
+				request = scrapy.Request(url=l.get(), callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'Gericht': response.meta['Gericht'], 'Teiljahr': True})
+				yield request
+		urteile=response.xpath("//table/tbody/tr[td[1]//a]")
 		if len(urteile)==0:
-			logger.warning("Keine Entscheide gefunden für "+response.meta['Gericht'])
+			logger.warning("Keine Entscheide gefunden für "+response.meta['Gericht']+" URL: "+response.url)
 		else:
-			#Teilweise sind die Jahre nochmal aufgeteilt
-			if not "Teiljahr" in response.meta:
-				andere_monate=response.xpath(".//a[contains(translate(.,'\xa0',' '),' bis ')]/@href")
-				for l in andere_monate:
-					logger.info("Andere Monate-URL: "+l.get())
-					request = scrapy.Request(url=l.get(), callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'Gericht': response.meta['Gericht'], 'Teiljahr': True})
-					yield request
 			for entscheid in urteile:
 				item={}
 				logger.info("Verarbeite nun: "+entscheid.get())
