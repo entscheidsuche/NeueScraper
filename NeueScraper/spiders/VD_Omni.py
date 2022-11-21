@@ -95,7 +95,7 @@ class VD_Omni(BasisSpider):
 			text=entscheid.get()
 			item={}
 			logger.debug("Eintrag: "+text)
-			item['HTMLUrls']=[PH.NC(entscheid.xpath("./tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0']/tr[1]/td/table/tr/td/a/@href").get(),error="keine URL in "+text).strip()]
+			item['HTMLUrls']=[self.HOST+PH.NC(entscheid.xpath("./tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0']/tr[1]/td/table/tr/td/a/@href").get(),error="keine URL in "+text).strip()]
 			item['Titel']=PH.NC(entscheid.xpath("./tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0']/tr[2]/td/table/tr[1]/td/b/text()").get(), info="keine Titelzeile in "+text).strip()
 			item['Leitsatz']=PH.NC(entscheid.xpath("./tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0']/tr[2]/td/table/tr[2]/td[@colspan='2']/text()").get(), info="keine Regeste in "+text).strip()
 			item['Num']=PH.NC(entscheid.xpath("./tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0']/tr[1]/td/table/tr/td/a/text()[2]").get(), error="keine Geschäftsnummer in "+text).strip()
