@@ -30,7 +30,8 @@ class BasisSpider(scrapy.Spider):
 	reDatumENkurz=re.compile(r"(?P<Monat>"+"|".join(MONATEenKurz)+")\s(?P<Tag>\d\d?),\s*(?P<Jahr>(?:19|20)\d\d)")
 	reDatumNurJahr=re.compile(r"(?:19|20)\d\d")	
 	reDatumOk=re.compile("(?:19|20)\d\d-\d\d-\d\d")
-	reSplitter=re.compile(r"[\w']+")
+	reSplitter=re.compile(r"[a-zA-Z0-9']+")
+	reKurzpfad=re.compile(r"^[^/]+/(?P<kurz>[^\.]+)\.(?:pdf|html|json)$")
 
 	#name = 'Gerichtsdaten'
 	kantone = { 'de': {'CH':'Eidgenossenschaft','AG':'Aargau','AI':'Appenzell Innerrhoden','AR':'Appenzell Ausserrhoden','BE':'Bern','BL':'Basel-Land','BS':'Basel-Stadt','FR':'Freiburg','GE':'Genf','GL':'Glarus','GR':'Graubünden','JU':'Jura','LU':'Luzern','NE':'Neuenburg','NW':'Nidwalden','OW':'Obwalden','SG':'St.Gallen','SH':'Schaffhausen','SO':'Solothurn','SZ':'Schwyz','TG':'Thurgau','TI':'Tessin','UR':'Uri','VD':'Waadt','VS':'Wallis','ZG':'Zug','ZH':'Zürich'},
@@ -399,13 +400,27 @@ class BasisSpider(scrapy.Spider):
 		else:
 			logger.info("keine Blocklisteneinträge für "+self.name)
 		logger.info(" "+str(len(self.request_gen))+" Requests.")
+		
+		#Die Blockliste gleich auf die bisherigen Dateien anwenden
+		for pfad in self.files_written:
+			kurzpfad=self.reKurzpfad.search(pfad)
+			if kurzpfad:
+				if kurzpfad['kurz'] in self.blockliste:
+					if self.files_written[pfad]['status']=="nicht_mehr_da":
+						logger.info("Pfad "+pfad+" in Blockliste und als 'nicht_mehr_da' gekennzeichnet.")
+					else:
+						logger.warning("Pfad "+pfad+" in Blockliste und war bislang als "+self.files_written[pfad]['status']+" gekennzeichnet und wird nun als 'nicht_mehr_da' gekennzeichnet.")
+						self.files_written[pfad]['status']="nicht_mehr_da"
+			else:
+				logger.error("Fehler bei Kurzpfaderkennung von: "+pfad)
+		
 		for req in self.request_gen:
 			logger.info("Starte nun Request "+req.url+" mit Header "+PipelineHelper.mydumps(req.headers)+" und Body "+PipelineHelper.mydumps(req.body))
 			yield req
 
 
 	def detect(self,vgericht,vkammer,num):
-		logger.info(num+": vgericht='"+vgericht+"', vkammer='"+vkammer+"'")
+		logger.info(num+": vgericht='"+vgericht+"', vkammer='"+vkammer+"', num='"+num+"'")
 		if self.mehrfachspider:
 			kammermatches={}
 			for m in self.kammerwahl:
@@ -421,8 +436,10 @@ class BasisSpider(scrapy.Spider):
 				if len(self.GNmatch)>0:
 					GN_matches=[]
 					sps=self.reSplitter.findall(num)
+					logger.info("Splitter: "+json.dumps(sps))
 					for sp in range(len(sps)):
 						matchstring=str(sp+1)+"#"+sps[sp]
+						logger.info("Matchstring: "+matchstring)
 						if matchstring in self.GNmatch:
 							info=""
 							for k in self.GNmatch[matchstring]:
