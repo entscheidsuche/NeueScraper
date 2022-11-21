@@ -3,6 +3,7 @@ import scrapy
 import re
 import logging
 from NeueScraper.spiders.basis import BasisSpider
+from NeueScraper.pipelines import PipelineHelper as PH
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ class TribunaSpider(BasisSpider):
 	page_nr=0
 	trefferzahl=0
 	ENCRYPTED=False
+	COOKIE=False
 	VKAMMER=True
 	#name = 'Tribuna, virtuell'
 	
@@ -42,7 +44,13 @@ class TribunaSpider(BasisSpider):
 		""" Generates scrapy frist request
 		"""
 		body=self.get_next_request()
-		return [scrapy.Request(url=self.RESULT_PAGE_URL, method="POST", body=body, headers=self.HEADERS, callback=self.parse_page, errback=self.errback_httpbin)]
+		if self.COOKIE:
+			orequest=scrapy.Request(url=self.RESULT_PAGE_URL, method="POST", body=body, headers=self.HEADERS, callback=self.parse_page, errback=self.errback_httpbin)
+			request=scrapy.Request(url=self.COOKIE_INIT, headers=self.COOKIE_HEADERS, callback=self.set_cookie, errback=self.errback_httpbin, meta={'request': orequest, 'referrer_policy': "no-referrer"})
+			return [request]
+		else:
+			request=scrapy.Request(url=self.RESULT_PAGE_URL, method="POST", body=body, headers=self.HEADERS, callback=self.parse_page, errback=self.errback_httpbin, meta={'referrer_policy': "no-referrer"})
+		return [request]
 
 	def __init__(self,ab=None, neu=None):
 		self.neu=neu
@@ -51,13 +59,28 @@ class TribunaSpider(BasisSpider):
 		self.ab = ab
 		self.request_gen=self.request_generator()
 
+	def set_cookie(self, response):	
+		""" Parses the current search result page, downloads documents and yields the request for the next search
+		result page
+		"""
+		logger.info("Response Cookie Init with "+self.COOKIE_INIT+" with status: "+str(response.status))
+		if response.status == 200 and len(response.body) > self.MINIMUM_PAGE_LEN:
+			# construct and download document links
+			logger.info("Rohergebnis set_cookie: "+response.body_as_unicode())
+			logger.info("Headers set_coookie: "+PH.mydumps(response.headers))
+			cookie=response.headers['Set-Cookie'].decode('ascii').split(';')[0].encode('ascii')
+			request=response.meta['request']
+			request.headers['Cookie']=cookie
+			logger.info("Starte nun Request "+request.url+" mit Header "+PH.mydumps(request.headers)+" und Body "+PH.mydumps(request.body))
+			yield request
+
 	def parse_page(self, response):	
 		""" Parses the current search result page, downloads documents and yields the request for the next search
 		result page
 		"""
+		logger.info("Rohergebnis: "+response.body_as_unicode())
 		if response.status == 200 and len(response.body) > self.MINIMUM_PAGE_LEN:
 			# construct and download document links
-			logger.info("Rohergebnis: "+response.body_as_unicode())
 			if self.page_nr==1:
 				treffer=self.reTreffer.search(response.body_as_unicode())
 				if treffer:
