@@ -98,7 +98,7 @@ class ZurichVerwgerSpider(BasisSpider):
 			entscheide=response.xpath("//table[@width='100%']/tr/td[@valign='top']/table")
 			for entscheid in entscheide:
 				logger.info("Verarbeite Entscheid: "+entscheid.get())
-				url=entscheid.xpath(".//a/@href").get()
+				url=self.HOST+entscheid.xpath(".//a/@href").get()
 				logger.info("url: "+url)
 				num=entscheid.xpath(".//a/font/text()").get()
 				logger.info("num: "+num)
@@ -119,7 +119,12 @@ class ZurichVerwgerSpider(BasisSpider):
 						regeste=regeste+s
 				datum=entscheid.xpath(".//td[@colspan='2']/i/text()").get()
 				logger.info("Typ+Datum: "+datum)
-				edatum=self.reDatum.search(datum).group(0)
+				datummatch=self.reDatum.search(datum)
+				if datummatch:
+					edatum=datummatch.group(0)
+				else:
+					logger.error("Kein Datum gefunden in '"+datum+"' Gesamttext "+entscheid.get())
+					edatum=""
 				if self.reTyp.search(datum):
 					typ= self.reTyp.search(datum).group(0)
 				else:
