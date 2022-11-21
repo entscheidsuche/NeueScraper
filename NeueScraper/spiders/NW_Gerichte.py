@@ -54,4 +54,4 @@ class NW_Gerichte(BasisSpider):
 					logger.info("Entscheid: "+json.dumps(item))
 					yield item
 				else:
-					logger.error("keine URL gefunden in: "+entscheid.get())
+					logger.error("keine URL gefunden in: "+json.dumps(entscheid))
