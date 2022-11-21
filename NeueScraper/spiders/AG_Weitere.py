@@ -38,37 +38,40 @@ class AG_Weitere(BasisSpider):
 		logger.info("parse_page Rohergebnis: "+antwort[:40000])
 		
 		pfad=response.meta['pfad']
-		subpages=response.xpath("//article[@class='teaser']")
+		subpages=response.xpath("//article[@class='teaser teaser--imagecenter']")
 		# Eine Menüseite
 		if subpages:
 			for s in subpages:
 				text=s.get()
-				url=PH.NC(s.xpath(".//a[@class='teaser__link']/@href").get(),error="Link für Submenü nicht gefunden in "+text)
-				titel=PH.NC(s.xpath(".//span[@class='teaser__title']/text()").get(),error="Titel für Submenü nicht gefunden in "+text)
-				request=scrapy.Request(url=url, callback=self.parse_page, errback=self.errback_httpbin, meta={'pfad':pfad+"/"+titel})
+				url=PH.NC(s.xpath(".//a[@class='teaser__titlelink']/@href").get(),error="Link für Submenü nicht gefunden in "+text)
+				titel=PH.NC(s.xpath(".//a[@class='teaser__titlelink']/text()").get(),error="Titel für Submenü nicht gefunden in "+text)
+				request=scrapy.Request(url=self.HOST+url, callback=self.parse_page, errback=self.errback_httpbin, meta={'pfad':pfad+"/"+titel})
 				yield request
 		# Eine Listenseite
 		else:
-			struktur=response.xpath("//div[@class='accordion js-accordion js-accordion--multi']/div[@class='accordion__content']")
+			struktur=response.xpath("//div[@class='accordion js-accordion js-accordion--multi']/div[@class='accordion__content accordion__panel']/section[@class='richtext__section']")
+			
 			if struktur:
 				struktur_da=True
 			else:
-				struktur=response.xpath("//section[@class='contentcol__section' and p]")
+				struktur=response.xpath("//div[@class='contentcol']")
 				struktur_da=False
 				titel="keine Struktur"
 			if struktur:
 				for i in struktur:
 					text=i.get()
 					if struktur_da:
-						titel=PH.NC(i.xpath(".//h2[@id='firstsection']/text()").get(),error="Bereichstitel nicht gefunden in: "+text)
-					entscheide=i.xpath("./p[a]")
+						titel=PH.NC(i.xpath(".//h2[@class='h2']/text()").get(),error="Bereichstitel nicht gefunden in: "+text)
+					else:
+						titel=PH.NC(i.xpath(".//h1[@class='pagetitle']/text()").get(),error="Bereichstitel nicht gefunden: "+text)
+					entscheide=i.xpath(".//p[a]")
 					if not entscheide:
 						logger.warning("Keine Entscheide im Bereich: "+titel)
 					for e in entscheide:
 						itext=e.get()
 						item={}
-						item['PDFUrls']=[self.HOST+PH.NC(e.xpath("./a[@class='mime-pdf']/@href").get(),error="Url für PDF des Entscheids nicht gefunden in "+itext)]
-						meta=PH.NC(e.xpath("./a[@class='mime-pdf']/span[@class='link__text']/text()").get(),error="Linktext des Entscheids nicht gefunden in "+itext)
+						item['PDFUrls']=[self.HOST+PH.NC(e.xpath("./a[@class='link ']/@href").get(),error="Url für PDF des Entscheids nicht gefunden in "+itext)]
+						meta=PH.NC(e.xpath("./a[@class='link ']/span[@class='link__text']/text()").get(),error="Linktext des Entscheids nicht gefunden in "+itext)
 						item['Leitsatz']=PH.NC(e.xpath("./text()").get(),warning="Leitsatz des Entscheids nicht gefunden in "+itext)
 						if struktur_da:
 							item['Rechtsgebiet']=pfad+"/"+titel
@@ -88,29 +91,4 @@ class AG_Weitere(BasisSpider):
 						else:
 							logger.error("Metadaten nicht erkannt für "+meta+" in "+itext)
 			else: # Tabellenstruktur
-				vgericht=pfad=PH.NC(response.xpath("//table[@class='table js-table-sortable table--scrollable js-table-filterable table--filterable']/@summary").get(),error="tablesummary konnte nicht gelesen werden")
-				entscheide=response.xpath("//table[@class='table js-table-sortable table--scrollable js-table-filterable table--filterable']//tbody/tr")
-				if not entscheide:
-					logger.warning("Keine Entscheide im Bereich: "+titel)
-				else:
-					for e in entscheide:
-						itext=e.get()
-						item={}
-						item['PDFUrls']=[self.HOST+PH.NC(e.xpath("./td/a[@class='mime-pdf']/@href").get(),error="Url für PDF des Entscheids nicht gefunden in "+itext)]
-						meta=PH.NC(e.xpath("./td/a[@class='mime-pdf']/span[@class='link__text']/text()").get(),error="Linktext des Entscheids nicht gefunden in "+itext)
-						metas=self.reMetaTable.search(meta)
-						if metas:
-							item['Leitsatz']=metas.group('Titel')
-							num=metas.group('K1')
-							if 'AGVE' in num:
-								item['Num']=num
-							else:
-								item['Num']=""
-								item['Titel']=num
-							item['Rechtsgebiet']=pfad
-							item['VGericht']=vgericht
-							item['EDatum']=self.norm_datum(PH.NC(e.xpath("./td[@data-table-columntitle='Datum']/text()").get(),error="kein Datum in "+itext))
-							item['Signatur'], item['Gericht'], item['Kammer'] = self.detect(item['VGericht'],"",item['Num'])
-							yield item
-						else:
-							logger.error("Metadaten nicht erkannt für "+meta+" in "+itext)	
+				logger.error("Tabellenstruktur doch gefunden")
