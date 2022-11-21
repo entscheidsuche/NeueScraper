@@ -5,52 +5,61 @@ import logging
 import json
 import re
 from NeueScraper.pipelines import PipelineHelper as PH
-from NeueScraper.spiders.weblawvaadin import WeblawVaadinSpider
+from NeueScraper.spiders.basis import BasisSpider
 
 logger = logging.getLogger(__name__)
 
-class VS_Gerichte(WeblawVaadinSpider):
+class VS_Gerichte(BasisSpider):
 	name = 'VS_Gerichte'
 	
-	SUCHFORM='/le/?v-browserDetails=1&theme=le3themeAR&v-sh=900&v-sw=1440&v-cw=1439&v-ch=793&v-curdate=1609113076640&v-tzo=-60&v-dstd=60&v-rtzo=-60&v-dston=false&v-vw=1439&v-vh=0&v-loc=https://rechtsprechung.ar.ch/le/&v-wn=le-3449-0.{}&v-1609113076640='
-	HOST ="https://rechtsprechung.vs.ch"
-	HEADER = {
-		"Content-Type": "text/plain;charset=utf-8",
-		"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:84.0) Gecko/20100101 Firefox/84.0",
-		"Referer": "https://rechtsprechung.vs.ch/le/",
-		"Origin": "https://rechtsprechung.vs.ch"}
-			
-	def lese_entscheid(self, struk,entscheid):
-		item={}
-		abstract=self.lese_text(struk,entscheid,"0-0")
-		num=self.lese_text(struk,entscheid,"1")
-		pdf=self.lese_text(struk,entscheid,"3-1-0","resources/href/uRL")
-		meta=self.lese_alle_metadaten(struk,entscheid)
-		if pdf[-4:]!=".pdf":
-			logger.warning("kein PDF hinterlegt ("+pdf+"). Ignoriere den Entscheid "+num+", "+abstract+", "+json.dumps(meta))
-			return None
-		else:
-			item['PDFUrls']=[self.HOST+pdf]
-			klammerNum=self.reKlammer.search(num)
-			if klammerNum:
-				item['Num']=klammerNum.group('vor')
-				if klammerNum.group('in'):
-					item['Num2']=klammerNum.group('in')
-				if('Entscheiddatum') in meta:
-					item['EDatum']=self.norm_datum(meta['Entscheiddatum'])
-				if('Publikationsdatum') in meta:
-					item['PDatum']=self.norm_datum(meta['Publikationsdatum'])
-				if('Gericht') in meta:
-					kurz=meta['Gericht']
-					item['VGericht']=meta['Gericht']
-				else:
-					kurz=""
-				if('Sprache') in meta:
-					item['Sprache']=meta['Sprache']
-				if abstract:
-					item['Abstract']=abstract
-				item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",kurz,item['Num'])
-				return item
-			else:
-				logger.warning("Geschäftsnummer nicht erkannt in: "+num)
-				return None
+
+	SUCH_URL='/api/search/?offset={offset}&limit={itemsperpage}&sort=_score'
+	HOST="https://api-justsearche.vs.ch"
+	DOWNLOAD_PATH="/api/documents/"
+	ITEMSPERPAGE=50
+	ab=None
+	
+	def __init__(self, ab=None, neu=None):
+		self.neu=neu
+		super().__init__()
+		if ab:
+			self.ab=ab
+			self.SUCH_URL+="&date_publication_gte="+self.ab
+		self.request_gen = [self.request_generator()]
+
+	def request_generator(self, seite=1):
+		request = scrapy.Request(url=self.HOST+self.SUCH_URL.format(offset=str((seite-1)*self.ITEMSPERPAGE), itemsperpage=self.ITEMSPERPAGE), callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'seite':seite})
+		return request
+
+	def parse_trefferliste(self, response):
+		logger.info("parse_trefferliste response.status "+str(response.status))
+		antwort=response.text
+		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
+		logger.info("parse_trefferliste Rohergebnis: "+antwort[:80000])
+		struktur=json.loads(antwort)
+		seite=response.meta['seite']
+		trefferzahl=struktur['count']
+		logger.info("Trefferzahl: "+str(trefferzahl))
+		for urteil in struktur['results']:
+			item={}
+			logger.info("Verarbeite nun: "+json.dumps(urteil))
+			item['VGericht']=PH.NC(urteil['tribunal']['abbreviation'], error="kein Gericht erkannt")
+			item['VKammer']=PH.NC(urteil['case_instance']['text'], warning="keine Kammer")
+			if len(urteil['pages'])>0:
+				if 'content_display' in urteil['pages'][0]:
+					item['Leitsatz']=PH.NC(urteil['pages'][0]['content_display'], warning="kein Leitsatz erkannt")
+			item['EDatum']=PH.NC(self.norm_datum(urteil['date_decision']), error="kein EDATUM")
+			item['PDatum']=PH.NC(self.norm_datum(urteil['date_publication']), warning="kein PDATUM")
+			item['Num']=PH.NC(urteil['case_number']['text'], error="kein Aktenzeichen")
+			item['DocID']=str(urteil['id'])
+			item['PDFUrls']=[self.HOST+self.DOWNLOAD_PATH+str(urteil['id'])+'/file/']
+			item['Signatur'], item['Gericht'], item['Kammer']=self.detect(item['VGericht'], item['VKammer'], item['Num'])
+			logger.info("Item: "+json.dumps(item))
+			yield item
+		# Wenn noch weitere Seiten übrig sind, weiterblättern
+		if trefferzahl > seite*self.ITEMSPERPAGE:
+			seite += 1
+			r=self.request_generator(seite)
+			yield r
+		
+					
