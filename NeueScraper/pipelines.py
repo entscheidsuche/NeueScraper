@@ -683,7 +683,11 @@ class PipelineHelper:
 			eintrag['PDF']={'Datei': item['PDFFiles'][0]['path'], 'URL': item['PDFFiles'][0]['url'], 'Checksum': item['PDFFiles'][0]['checksum']}
 		if 'HTMLFiles' in item and item['HTMLFiles']:
 			eintrag['HTML']={'Datei': item['HTMLFiles'][0]['path'], 'URL': item['HTMLFiles'][0]['url'], 'Checksum': item['HTMLFiles'][0]['checksum']}
-		if 'Num3' in item:
+		if 'Num5' in item:
+			eintrag['Num']=[item['Num'],item['Num2'], item['Num3'], item['Num4'], item['Num5']]+zweitnum		
+		elif 'Num4' in item:
+			eintrag['Num']=[item['Num'],item['Num2'], item['Num3'], item['Num4']]+zweitnum		
+		elif 'Num3' in item:
 			eintrag['Num']=[item['Num'],item['Num2'], item['Num3']]+zweitnum		
 		elif 'Num2' in item:
 			eintrag['Num']=[item['Num'],item['Num2']]+zweitnum
@@ -902,6 +906,32 @@ class PipelineHelper:
 		if zahl>0:
 			dateien.append('<?xml version="1.0" encoding="UTF-8"?>'+str(etree.tostring(root, pretty_print=True),"ascii"))
 		return dateien
+
+	@staticmethod
+	def mydumps(x):
+		ergebnis=[]
+		if isinstance(x,dict):
+			for i in x:
+				if isinstance(i,bytes):
+					j=i.decode('ascii')
+				else:
+					j=str(i)
+				ergebnis.append("'"+j+"': "+PipelineHelper.mydumps(x[i]))
+			return("{"+", ".join(ergebnis)+"}")
+		elif isinstance(x,(list,tuple)):
+			for i in x:
+				ergebnis.append(PipelineHelper.mydumps(i))
+			return("["+", ".join(ergebnis)+"]")
+		elif isinstance(x,str):
+			return('"'+x+'"')
+		elif isinstance(x,bytes):
+			return("b'"+x.decode('ascii',"replace")+"'")
+		elif isinstance(x,NoneType):
+			return("<None>")
+		else:
+			return("<Unknown>")
+
+		
 
 
 class MyFilesPipeline(FilesPipeline):
