@@ -15,12 +15,14 @@ logger = logging.getLogger(__name__)
 class AI_Bericht(BasisSpider):
 	name = 'AI_Bericht'
 
-	URL='https://www.ai.ch/themen/staat-und-recht/veroeffentlichungen/verwaltungs-und-gerichtsentscheide'
+	URL1='https://www.ai.ch/themen/staat-und-recht/veroeffentlichungen/verwaltungs-und-gerichtsentscheide'
+	URL2='https://www.ai.ch/gerichte/gerichtsentscheide'
 	reJahr=re.compile(r'(?:19|20)\d\d$')
 	
 	def request_generator(self):
-		request = scrapy.Request(url=self.URL, callback=self.parse_trefferliste, errback=self.errback_httpbin)
-		return [request]
+		request1 = scrapy.Request(url=self.URL1, callback=self.parse_trefferliste, errback=self.errback_httpbin)
+		request2 = scrapy.Request(url=self.URL2, callback=self.parse_trefferliste, errback=self.errback_httpbin)
+		return [request1, request2]
 	
 	def __init__(self, neu=None):
 		super().__init__()
