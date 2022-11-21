@@ -68,6 +68,7 @@ class BS_Omni(BasisSpider):
 		if ab:
 			self.ab=ab
 			self.FORMDATA['dPublikationsdatum']=ab
+			self.FORMDATA['bHasPublikationsdatumBis']="1"
 		self.request_gen = [self.get_next_request()]
 
 
@@ -106,7 +107,7 @@ class BS_Omni(BasisSpider):
 				item['PDatum']=self.norm_datum(pdatum_roh)
 			item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("","#"+response.meta['herkunft']+"#",item['Num'])
 			logger.info("Entscheid: "+json.dumps(item))
-			request=scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, meta={'item': item})
+			request=scrapy.Request(url=self.HOST+item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, meta={'item': item})
 			yield request
 	
 		if seite*self.TREFFER_PRO_SEITE < trefferzahl:
