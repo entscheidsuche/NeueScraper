@@ -112,7 +112,7 @@ class SO_Omni(BasisSpider):
 			text=entscheid.get()
 			item={}
 			logger.debug("Eintrag: "+text)
-			item['HTMLUrls']=[PH.NC(entscheid.xpath("./tr/td/a/@href").get(),error="keine URL in "+text)]
+			item['HTMLUrls']=[self.HOST+PH.NC(entscheid.xpath("./tr/td/a/@href").get(),error="keine URL in "+text)]
 			item['Rechtsgebiet']=PH.NC(entscheid.xpath("./tr[2]/td[@colspan='2']/b/text()").get(), info="kein Rechtsgebiet in "+text)
 			abstract=entscheid.xpath("./tr[3]/td[@colspan='3']/text()").getall()
 			if len(abstract)>0:
@@ -140,7 +140,7 @@ class SO_Omni(BasisSpider):
 			yield request
 	
 		if seite*self.TREFFER_PRO_SEITE < trefferzahl:
-			href=response.xpath("//table[@width='100%' and @border='0' and @cellspacing='0' and @cellpadding='0']/tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0']/tr/td[@align='right']/a[last()-1]/@href").get()
+			href=self.HOST+response.xpath("//table[@width='100%' and @border='0' and @cellspacing='0' and @cellpadding='0']/tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0']/tr/td[@align='right']/a[last()-1]/@href").get()
 			if href=="":
 				logger.error("Blätterlink nicht gefunden: "+antwort)
 			else:
