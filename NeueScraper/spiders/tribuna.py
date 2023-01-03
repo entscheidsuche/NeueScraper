@@ -4,6 +4,7 @@ import re
 import logging
 from NeueScraper.spiders.basis import BasisSpider
 from NeueScraper.pipelines import PipelineHelper as PH
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +33,11 @@ class TribunaSpider(BasisSpider):
 	
 	def get_next_request(self):
 		logger.info("Hole Treffer Nr. "+str(self.page_nr))
+		millis=str(int(time.time()*1000))
 		if self.ab is None:
-			body = self.RESULT_QUERY_TPL.format(page_nr=self.page_nr)
+			body = self.RESULT_QUERY_TPL.format(page_nr=self.page_nr, millis=millis)
 		else:
-			body = self.RESULT_QUERY_TPL_AB.format(page_nr=self.page_nr, datum=self.ab)
+			body = self.RESULT_QUERY_TPL_AB.format(page_nr=self.page_nr, millis=millis, datum=self.ab)
 		self.page_nr=self.page_nr+1
 		return body	
 	
