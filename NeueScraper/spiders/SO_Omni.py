@@ -77,7 +77,9 @@ class SO_Omni(BasisSpider):
 		if ab:
 			self.ab=ab
 			self.FORMDATA['dEntscheiddatum']=ab
-		self.request_gen = [self.get_next_request()]
+			self.FORMDATA['dEntscheiddatumBis']=datetime.date.today().strftime("%d.%m.%Y")
+			self.FORMDATA['bHasEntscheiddatumBis']="1"
+			self.request_gen = [self.get_next_request()]
 
 
 	def parse_trefferliste(self, response):
@@ -85,9 +87,9 @@ class SO_Omni(BasisSpider):
 		logger.info("parse_trefferliste response.status "+str(response.status))
 		Cookie=""
 		if 'Cookie' in response.request.headers:
-			logger.debug("parse_trefferliste Cookie gesendet: "+response.request.headers['Cookie'].decode('UTF-8'))	
+			logger.info("parse_trefferliste Cookie gesendet: "+response.request.headers['Cookie'].decode('UTF-8'))	
 		else:
-			logger.debug("Im Trefferlistenrequest gibt es keine Cookies.")
+			logger.info("Im Trefferlistenrequest gibt es keine Cookies.")
 		if 'Set-Cookie' in response.headers:
 			logger.info("parse_trefferliste Cookie erhalten: "+response.headers['Set-Cookie'].decode('UTF-8'))
 			Cookie=response.headers['Set-Cookie'].decode('UTF-8').split(";")[0]
@@ -136,7 +138,7 @@ class SO_Omni(BasisSpider):
 			request=scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, meta={'item': item, 'org': item['HTMLUrls'][0]})
 			if Cookie:
 				request.headers['Cookie']=Cookie.encode('UTF-8')
-				logger.info("Cookie gesetzt: "+Cookie)
+				logger.info("Cookie gesetzt: "+request.headers['Cookie'].decode("utf-8"))
 			yield request
 	
 		if seite*self.TREFFER_PRO_SEITE < trefferzahl:
@@ -147,7 +149,7 @@ class SO_Omni(BasisSpider):
 				request=scrapy.Request(url=href, callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': seite+1})
 				if Cookie:
 					request.headers['Cookie']=Cookie.encode('UTF-8')
-					logger.info("Cookie gesetzt: "+Cookie)
+					logger.info("Cookie gesetzt: "+request.headers['Cookie'].decode("utf-8"))
 				yield request
 								
 	def parse_document(self, response):
