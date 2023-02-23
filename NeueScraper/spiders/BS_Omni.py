@@ -102,7 +102,7 @@ class BS_Omni(BasisSpider):
 			edatum_roh=PH.NC(entscheid.xpath("./tr/td[@align='right']/text()[contains(.,'Entscheiddatum:')]").get(), info="kein Entscheiddatum in "+text)
 			if self.reDatumOk.search(edatum_roh):
 				item['EDatum']=self.norm_datum(edatum_roh)
-			pdatum_roh=PH.NC(entscheid.xpath("./tr/td[@colspan='2' and @align='right']/text()[contains(.,'datum:')]").get(), info="kein Publikationsdatum in "+text)
+			pdatum_roh=PH.NC(entscheid.xpath("./tr/td[@colspan='2' and @align='right']/text()[contains(.,'Erstpublikationsdatum:')]").get(), info="kein Publikationsdatum in "+text)
 			if self.reDatumOk.search(pdatum_roh):
 				item['PDatum']=self.norm_datum(pdatum_roh)
 			item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("","#"+response.meta['herkunft']+"#",item['Num'])
@@ -133,16 +133,22 @@ class BS_Omni(BasisSpider):
 		logger.info("parse_document response.status "+str(response.status))
 		antwort=response.body_as_unicode()
 		logger.info("parse_document Rohergebnis "+str(len(antwort))+" Zeichen")
-		logger.debug("parse_document Rohergebnis: "+antwort[:20000])
+		logger.info("parse_document Rohergebnis: "+antwort[:20000])
 		
 		item=response.meta['item']	
 		html=response.xpath("//div[@class='WordSection1' or @class='Section1']")
 		if html == []:
 			logger.warning("Content nicht erkannt in "+antwort[:20000])
 		else:
+			regeste=response.xpath("//td[@colspan='2']/table/tr/td[./b/text()='Résumé contenant:']/following-sibling::td/b/text()")
+			if len(regeste)>0:
+				item['Leitsatz']=regeste.get()
+			if 'EDatum' not in item:
+				edatumkandidat=response.xpath("//p[@class='MsoNormal' and @style='margin-left:63.0pt' and starts-with(.,'vom ') and string-length(.)>16][1]/descendant-or-self::*/text()")
+				if len(edatumkandidat)>0:
+					edatumstring="".join(edatumkandidat.getall())
+					logger.info("Endatumstring: "+edatumstring)
+					item['EDatum']=self.norm_datum(edatumstring[4:])
 			PH.write_html(html.get(), item, self)
-		regeste=response.xpath("//td[@colspan='2']/table/tr/td[./b/text()='Résumé contenant:']/following-sibling::td/b/text()")
-		if len(regeste)>0:
-			item['Leitsatz']=regeste.get()
 		yield(item)
 		

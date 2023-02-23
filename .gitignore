@@ -10,3 +10,5 @@ NeueScraper/spiders/__pycache__/__init__.cpython-39.pyc
 NeueScraper/spiders/__pycache__/AG_Gerichte.cpython-39.pyc
 NeueScraper/spiders/__pycache__/basis.cpython-39.pyc
 NeueScraper/spiders/__pycache__/weblaw.cpython-39.pyc
+*.pyc
+*.pyc
