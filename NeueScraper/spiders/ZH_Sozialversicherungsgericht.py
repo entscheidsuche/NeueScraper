@@ -82,7 +82,7 @@ class ZurichSozversSpider(BasisSpider):
 	def parse_searchform(self, response):
 		logging.debug("parse_searchform response.status "+str(response.status))
 		logging.info("parse_searchform Rohergebnis "+str(len(response.body))+" Zeichen")
-		logging.debug("parse_searchform Rohergebnis: "+response.body_as_unicode())
+		logging.info("parse_searchform Rohergebnis: "+response.body_as_unicode())
 		jahr=response.meta['jahr']
 		viewId=response.xpath("//input[@id='view:_id1__VUID']/@value").get()
 		logging.info("search_request für Jahr "+str(jahr)+" mit viewId "+viewId)
