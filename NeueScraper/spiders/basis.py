@@ -124,23 +124,31 @@ class BasisSpider(scrapy.Spider):
 						signatur_e.set('Name', signatur)
 						# JSON-Eintrag weitermachen
 						if not gerichtssignatur in json_kanton['gerichte']:
+							logger.info("Gerichtsname abgleichen: "+json.dumps(signaturreihe))
 							gerichtsname_de=signaturreihe['Stufe 2 de']
 							gerichtsname_fr=signaturreihe['Stufe 2 fr']
 							gerichtsname_it=signaturreihe['Stufe 2 it']
 							if gerichtsname_de=="":
-								if gerichtsname_fr=="":
-									gerichtsname_de=gerichtsname_it
-								else:
+								if gerichtsname_fr:
 									gerichtsname_de=gerichtsname_fr
+								else:
+									gerichtsname_de=gerichtsname_it
 								signaturreihe['Stufe 2 de']=gerichtsname_de
 							if gerichtsname_fr=="":
-								gerichtsname_fr=gerichtsname_de
+								if gerichtsname_de:
+									gerichtsname_fr=gerichtsname_de
+								else:
+									gerichtsname_fr=gerichtsname_it
 								signaturreihe['Stufe 2 fr']=gerichtsname_fr
 							if gerichtsname_it=="":
-								gerichtsname_it=gerichtsname_de
+								if gerichtsname_de:
+									gerichtsname_it=gerichtsname_de
+								else:
+									gerichtsname_it=gerichtsname_fr
 								signaturreihe['Stufe 2 it']=gerichtsname_it
 							json_gericht={'de': gerichtsname_de, 'fr': gerichtsname_fr, 'it': gerichtsname_it, 'kammern': {}}
 							json_kanton['gerichte'][gerichtssignatur]=json_gericht
+							logger.info("Gerichtsname abgeglichen: "+json.dumps(signaturreihe))
 						else:
 							json_gericht=json_kanton['gerichte'][gerichtssignatur]
 						if not signatur in json_gericht:
@@ -148,16 +156,22 @@ class BasisSpider(scrapy.Spider):
 							kammername_fr=signaturreihe['Stufe 3 fr']
 							kammername_it=signaturreihe['Stufe 3 it']
 							if kammername_de=="":
-								if kammername_fr=="":
-									kammername_de=kammername_it
-								else:
+								if kammername_fr:
 									kammername_de=kammername_fr
+								else:
+									kammername_de=kammername_it
 								signaturreihe['Stufe 3 de']=kammername_de
 							if kammername_fr=="":
-								kammername_fr=kammername_de
+								if kammername_de:
+									kammername_fr=kammername_de
+								else:
+									kammername_fr=kammername_it
 								signaturreihe['Stufe 3 fr']=kammername_fr
 							if kammername_it=="":
-								kammername_it=kammername_de
+								if kammername_de:
+									kammername_it=kammername_de
+								else:
+									kammername_it=kammername_fr
 								signaturreihe['Stufe 3 it']=kammername_it
 							# Sind Kammernamen überhaupt gesetzt?
 							if kammername_de:

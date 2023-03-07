@@ -16,7 +16,7 @@ class AG_Weitere(BasisSpider):
 	name = 'AG_Weitere'
 
 	HOST='https://www.ag.ch'
-	URLS=['/de/gerichte/gesetze_entscheide/weitere_entscheide_1/weitere_entscheide_2.jsp', '/de/dvi/grundbuch_vermessung/grundbuch/rechtliche_grundlagen_1/entscheide_2/entscheide.jsp']
+	URLS=['/de/verwaltung/dvi/grundbuch-vermessung/grundbuch/rechtliche-grundlagen/entscheide']
 	
 	reMeta=re.compile(r"(?P<Typ>[^ ]+) de(?:s|r)\s+(?P<Gericht>.+)\s+vom\s+(?P<Datum>\d+\.\s+(?:"+"|".join(BasisSpider.MONATEde)+")\s+\d\d\d\d)")
 	reMetaTable=re.compile(r"(?P<Titel>^[^\(]+)\s+\((?P<K1>[^\(]+)\)\s+\((?P<K2>[^\(]+)\)")
@@ -38,57 +38,38 @@ class AG_Weitere(BasisSpider):
 		logger.info("parse_page Rohergebnis: "+antwort[:40000])
 		
 		pfad=response.meta['pfad']
-		subpages=response.xpath("//article[@class='teaser teaser--imagecenter']")
-		# Eine Menüseite
-		if subpages:
-			for s in subpages:
-				text=s.get()
-				url=PH.NC(s.xpath(".//a[@class='teaser__titlelink']/@href").get(),error="Link für Submenü nicht gefunden in "+text)
-				titel=PH.NC(s.xpath(".//a[@class='teaser__titlelink']/text()").get(),error="Titel für Submenü nicht gefunden in "+text)
-				request=scrapy.Request(url=self.HOST+url, callback=self.parse_page, errback=self.errback_httpbin, meta={'pfad':pfad+"/"+titel})
-				yield request
-		# Eine Listenseite
-		else:
-			struktur=response.xpath("//div[@class='accordion js-accordion js-accordion--multi']/div[@class='accordion__content accordion__panel']/section[@class='richtext__section']")
-			
-			if struktur:
-				struktur_da=True
+		entscheidtabelle=response.xpath("//table[@summary and @class='table js-table-sortable js-table-filterable table--filterable']")
+		if entscheidtabelle:
+			rechtsgebiet=PH.NC(entscheidtabelle.xpath("./@summary").get(),error="Kein Summary in Entscheidtabelle gefunden")
+			entscheide=entscheidtabelle.xpath("//tbody/tr")
+			logger.info(str(len(entscheide))+" Entscheide gefunden.")
+			if not entscheide:
+				logger.warning("Keine Entscheide im Bereich: "+titel)
 			else:
-				struktur=response.xpath("//div[@class='contentcol']")
-				struktur_da=False
-				titel="keine Struktur"
-			if struktur:
-				for i in struktur:
-					text=i.get()
-					if struktur_da:
-						titel=PH.NC(i.xpath(".//h2[@class='h2']/text()").get(),error="Bereichstitel nicht gefunden in: "+text)
+				logger.info(str(len(entscheide))+" Entscheide gefunden.")
+				for e in entscheide:
+					itext=e.get()
+					logger.info("Verarbeite Entscheid "+itext)
+					item={}
+					item['PDFUrls']=[self.HOST+PH.NC(e.xpath(".//a[@class='link ']/@href").get(),error="Url für PDF des Entscheids nicht gefunden in "+itext)]
+					item['EDatum']=PH.NC(self.norm_datum(e.xpath(".//td[@data-table-columntitle='Datum']/text()").get()))
+					meta=PH.NC(e.xpath(".//a[@class='link ']//span[@class='link__text']/text()").get())
+					metas=self.reMeta.search(meta)
+					if metas:
+						item['Entscheidart']=metas.group('Typ')
+						item['VGericht']=metas.group('Gericht').replace('\ufeff','')
+						#item['EDatum']=self.norm_datum(metas.group('Datum'))
 					else:
-						titel=PH.NC(i.xpath(".//h1[@class='pagetitle']/text()").get(),error="Bereichstitel nicht gefunden: "+text)
-					entscheide=i.xpath(".//p[a]")
-					if not entscheide:
-						logger.warning("Keine Entscheide im Bereich: "+titel)
-					for e in entscheide:
-						itext=e.get()
-						item={}
-						item['PDFUrls']=[self.HOST+PH.NC(e.xpath("./a[@class='link ']/@href").get(),error="Url für PDF des Entscheids nicht gefunden in "+itext)]
-						meta=PH.NC(e.xpath("./a[@class='link ']/span[@class='link__text']/text()").get(),error="Linktext des Entscheids nicht gefunden in "+itext)
-						item['Leitsatz']=PH.NC(e.xpath("./text()").get(),warning="Leitsatz des Entscheids nicht gefunden in "+itext)
-						if struktur_da:
-							item['Rechtsgebiet']=pfad+"/"+titel
-						else:
-							item['Rechtsgebiet']=pfad					
-						metas=self.reMeta.search(meta)
-						if metas:
-							item['Entscheidart']=metas.group('Typ')
-							item['VGericht']=metas.group('Gericht').replace('\ufeff','')
-							item['EDatum']=self.norm_datum(metas.group('Datum'))
-							item['Num']=""
-							rechtskraft=e.xpath("following-sibling::p[position()=1][not(a)]/text()")
-							if rechtskraft:
-								item['Rechtskraft'] = rechtskraft[1:-1] if rechtskraft[0]=='(' and rechtskraft[-1]==')' else rechtskraft							
-							item['Signatur'], item['Gericht'], item['Kammer'] = self.detect(item['VGericht'],"",item['Num'])
-							yield item
-						else:
-							logger.error("Metadaten nicht erkannt für "+meta+" in "+itext)
-			else: # Tabellenstruktur
-				logger.error("Tabellenstruktur doch gefunden")
+						item['VGericht']=""
+					klammern=self.reMetaTable.search(meta)
+					if klammern:
+						item['Num']=klammern.group('K1')
+						item['Titel']=klammern.group('Titel')
+					else:
+						item['Num']=""
+						item['Titel']=meta
+					item['Signatur'], item['Gericht'], item['Kammer']=self.detect(item['VGericht'], "", item['Num'])
+
+					yield item
+		else:
+			logger.error("keine Entscheidtabelle gefunden")
