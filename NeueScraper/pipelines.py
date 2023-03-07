@@ -683,10 +683,8 @@ class PipelineHelper:
 			eintrag['PDF']={'Datei': item['PDFFiles'][0]['path'], 'URL': item['PDFFiles'][0]['url'], 'Checksum': item['PDFFiles'][0]['checksum']}
 		if 'HTMLFiles' in item and item['HTMLFiles']:
 			eintrag['HTML']={'Datei': item['HTMLFiles'][0]['path'], 'URL': item['HTMLFiles'][0]['url'], 'Checksum': item['HTMLFiles'][0]['checksum']}
-		if 'Num5' in item:
-			eintrag['Num']=[item['Num'],item['Num2'], item['Num3'], item['Num4'], item['Num5']]+zweitnum		
-		elif 'Num4' in item:
-			eintrag['Num']=[item['Num'],item['Num2'], item['Num3'], item['Num4']]+zweitnum		
+		if 'Nums' in item:
+			eintrag['Num']=item['Nums']+zweitnum		
 		elif 'Num3' in item:
 			eintrag['Num']=[item['Num'],item['Num2'], item['Num3']]+zweitnum		
 		elif 'Num2' in item:
