@@ -27,6 +27,7 @@ class TribunaSpider(BasisSpider):
 	page_nr=0
 	trefferzahl=0
 	ENCRYPTED=False
+	ASCII_ENCRYPTED=False
 	COOKIE=False
 	VKAMMER=True
 	#name = 'Tribuna, virtuell'
@@ -208,8 +209,14 @@ class TribunaSpider(BasisSpider):
 					'VGericht': vgericht,
 					'VKammer': vkammer
 				}				
-						
+				
+				logger.info("Pfad: "+pfad)
 				if self.ENCRYPTED:
+					if self.ASCII_ENCRYPTED:
+						ascii_pfad=''
+						for c in pfad:
+							ascii_pfad += '|'+str(ord(c))
+						pfad=ascii_pfad.replace("|92|92","|92")
 					body=self.DECRYPT_START+pfad+self.DECRYPT_END
 					logger.info("Decrpyt-Body: "+body)
 					yield scrapy.Request(url=self.DECRYPT_PAGE_URL, method="POST", body=body, headers=self.HEADERS, callback=self.decrypt_path, errback=self.errback_httpbin, meta={"item":item})
