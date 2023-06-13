@@ -79,7 +79,7 @@ class SO_Omni(BasisSpider):
 			self.FORMDATA['dEntscheiddatum']=ab
 			self.FORMDATA['dEntscheiddatumBis']=datetime.date.today().strftime("%d.%m.%Y")
 			self.FORMDATA['bHasEntscheiddatumBis']="1"
-			self.request_gen = [self.get_next_request()]
+		self.request_gen = [self.get_next_request()]
 
 
 	def parse_trefferliste(self, response):
