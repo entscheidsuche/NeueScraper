@@ -124,7 +124,7 @@ class BasisSpider(scrapy.Spider):
 						signatur_e.set('Name', signatur)
 						# JSON-Eintrag weitermachen
 						if not gerichtssignatur in json_kanton['gerichte']:
-							logger.info("Gerichtsname abgleichen: "+json.dumps(signaturreihe))
+							logger.info("Gerichtsname "+gerichtssignatur+" abgleichen: "+json.dumps(signaturreihe))
 							gerichtsname_de=signaturreihe['Stufe 2 de']
 							gerichtsname_fr=signaturreihe['Stufe 2 fr']
 							gerichtsname_it=signaturreihe['Stufe 2 it']
@@ -148,7 +148,7 @@ class BasisSpider(scrapy.Spider):
 								signaturreihe['Stufe 2 it']=gerichtsname_it
 							json_gericht={'de': gerichtsname_de, 'fr': gerichtsname_fr, 'it': gerichtsname_it, 'kammern': {}}
 							json_kanton['gerichte'][gerichtssignatur]=json_gericht
-							logger.info("Gerichtsname abgeglichen: "+json.dumps(signaturreihe))
+							logger.info("Gerichtsname "+gerichtssignatur+" abgeglichen: "+json.dumps(signaturreihe))
 						else:
 							json_gericht=json_kanton['gerichte'][gerichtssignatur]
 						if not signatur in json_gericht:

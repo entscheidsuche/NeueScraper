@@ -50,7 +50,7 @@ class ZH_OG(BasisSpider):
 		""" Parses the current search result page, downloads documents and yields the request for the next search
 		result page
 		"""
-		logging.info("Rohergebnis "+str(len(response.body))+" Zeichen")
+		logging.debug("Rohergebnis "+str(len(response.body))+" Zeichen")
 		if response.status == 200 and len(response.body) > self.MINIMUM_PAGE_LEN:
 			# construct and download document links
 			anzahl=int(response.xpath("//div[@id='entscheideText']/strong/text()").get())

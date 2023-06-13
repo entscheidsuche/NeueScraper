@@ -63,7 +63,7 @@ class AG_Weitere(BasisSpider):
 						item['VGericht']=""
 					klammern=self.reMetaTable.search(meta)
 					if klammern:
-						item['Num']=klammern.group('K1')
+						item['Num']=klammern.group('K1')	
 						item['Titel']=klammern.group('Titel')
 					else:
 						item['Num']=""

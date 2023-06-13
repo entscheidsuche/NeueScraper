@@ -15,79 +15,62 @@ logger = logging.getLogger(__name__)
 class ZH_Steuerrekurs(BasisSpider):
 	name = 'ZH_Steuerrekurs'
 
-	URL='/site/themes/strg-theme/js/ruling-search.js'
-	TREFFER_PRO_SEITE=20
 	HOST='https://www.strgzh.ch'
-	SEARCH="https://{}-dsn.algolia.net/1/indexes/*/queries?x-algolia-agent=Algolia%20for%20vanilla%20JavaScript%20(lite)%203.32.0%3Binstantsearch.js%203.0.0%3BJS%20Helper%202.26.1&x-algolia-application-id={}&x-algolia-api-key={}"
-	BODY1='{"requests":[{"indexName":"collections_rulings_date_priority","params":"query=&hitsPerPage='+str(TREFFER_PRO_SEITE)+'&page='
-	BODY2='&restrictSearchableAttributes=%5B%5D&highlightPreTag=__ais-highlight__&highlightPostTag=__%2Fais-highlight__&facets=%5B%22ruling_date%22%5D&tagFilters=&numericFilters=%5B%22ruling_date%3E%3D'
-	BODY3='%22%2C%22ruling_date%3C%3D'
-	BODY4='.091%22%5D"},{"indexName":"collections_rulings_date_priority","params":"query=&hitsPerPage=1&page=0&restrictSearchableAttributes=%5B%5D&highlightPreTag=__ais-highlight__&highlightPostTag=__%2Fais-highlight__&attributesToRetrieve=%5B%5D&attributesToHighlight=%5B%5D&attributesToSnippet=%5B%5D&tagFilters=&analytics=false&clickAnalytics=false&facets=ruling_date"}]}'
-
-	PDF_HOST='https://www.strgzh.ch'
-	RE_ALIGOLIA=re.compile(r'algoliasearch\("(?P<URL>[^"]+)","(?P<APIKEY>[^"]+)"\)')
-	AB_DEFAULT='01.01.2009'
-	BIS='31.12.2030'
-	ab=None
-	url=None
-	apikey=None
+	SEARCH="/entscheide/datenbank/verfahrensnummersuche?subject=&year=&number=&submit=Suchen&page="
+	# Trefferzahl pro Seite, wie sie kommen
+	TREFFER_PRO_SEITE = 10	
+	
+	RE_meta=re.compile(r"^(?P<Num>[A-Z][^/,]+[0-9, +-]*)(?:,\s+(?P<Num2>[A-Z][^/,]+[0-9, +-]*))?(?:,\s+(?P<Num3>[A-Z][^/,]+[0-9, +-]*))?(?:,\s+(?P<Num4>[A-Z][^/,]+[0-9, +-]*))?\s+/\s+(?P<Datum>\d+\.\s+(?:"+"|".join(BasisSpider.MONATEde)+")\s+\d\d\d\d)$")
 	
 	def __init__(self, ab=None, neu=None):
 		self.neu=neu
 		self.ab=ab
 		super().__init__()
-		self.request_gen = [scrapy.Request(url=self.HOST+self.URL,callback=self.parse_first_request, errback=self.errback_httpbin)]
+		self.request_gen = [self.generate_request()]
 
-	def generate_request(self, page=0):
-		searchurl=self.SEARCH.format(self.url,self.url,self.apikey)
-		if self.ab:
-			ab=self.ab
-		else:
-			ab=self.AB_DEFAULT
-		body=(self.BODY1+str(page)+self.BODY2+datetime.datetime.strptime(ab,"%d.%m.%Y").strftime('%s')+self.BODY3+datetime.datetime.strptime(self.BIS,"%d.%m.%Y").strftime('%s')+self.BODY4)
-		logger.info("Body: "+body)
-		request= scrapy.Request(url=searchurl, method="POST", body=body.encode('UTF-8'), callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': page})
+	def generate_request(self, page=1):
+		request= scrapy.Request(url=self.HOST+self.SEARCH+str(page), callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': page})
 		return request
-
-	def parse_first_request(self, response):
-		logger.info("parse_first_request response.status "+str(response.status))
-		antwort=response.body_as_unicode()
-		logger.info("parse_first_request Rohergebnis "+str(len(antwort))+" Zeichen")
-		logger.info("parse_first_request Rohergebnis: "+antwort[:10000])
-		aligolia=self.RE_ALIGOLIA.search(antwort)
-		if aligolia:
-			self.url=aligolia.group('URL')
-			self.apikey=aligolia.group('APIKEY')
-			request=self.generate_request()
-			yield request
 
 	def parse_trefferliste(self, response):
 		logger.info("parse_trefferliste response.status "+str(response.status))
 		antwort=response.body_as_unicode()
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:10000])
-		daten=json.loads(antwort)
-		trefferzahl=daten['results'][0]['nbHits']
-		page=response.meta['page']+1		
-		logger.info(f"Trefferzahl {trefferzahl}, Seite {page}, Treffer pro Seite {self.TREFFER_PRO_SEITE}")
-		for entscheid in daten['results'][0]['hits']:
-			logger.info("Bearbeite Entscheid: "+json.dumps(entscheid))
+		trefferzahlstring=PH.NC(response.xpath("substring-before(//div[@class='box ruling']/p[contains(.,' Entscheide gefunden')]/text(),' Entscheide gefunden')").get(),error='Trefferzahl nicht gefunden.')
+		trefferzahl=int(trefferzahlstring)
+		page=response.meta['page']+1
+		entscheide=response.xpath("//div[@class='box ruling'][p[@class='cit-title']]")
+		logger.info(f"Trefferzahl {trefferzahl}, Seite {page}, Treffer pro Seite {self.TREFFER_PRO_SEITE}, Treffer diese Seite {len(entscheide)}")
+		for entscheid in entscheide:
+			text=entscheid.get()
+			logger.info("Bearbeite Entscheid: "+text)
 			item={}
-			item['Titel']=entscheid['title']
-			item['Leitsatz']=entscheid['summary']
-			item['Num']=entscheid['citation_display']
-			item['Num2']=entscheid['alt_citation_display']
-			item['Normen']=entscheid['legal_foundation']
-			item['Weiterzug']=entscheid['note']
-			item['DocID']=entscheid['objectID']
-			edatum=entscheid['ruling_date']
-			pdatum=entscheid['date']
-			item['EDatum']=datetime.datetime.fromtimestamp(int(edatum)).strftime("%Y-%m-%d")
-			item['PDatum']=datetime.datetime.fromtimestamp(int(pdatum)).strftime("%Y-%m-%d")
-			item['PDFUrls']=[self.PDF_HOST+entscheid['document_file']]
-			item['Signatur'], item['Gericht'], item['Kammer']=self.detect("","",item['Num'])
-			if self.check_blockliste(item):
-				yield item
+			meta=PH.NC(entscheid.xpath("./p[@class='cit-title']/text()").get(),error="kein cit-title in "+text)
+			metaexp=self.RE_meta.search(meta)
+			if metaexp:
+				item['EDatum']=PH.NC(self.norm_datum(metaexp.group('Datum')),error="kein Datum in: "+meta)
+				item['Num']=PH.NC(metaexp.group('Num'),error="keine Geschäftsnummer in: "+meta)
+				if metaexp.groupdict().get('Num2'):
+					item['Nums']=[item['Num']]
+					item['Nums'].append(PH.NC(metaexp.group('Num2'),error="doch keine 2. Geschäftsnummer in: "+meta))
+					if metaexp.groupdict().get('Num3'):
+						item['Nums'].append(PH.NC(metaexp.group('Num3'),error="doch keine 3. Geschäftsnummer in: "+meta))
+						if metaexp.groupdict().get('Num4'):
+							item['Nums'].append(PH.NC(metaexp.group('Num4'),error="doch keine 4. Geschäftsnummer in: "+meta))
+				
+				url=PH.NC(entscheid.xpath("./h2[@class='ruling__title']/a/@href").get(),error="keine PDF-URL in "+text)
+				item['PDFUrls']=[self.HOST+url]
+				item['Titel']=PH.NC(entscheid.xpath("./h2[@class='ruling__title']/a/text()").get(),error="kein Titel in "+text)
+				item['Normen']=PH.NC(entscheid.xpath("./p[@class='legal_foundation']/text()").get(),warning="keine Normenkette in "+text)
+				item['Leitsatz']=PH.NC(entscheid.xpath("./p[@class='legal_foundation']/following-sibling::p[not(@class)][1]/text()").get(), warning="kein Leitsatz")
+				item['Weiterzug']=PH.NC(entscheid.xpath("./p[@class='note']/text()").get(),warning="kein Rechtskraftvermerk in "+text)	
+				item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("","",item['Num'])
+			
+				if self.check_blockliste(item):
+					yield item
+			else:
+				logger.error("Metadaten matchen nicht: '"+meta+"'")
 		if page*self.TREFFER_PRO_SEITE < trefferzahl:
 			request=self.generate_request(page)
 			yield request

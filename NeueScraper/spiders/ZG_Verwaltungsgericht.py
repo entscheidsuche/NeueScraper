@@ -38,6 +38,7 @@ class ZG_Verwaltungsgericht(TribunaSpider):
 	
 	ENCRYPTED = True
 	ASCII_ENCRYPTED = True
+	# Versehentlich die Entschlüsselung bei Schwyz gemacht, funktioniert aber
 	DECRYPT_PAGE_URL = "https://gerichte.sz.ch/tribunavtplus/decrypt"
 	DECRYPT_START ='7|0|5|https://verwaltungsgericht.zg.ch/tribunavtplus/|27D15B82643FBEE798506E3AEC7D40C0|tribunavtplus.client.zugriff.DecryptService|encrypt|[B/3308590456|1|2|3|4|2|5|5|5|62'
 	DECRYPT_END = "|5|16|118|36|104|80|89|76|77|72|76|103|50|84|84|65|68|69|"
