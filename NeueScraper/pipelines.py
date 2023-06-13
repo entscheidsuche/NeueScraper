@@ -702,7 +702,7 @@ class PipelineHelper:
 		meta=[]
 		signatur=item['Signatur']
 		spider_entries=spider.gerichte[spider.name]
-			matches=[e for e in spider_entries if e['Signatur']==signatur]
+		metamatches=[e for e in spider_entries if e['Signatur']==signatur]
 		if len(metamatches)>1:
 			logger.error("Mehrere Einträge für Signatur "+signatur+": "+json.dumps(metamatches))
 		elif len(metamatches)==0:
