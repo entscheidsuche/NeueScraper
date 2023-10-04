@@ -7,6 +7,7 @@ import datetime
 from ..pipelines import PipelineHelper
 from NeueScraper.spiders.basis import BasisSpider
 from NeueScraper.pipelines import PipelineHelper
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -14,16 +15,10 @@ class ZurichSozversSpider(BasisSpider):
 	name = 'ZH_Sozialversicherungsgericht'
 	MINIMUM_PAGE_LEN = 148
 	MAX_PAGES = 10000
-	SEARCH_PAGE_URL='https://chid003d.ideso.ch/c050018/svg/findexweb.nsf/suche.xsp'
-	RESULT_PAGE_URL='https://chid003d.ideso.ch/c050018/svg/findexweb.nsf/suche.xsp?$$ajaxid=@none'
-	RESULT_PAGE_PAYLOAD='view%3A_id1%3Asuchbegriff=&view%3A_id1%3Aprozessnummer={Jahr}&view%3A_id1%3Adatumbereich=3&view%3A_id1%3Adatum=&view%3A_id1%3Arechtsgebiet=&%24%24viewid={viewid}&%24%24xspsubmitid=view%3A_id1%3A_id55&%24%24xspexecid=&%24%24xspsubmitvalue=&%24%24xspsubmitscroll=0%7C0&view%3A_id1=view%3A_id1'
-	NEXT_PAGE_URL='https://chid003d.ideso.ch/c050018/svg/findexweb.nsf/ergebnis.xsp?$$ajaxid=view:_id1:vipResultate_OUTER_TABLE'
-	NEXT_PAGE_PAYLOAD='%24%24viewid={viewid}&%24%24xspsubmitid=view%3A_id1%3AvipResultate%3Apager1__NextImage&%24%24xspexecid=view%3A_id1%3AvipResultate%3Apager1&%24%24xspsubmitvalue=&%24%24xspsubmitscroll=0%7C2134&view%3A_id1=view%3A_id1'
-	BASIS_URL='https://chid003d.ideso.ch'
-	reForward=re.compile('(?<=^window\.location\.href=\\")[^\\"]+(?=\\")')
-	reTreffer=re.compile('^[0-9]+')
-
-	AB_DEFAULT='1993'
+	SEARCH_PAGE_URL='https://api.findex.webgate.cloud/api/search/*'
+	PAYLOAD={"Rechtsgebiet":"","datum":"","operation":">","prozessnummer":""}
+	AB_DEFAULT=""
+	RESULT_PAGE_URL="https://findex.webgate.cloud/entscheide/"
 
 	HEADERS = { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:79.0) Gecko/20100101 Firefox/79.0',
 				'Accept': '*/*',
@@ -31,34 +26,11 @@ class ZurichSozversSpider(BasisSpider):
 				'Accept-Encoding': 'gzip, deflate, br',
 				'Content-Type': 'application/x-www-form-urlencoded',
 				'X-Requested-With': 'XMLHttpRequest',
-				'Origin': 'https://chid003d.ideso.ch',
+				'Origin': 'https://findex.webgate.cloud/',
 				'Connection': 'keep-alive',
-				'Referer': 'https://chid003d.ideso.ch/c050018/svg/findexweb.nsf/suche.xsp',
+				'Referer': 'https://findex.webgate.cloud/',
 				'Pragma': 'no-cache',
 				'Cache-Control': 'no-cache'}
-
-	NEXT_PAGE_HEADERS = { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:79.0) Gecko/20100101 Firefox/79.0',
-				'Accept': '*/*',
-				'Accept-Language': 'en-US,en;q=0.5',
-				'Accept-Encoding': 'gzip, deflate, br',
-				'Content-Type': 'application/x-www-form-urlencoded',
-				'X-Requested-With': 'XMLHttpRequest',
-				'Origin': 'https://chid003d.ideso.ch',
-				'Connection': 'keep-alive',
-				'Referer': 'https://chid003d.ideso.ch/c050018/svg/findexweb.nsf/ergebnis.xsp',
-				'Pragma': 'no-cache',
-				'Cache-Control': 'no-cache'}
-
-
-	def cookie_debug(self, request, response, name):
-		cookies= "Received: "
-		for c in response.headers.getlist('Set-Cookie'):
-			cookies = cookies+"\n"+c.decode()
-		cookies = cookies+"\nto be sent: "			
-		for c in request.headers.getlist('Cookie'):
-			cookies = cookies+"\n"+c.decode()
-		msg = "Sending cookies with request to: {}\n{}".format(request, cookies)
-		logging.info("Cookie Debug "+name+": "+name+", "+msg)
 
 
 	def request_generator(self):
@@ -67,11 +39,12 @@ class ZurichSozversSpider(BasisSpider):
 
 		# return [scrapy.Request(url=self.RESULT_PAGE_URL, method="POST", body= self.RESULT_PAGE_PAYLOAD.format(Jahr=self.START_JAHR), headers=self.HEADERS, callback=self.parse_trefferliste_unsortiert, errback=self.errback_httpbin)]
 		# Erst einmal den Basisrequest machen, um Cookie zu setzen
-		return [self.initial_request(int(self.ab))]
+		return [self.initial_request(self.ab)]
 
-	def initial_request(self, jahr):
-		logging.info("Generiere Initialrequest für Suchseite für Jahr "+str(jahr))
-		return scrapy.Request(url=self.SEARCH_PAGE_URL, callback=self.parse_searchform, errback=self.errback_httpbin, dont_filter=True, meta={"jahr":jahr})
+	def initial_request(self,ab=""):
+		logging.info("Generiere Request für Suchseite")
+		self.PAYLOAD['datum']=ab
+		return scrapy.Request(url=self.SEARCH_PAGE_URL, method="POST", body=json.dumps(self.PAYLOAD), headers=self.HEADERS, callback=self.parse_trefferliste, errback=self.errback_httpbin, dont_filter=True)
 
 	def __init__(self,ab=AB_DEFAULT, neu=None):
 		super().__init__()
@@ -79,122 +52,52 @@ class ZurichSozversSpider(BasisSpider):
 		self.neu = neu
 		self.request_gen = self.request_generator()
 
-	def parse_searchform(self, response):
-		logging.debug("parse_searchform response.status "+str(response.status))
-		logging.info("parse_searchform Rohergebnis "+str(len(response.body))+" Zeichen")
-		logging.info("parse_searchform Rohergebnis: "+response.body_as_unicode())
-		jahr=response.meta['jahr']
-		viewId=response.xpath("//input[@id='view:_id1__VUID']/@value").get()
-		logging.info("search_request für Jahr "+str(jahr)+" mit viewId "+viewId)
-		cookieJar = response.meta.setdefault('cookie_jar', CookieJar())
-		cookieJar.extract_cookies(response, response.request)
-		request = scrapy.Request(url=self.RESULT_PAGE_URL, method="POST", body= self.RESULT_PAGE_PAYLOAD.format(Jahr=jahr, viewid=viewId), headers=self.HEADERS, callback=self.parse_trefferliste_forward, errback=self.errback_httpbin, meta = {'cookie_jar': cookieJar, 'jahr':jahr})
-		cookieJar.add_cookie_header(request) # apply Set-Cookie ourselves
-		self.cookie_debug(request, response, "parse_searchform")
-		return request
-
-	def parse_trefferliste_forward(self, response):
-		logging.debug("parse_trefferliste_forward response.status "+str(response.status))
-		logging.info("parse_trefferliste_forward Rohergebnis "+str(len(response.body))+" Zeichen")
-		logging.debug("parse_trefferliste_forward Rohergebnis: "+response.body_as_unicode())
-		jahr=response.meta['jahr']
-		cookieJar = response.meta.setdefault('cookie_jar', CookieJar())
-		cookieJar.extract_cookies(response, response.request)
-		forward=response.xpath("//script/text()").get()
-		forwardUrl=self.reForward.search(forward).group(0)
-		logging.info("Forward-URL: "+forwardUrl)
-		request = scrapy.Request(url=forwardUrl, headers=self.HEADERS, dont_filter=True , callback=self.parse_trefferliste, errback=self.errback_httpbin, meta = {'cookie_jar': cookieJar, 'jahr':jahr, 'geholt':0})
-		cookieJar.add_cookie_header(request) # apply Set-Cookie ourselves
-		self.cookie_debug(request, response, "parse_trefferliste_forward")
-		yield(request) 
-
 	def parse_trefferliste(self, response):
 		logging.debug("parse_trefferliste response.status "+str(response.status))
-		logging.info("parse_trefferliste Rohergebnis "+str(len(response.body))+" Zeichen")
-		logging.debug("parse_trefferliste Rohergebnis: "+response.body_as_unicode())
-		jahr=response.meta['jahr']
-		#Bei der ersten Trefferseite steht die view_ID und die Trefferzahl im HTML, danach wird sie mit meta übergeben
-		geholt=response.meta['geholt']
-		if geholt==0:
-			viewId=response.xpath("//input[@id='view:_id1__VUID']/@value").get()
-			treffer=response.xpath("//span[@id='view:_id1:cfResults']/text()").get()
-			logging.info("Treffer: "+treffer)
-			trefferZahl=int(self.reTreffer.search(treffer).group(0))
-		else:
-			viewId=response.meta['viewId']
-			trefferZahl=response.meta['trefferZahl']
-		logging.info("View-ID: "+viewId)
-		
-		cookieJar = response.meta.setdefault('cookie_jar', CookieJar())
-		cookieJar.extract_cookies(response, response.request)
-		if trefferZahl >= 5000:
-			logging.error("Zu viele Treffer ("+str(trefferZahl)+"): Es fehlen vermutlich Dokumente")
-		if trefferZahl == 0:
-			logging.info("keine Treffer für Jahr "+str(jahr))
-		else:
-			logging.info(str(trefferZahl)+" Treffer für Jahr "+str(jahr))
-			entscheide=response.xpath("//tr[@role='row' and td[@class='xspColumnViewStart']]")
-			trefferAufSeite = len(entscheide)
-			logging.info("Treffer auf Trefferseite: "+str(trefferAufSeite)+", vorher schon geholt: "+str(geholt))
-
-			for entscheid in entscheide:
-				logging.info("Verarbeite Entscheid "+entscheid.extract())
-				attribute=entscheid.xpath(".//span[@class='xspTextViewColumn']/text()").getall()
-				if len(attribute)!=3:
-					logging.error("Falsche Anzahl Attribut: "+len(attribute)+" bei: "+entscheid.extract())
-				url=self.BASIS_URL+entscheid.xpath(".//a[@class='xspLink']/@href").get()
-				titel=entscheid.xpath(".//a[@class='xspLink']/text()").get()
-				vkammer=''
-				vgericht=''
-				num=attribute[0]
-				signatur, gericht, kammer=self.detect(vgericht, vkammer, num)
-				edatum=self.norm_datum(attribute[1])
-				item = {
-					'Kanton': self.kanton_kurz,
-					'Gericht' : gericht,
-					'EDatum': edatum,
-					'Titel': titel,
-					'Num': num,
-					'HTMLUrls': [url],
-					'PDFUrls': [],
-					'Signatur': signatur
-				}
-				request=scrapy.Request(url=url, callback=self.parse_page, errback=self.errback_httpbin, meta = {'item':item})
-				yield(request)
-					
-			geholt=geholt+trefferAufSeite
-			if geholt<trefferZahl:
-				logging.info("search_request für Treffer "+str(geholt)+"+ von "+str(trefferZahl)+" mit viewId "+viewId)
-				cookieJar = response.meta.setdefault('cookie_jar', CookieJar())
-				cookieJar.extract_cookies(response, response.request)
-				request = scrapy.Request(url=self.NEXT_PAGE_URL, method="POST", body= self.NEXT_PAGE_PAYLOAD.format(viewid=viewId), headers=self.NEXT_PAGE_HEADERS, callback=self.parse_trefferliste, dont_filter=True, errback=self.errback_httpbin, meta = {'cookie_jar': cookieJar, 'jahr':jahr, 'viewId': viewId, 'trefferZahl': trefferZahl, 'geholt': geholt})
-				logging.debug("URL: "+request.url)
-				logging.debug("body: "+request.body.decode())
-				cookieJar.add_cookie_header(request) # apply Set-Cookie ourselves
-				self.cookie_debug(request, response, "parse_trefferliste")
-				yield(request)
-				return
-			else:
-				logging.info(str(geholt)+" von "+str(trefferZahl)+" für Jahr "+str(jahr)+" wurden geholt.")	
-		aktJahr=datetime.datetime.now().year
-		if jahr<aktJahr:
-			jahr=jahr+1
-			logging.info("Weiter mit Jahr "+str(jahr))
-			request=self.initial_request(jahr)
-			self.cookie_debug(request, response, "neues Jahr "+str(jahr))
+		antwort=response.body_as_unicode()
+		logging.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
+		logging.debug("parse_trefferliste Rohergebnis: "+antwort[:20000])
+		struktur=json.loads(antwort)
+		trefferZahl=len(struktur)
+		logging.info(str(trefferZahl)+" Treffer")
+		for entscheid in struktur:
+			num=entscheid["prozessnummer"]
+			logging.info("Verarbeite Entscheid "+num)
+			edatum=self.norm_datum(entscheid["entscheiddatum"][:10])
+			titel=entscheid["betreff"]
+			rechtsgebiet=entscheid["rechtsgebiet"]
+			if entscheid["bge"]: titel+=" (BGE "+entscheid["bge"].strip()+")"
+			if entscheid["weiterzug"]: titel+=" ("+entscheid["weiterzug"].strip()+")"
+			url=self.RESULT_PAGE_URL+num+".html"
+			vkammer=''
+			vgericht=''
+			signatur, gericht, kammer=self.detect(vgericht, vkammer, num)
+			item = {
+				'Kanton': self.kanton_kurz,
+				'Gericht' : gericht,
+				'EDatum': edatum,
+				'Titel': titel,
+				'Num': num,
+				'HTMLUrls': [url],
+				'PDFUrls': [],
+				'Signatur': signatur
+			}
+			logger.info("Item gelesen: "+json.dumps(item))
+			request=scrapy.Request(url=item['HTMLUrls'][0], headers=self.HEADERS, callback=self.parse_document, errback=self.errback_httpbin, meta={'item': item})
 			if self.check_blockliste(item):
 				yield(request)
-		else:
-			logging.info("Beende Scrapen bei Jahr "+str(jahr))
+			else: logging.warning(num+" wurde geblockt (Blockliste).")
 
-	def parse_page(self, response):	
+	def parse_document(self, response):	
 		""" Parses the current search result page, downloads documents and yields the request for the next search
 		result page
 		"""
 		logging.debug("parse_page response.status "+str(response.status))
-		logging.info("parse_page Rohergebnis "+str(len(response.body))+" Zeichen")
-		logging.debug("parse_page Rohergebnis: "+response.body_as_unicode())
 		item=response.meta['item']
+		text=response.body_as_unicode()
+		logging.info("parse_page Rohergebnis "+str(len(text))+" Zeichen für "+item['Num'])
+		logging.info("parse_page Rohergebnis: "+text[:10000])
 
 		PipelineHelper.write_html(response.body_as_unicode(), item, self)
+		logging.info("yield "+item['Num'])
 		yield(item)								
