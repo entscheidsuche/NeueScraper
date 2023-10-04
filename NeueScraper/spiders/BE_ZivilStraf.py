@@ -8,6 +8,10 @@ logger = logging.getLogger(__name__)
 		
 class BE_ZivilStraf(TribunaSpider):
 	name = 'BE_ZivilStraf'
+	custom_settings = {
+		"CONCURRENT_REQUESTS_PER_DOMAIN": 1,
+		"DOWNLOAD_DELAY": 2
+	}
 	
 	RESULT_PAGE_URL = 'https://www.zsg-entscheide.apps.be.ch/tribunapublikation/tribunavtplus/loadTable'
 	# Hole immer nur ein Dokument um Probleme mit Deduplizierung und unterschiedlichen Reihenfolgen zu verringern
