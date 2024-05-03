@@ -9,7 +9,7 @@ import urllib3
 from urllib.parse import quote, unquote
 from NeueScraper.spiders.basis import BasisSpider
 from NeueScraper.pipelines import MyFilesPipeline
-from NeueScraper.pipelines import PipelineHelper
+from NeueScraper.pipelines import PipelineHelper as PH
 
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ class ZurichVerwgerSpider(BasisSpider):
 	HTML_URL='/justice/findinfo-pub/html/'
 	PAGE_URL='/justice/findinfo-pub/internet/SimpleSearch.action?showPage=&page='
 	ab=None
-	reMeta=re.compile(r'<b>Cour</b>:\s<acronym title=\"(?P<VKammer>[^\"]+)\">(?P<Kurz>[^<]+)</acronym>\s*<br>\s*<b>Date\s(?:décision</b>:\s(?:<span class="highlight">)?(?P<EDatum>[^<]+)(?:</span>)?(?:<br><b>Date\s)?)?(?:publication</b>:\s(?:<span class="highlight">)?(?P<PDatum>[^<]+)(?:</span>)?)?\s*<br>\s*(?:<b>N°\sdécision</b>:\s+(?P<Num>[^<]+)<br>\s*)?(?P<Rest>(?:.|\s)+)$')
+	reMeta=re.compile(r'<b>Cour</b>:\s<acronym title=\"(?P<VKammer>[^\"]+)\">(?P<Kurz>[^<]+)</acronym>\s*<br>\s*(?:<b>Date\s(?:décision</b>:\s(?:<span class="highlight">)?(?P<EDatum>[^<]+)(?:</span>)?(?:<br><b>Date\s)?)?(?:publication</b>:\s(?:<span class="highlight">)?(?P<PDatum>[^<]+)(?:</span>)?)?\s*<br>)?\s*(?:<b>N°\sdécision</b>:\s+(?P<Num>[^<]+)<br>\s*)?(?P<Rest>(?:.|\s)+)$')
 	#reMeta=re.compile(r'<b>Cour</b>:\s<acronym title=\"(?P<VKammer>[^\"]+)\">(?P<Kurz>[^<]+)</acronym><br>(?:<b>Date\s(?:décision</b>:\s(?P<EDatum>[^<]+)<br>(?:<b>Date\s)?)?(?:publication</b>:\s(?P<PDatum>[^<]+)<br>(?:<b>N°\sdécision</b>:\s+(?P<Num>[^<]+)<br>)?(?P<Rest>.+)$')
 	reURL=re.compile(r'/justice/findinfo-pub/internet/search/result.jsp\?path=(?P<URL>[^&]+)')
 
@@ -102,12 +102,13 @@ class ZurichVerwgerSpider(BasisSpider):
 			else:
 				item['VKammer']=metas.group("VKammer")
 				kurz=metas.group("Kurz")
-				pdatum_roh=metas.group("PDatum")
-				if pdatum_roh:
-					item['PDatum']=self.norm_datum(pdatum_roh)
-				edatum_roh=metas.group("EDatum")
-				if edatum_roh:
-					item['EDatum']=self.norm_datum(edatum_roh)
+				if metas.group("PDatum"):
+					pdatum_roh=metas.group("PDatum")
+					if pdatum_roh:
+						item['PDatum']=self.norm_datum(pdatum_roh)
+					edatum_roh=metas.group("EDatum")
+					if edatum_roh:
+						item['EDatum']=self.norm_datum(edatum_roh)
 				if metas.group("Num") and len(metas.group("Num"))>5:
 					item['Num']=metas.group("Num")
 				rest=metas.group("Rest")
@@ -138,9 +139,16 @@ class ZurichVerwgerSpider(BasisSpider):
 		result page
 		"""
 		logger.debug("parse_page response.status "+str(response.status))
-		logger.info("parse_page Rohergebnis "+str(len(response.body))+" Zeichen")
-		logger.debug("parse_page Rohergebnis: "+response.body_as_unicode()[:5000])
+		text=response.body_as_unicode()
+		logger.info("parse_page Rohergebnis "+str(len(text))+" Zeichen")
+		logger.debug("parse_page Rohergebnis: "+text[:5000])
 		item=response.meta['item']
+		#Falls in der Trefferliste kein Datum war, dann versuchen es aus dem Dokument zu lesen
+		if not "EDatum" in item:
+			edatum=response.xpath("..//span[starts-with(.,'Arrêt du')]/text()")
+			if edatum:
+				item['EDatum']=PH.NC(self.norm_datum(edatum.get()[0][8:]),warning="kein Datum im Dokumenttext gefunden bei "+item['Num']+": "+text[:5000])
+				self.norm_datum(edatum[0][8:])
 
-		PipelineHelper.write_html(response.body_as_unicode(), item, self)
+		PH.write_html(text, item, self)
 		yield(item)						
