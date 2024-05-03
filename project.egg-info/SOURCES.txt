@@ -40,6 +40,7 @@ NeueScraper/spiders/SG_Publikationen.py
 NeueScraper/spiders/SH_OG.py
 NeueScraper/spiders/SO_Omni.py
 NeueScraper/spiders/SZ_Gerichte.py
+NeueScraper/spiders/SZ_Verwaltungsgericht.py
 NeueScraper/spiders/TG_OG.py
 NeueScraper/spiders/TI_Gerichte.py
 NeueScraper/spiders/UR_Gerichte.py
