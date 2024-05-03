@@ -15,15 +15,18 @@ Dazu dann in den Requests für Suche mit und ohne Datum die Trefferzahl auf 1 se
 
 class TribunaSpider(BasisSpider):
 	MINIMUM_PAGE_LEN = 148
-	MAX_PAGES = 10000
+	MAX_PAGES = 20000
 	reVor=re.compile('//OK\\[[0-9,\\.]+\\[')
 	reAll=re.compile('(?<=,\\")[^\\"]*(?:\\\\\\"[^\\"]*)*(?=\\",)')
 	reID=re.compile('[0-9a-f]{32}|[0-9]{15,17}')
 	reDatum=re.compile('\d{4}-\d{2}-\d{2}')
 	reRG=re.compile('[^0-9\\.:-]{3}.{3,}')
 	reTreffer=re.compile('(?<=^//OK\\[)[0-9]+')
-	reDecrypt=re.compile('(?<=//OK\\[1,\\[")[0-9a-f]+')
+	reDecrypt=re.compile('(?<=//OK\[1,\[")[0-9a-f]+')
+	reDecrypt2=re.compile('(?<=//OK)([0-9,"a-z.A-Z/\[\]]+partURL\",\")(?P<p1>[^"]+_)(?P<p2>[^"_]+)","(?P<p3>dossiernummer)","(?P<p4>[^"]+)')
+
 	rePfad=re.compile(r'[A-Z]:(?:\\.+)+\.pdf')
+	rePfad2=re.compile(r'[0-9a-f]{160}')
 	page_nr=0
 	trefferzahl=0
 	ENCRYPTED=False
@@ -102,13 +105,6 @@ class TribunaSpider(BasisSpider):
 
 			korrektur=0
 			brauchbar=True
-			if self.reDatum.fullmatch(werte[len(werte)-1]):
-				publikationsdatum=werte[len(werte)-1]
-			elif self.reDatum.fullmatch(werte[len(werte)-2]):
-				publikationsdatum=werte[len(werte)-1]
-			else:
-				logger.warning("Type mismatch letzter und vorletzter Eintrag kein Publikationsdatum '"+werte[len(werte)-1]+"', '"+werte[len(werte)-2]+"'")
-				publikationsdatum=""
 			
 			if self.reID.fullmatch(werte[3]):
 				id_=werte[3]
@@ -139,8 +135,11 @@ class TribunaSpider(BasisSpider):
 			elif self.reNum.fullmatch(werte[5+korrektur+1]):
 				korrektur+=1
 				num=werte[5+korrektur]
+			elif self.reNum.fullmatch(werte[5+korrektur-1]):
+				korrektur-=1
+				num=werte[5+korrektur]
 			else:
-				logger.error("Type mismatch keine Geschäftsnummer '"+werte[5+korrektur]+"', '"+werte[5+korrektur+1]+"'")
+				logger.error("Type mismatch keine Geschäftsnummer '"+werte[5+korrektur-1]+"', '"+werte[5+korrektur]+"', '"+werte[5+korrektur+1]+"'")
 				brauchbar=False
 
 			if self.reDatum.fullmatch(werte[6+korrektur]):
@@ -158,6 +157,7 @@ class TribunaSpider(BasisSpider):
 					logger.warning("Type mismatch kein Leitsatz '"+leitsatz+"'")
 				leitsatz=""
 
+			neuePfadsyntax=False
 			if self.rePfad.fullmatch(werte[8+korrektur]):
 				pfad=werte[8+korrektur]
 			elif self.rePfad.fullmatch(werte[8+korrektur+1]):
@@ -169,9 +169,36 @@ class TribunaSpider(BasisSpider):
 			elif self.rePfad.fullmatch(werte[8+korrektur+3]):
 				korrektur+=3
 				pfad=werte[8+korrektur]
+			elif self.rePfad2.fullmatch(werte[8+korrektur]):
+				pfad=werte[8+korrektur]
+				neuePfadsyntax=True
+			elif self.rePfad2.fullmatch(werte[8+korrektur+1]):
+				korrektur+=1
+				pfad=werte[8+korrektur]
+				neuePfadsyntax=True
+			elif self.rePfad2.fullmatch(werte[8+korrektur+2]):
+				korrektur+=2
+				pfad=werte[8+korrektur]
+				neuePfadsyntax=True
+			elif self.rePfad2.fullmatch(werte[8+korrektur+3]):
+				korrektur+=3
+				pfad=werte[8+korrektur]
+				neuePfadsyntax=True
 			else:
 				logger.error("Type mismatch kein Pfad '"+werte[8+korrektur]+"', '"+werte[8+korrektur+1]+"', '"+werte[8+korrektur+2]+"'")	
 				brauchbar=False
+
+			l=len(werte)
+			if neuePfadsyntax==True and l>22:
+				l=l-8
+			if self.reDatum.fullmatch(werte[l-1]):
+				publikationsdatum=werte[l-1]
+			elif self.reDatum.fullmatch(werte[l-2]):
+				publikationsdatum=werte[l-2]
+			else:
+				logger.warning("Type mismatch letzter und vorletzter Eintrag kein Publikationsdatum '"+werte[len(werte)-1]+"', '"+werte[len(werte)-2]+"'")
+				publikationsdatum=""
+
 
 			if len(werte)>10+korrektur and self.reRG.fullmatch(werte[9+korrektur]):
 				rechtsgebiet=werte[9+korrektur]
@@ -212,13 +239,15 @@ class TribunaSpider(BasisSpider):
 				
 				logger.info("Pfad: "+pfad)
 				if self.ENCRYPTED:
-					if self.ASCII_ENCRYPTED:
+					if neuePfadsyntax:
+						pfad=numstr+"_"+pfad+"|dossiernummer|"+numstr
+					elif self.ASCII_ENCRYPTED:
 						ascii_pfad=''
 						for c in pfad:
 							ascii_pfad += '|'+str(ord(c))
 						pfad=ascii_pfad.replace("|92|92","|92")
 					body=self.DECRYPT_START+pfad+self.DECRYPT_END
-					logger.info("Decrpyt-Body: "+body)
+					logger.info("Decrypt-Body: "+body)
 					yield scrapy.Request(url=self.DECRYPT_PAGE_URL, method="POST", body=body, headers=self.HEADERS, callback=self.decrypt_path, errback=self.errback_httpbin, meta={"item":item})
 				else:
 					href = self.PDF_PATTERN.format(self.DOWNLOAD_URL, numstr, id_,self.PDF_PATH, id_, numstr)
@@ -247,7 +276,15 @@ class TribunaSpider(BasisSpider):
 				item['PDFUrls']=[href]
 				yield item
 			else:
-				logger.error("Gecrypteter Pfad konnte nicht geparst werden.")
+				code=self.reDecrypt2.search(response.body_as_unicode())
+				if code:
+					href=self.PDF_PATTERN.format(self.DOWNLOAD_URL,code.group("p1")+code.group("p2"),code.group("p2"),code.group("p4"))
+					logger.info("V2 PDF-URL: "+href)
+					item['PDFUrls']=[href]
+					yield item
+					
+				else:
+					logger.error("Gecrypteter Pfad konnte nicht geparst werden.")
 		else:
 			logger.error("Keine Antwort für gecrypteten Pfad")
 
