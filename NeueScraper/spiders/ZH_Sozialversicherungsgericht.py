@@ -97,7 +97,12 @@ class ZurichSozversSpider(BasisSpider):
 		text=response.body_as_unicode()
 		logging.info("parse_page Rohergebnis "+str(len(text))+" Zeichen für "+item['Num'])
 		logging.info("parse_page Rohergebnis: "+text[:10000])
-
-		PipelineHelper.write_html(response.body_as_unicode(), item, self)
+		html=response.xpath("//div[@class='cell small-12 contentContainer printArea']")
+		if html:
+			logging.info("HTML Fragement erfolgreich geparst")
+			PipelineHelper.write_html(html.get(), item, self)
+		else:
+			logging.info("HTML Fragement nicht erfolgreich geparst, nehme das Ganze")
+			PipelineHelper.write_html(text, item, self)
 		logging.info("yield "+item['Num'])
 		yield(item)								
