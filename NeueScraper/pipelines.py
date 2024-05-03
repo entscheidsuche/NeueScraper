@@ -139,7 +139,7 @@ class MyWriterPipeline:
 		MyFilesPipeline.common_store.persist_file(pfad_index, BytesIO(json_index.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
 		# Nachdem die Pipeline durchgelaufen ist, den Index-Request synchron machen
 		try:
-			antwort=requests.post("http://entscheidsuche.pansoft.de:8000", data=json_jobs, headers= {'Content-Type': 'application/json'}, timeout=3600)
+			antwort=requests.post("https://entscheidsuche.pansoft.de", data=json_jobs, headers= {'Content-Type': 'application/json'}, timeout=3600, verify=False)
 			logger.info("Indexierungsrequest mit Antwort: "+str(antwort.status_code))
 			if antwort.status_code >=300:
 				logger.error("Indexierungsfehler: "+antwort.text)
@@ -498,7 +498,6 @@ class PipelineHelper:
 	reMETA=re.compile("<meta",re.IGNORECASE)
 	reUTF=re.compile('charset="utf-8"',re.IGNORECASE)
 
-
 	@classmethod
 	def write_html(self,html_content, item, spider):
 		lang=max(self.REGS, key=lambda key: len(self.REGS[key].findall(html_content)))
@@ -540,6 +539,7 @@ class PipelineHelper:
 
 	@staticmethod
 	def checkfile(spider, path, buf, checksum,LogFlag):
+		scrapedate = datetime.datetime.now().strftime("%Y-%m-%d")
 		buf.seek(0)
 		if path[-4:]=='.pdf':
 			ende = buf.getvalue()[-10:]
@@ -563,8 +563,16 @@ class PipelineHelper:
 					if 'status' in oldfile and 'checksum' in oldfile:
 						altstatus=oldfile['status']
 						altchecksum=oldfile['checksum']
-						altlast_change=oldfile['last_change'] if 'last_change' in oldfile else None
+						if 'last_change' in oldfile:
+							altlast_change=oldfile['last_change']
+						else:
+							altlast_change=None
 						if altchecksum==checksum:
+							# Alle alten Scrapingdaten werden auf 1.1.2023 gesetzt
+							if 'scrapedate' in oldfile:
+								scrapedate=oldfile['scrapedate']
+							else:
+								scrapedate='2023-01-01'
 							if altstatus == "nicht_mehr_da":
 								neustatus="identisch_wieder_da"
 							else:
@@ -577,9 +585,9 @@ class PipelineHelper:
 							else:
 								neustatus="update"
 			if last_change:
-				spider.files_written[path]={'checksum': checksum, "status": neustatus, "last_change": last_change}
+				spider.files_written[path]={'checksum': checksum, "status": neustatus, "last_change": last_change, "scrapedate": scrapedate}
 			else:
-				spider.files_written[path]={'checksum': checksum, "status": neustatus}
+				spider.files_written[path]={'checksum': checksum, "status": neustatus, "scrapedate": scrapedate}
 		return existiert_bereits
 
 	@staticmethod
@@ -679,10 +687,37 @@ class PipelineHelper:
 			eintrag['Datum']=spider.ERSATZDATUM
 		if len(eintrag['Datum'])==4:
 			eintrag['Datum']+="-01-01"
-		if 'PDFFiles' in item and item['PDFFiles']:
-			eintrag['PDF']={'Datei': item['PDFFiles'][0]['path'], 'URL': item['PDFFiles'][0]['url'], 'Checksum': item['PDFFiles'][0]['checksum']}
+
+		scrapedate = datetime.datetime.now().strftime("%Y-%m-%d")	
 		if 'HTMLFiles' in item and item['HTMLFiles']:
+			#Gibt es bereits einen Eintrag für die Datei in der Jobs-Liste?
+			if spider.previous_run:
+				path=item['HTMLFiles'][0]['path']
+				if path in spider.previous_run['dateien']:
+					oldfile=spider.previous_run['dateien'][path]
+					if 'checksum' in oldfile:
+						if item['HTMLFiles'][0]['checksum']==oldfile['checksum']:
+							# Alle alten Scrapingdaten werden auf 1.1.2023 gesetzt
+							if 'scrapedate' in oldfile:
+								scrapedate=oldfile['scrapedate']
+							else:
+								scrapedate='2023-01-01'
 			eintrag['HTML']={'Datei': item['HTMLFiles'][0]['path'], 'URL': item['HTMLFiles'][0]['url'], 'Checksum': item['HTMLFiles'][0]['checksum']}
+		if 'PDFFiles' in item and item['PDFFiles']:
+			#Gibt es bereits einen Eintrag für die Datei in der Jobs-Liste?
+			if spider.previous_run:
+				path=item['PDFFiles'][0]['path']
+				if path in spider.previous_run['dateien']:
+					oldfile=spider.previous_run['dateien'][path]
+					if 'checksum' in oldfile:
+						if item['PDFFiles'][0]['checksum']==oldfile['checksum']:
+							# Alle alten Scrapingdaten werden auf 1.1.2023 gesetzt
+							if 'scrapedate' in oldfile:
+								scrapedate=oldfile['scrapedate']
+							else:
+								scrapedate='2023-01-01'
+				eintrag['PDF']={'Datei': item['PDFFiles'][0]['path'], 'URL': item['PDFFiles'][0]['url'], 'Checksum': item['PDFFiles'][0]['checksum']}
+		eintrag['Scrapedate']=scrapedate
 		if 'Nums' in item:
 			eintrag['Num']=item['Nums']+zweitnum		
 		elif 'Num3' in item:
