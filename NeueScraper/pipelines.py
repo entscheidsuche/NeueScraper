@@ -79,6 +79,26 @@ class MyWriterPipeline:
 		gesamt={'gesamt':0}
 		to_index={}
 		for f in spider.files_written:
+			# Konsistenz überprüfen, damit einzelne .json ohne .html oder .pdf files nicht übrig bleiben
+			if f[-5:]=='.json':
+				pdf_file=f[:-5]+".pdf"
+				html_file=f[:-5]+".html"
+				if not (pdf_file in spider.files_written or html_file in spider.files_written):
+					#PDF und HTML fehlen und waren noch nie da:
+					logger.error("Zu "+f+" fehlen HTML und PDF und waren noch nie da.")
+					del spider.files_written[f]
+#				elif pdf_file in spider.files_written and 'quelle' in spider.files_written[pdf_file]:
+#					# Datei war schon mal da, fehlt aber jetzt oder ist beschädigt
+#					logger.error("Zu "+f+" fehlen HTML und PDF, PDF war aber schon mal da.")
+#					# so tun, als ob das Dokument nicht mehr gefunden worden wäre
+#					spider.files_written[f]['quelle']=spider.files_written[pdf_file]['quelle']
+#				elif html_file in spider.files_written and 'quelle' in spider.files.written[html_file]:
+#					# Datei war schon mal da, fehlt aber jetzt oder ist beschädigt
+#					logger.error("Zu "+f+" fehlen HTML und PDF, HTML war aber schon mal da.")
+#					# so tun, als ob das Dokument nicht mehr gefunden worden wäre
+#					spider.files_written[f]['quelle']=spider.files_written[html_file]['quelle']
+
+		for f in spider.files_written:
 			# neu nicht mehr vorhandene Inhalte markieren
 			if job_typ=="komplett" and 'quelle' in spider.files_written[f] and not spider.files_written[f]['status']=="nicht_mehr_da":
 				spider.files_written[f]['status']='nicht_mehr_da'
@@ -197,7 +217,19 @@ class MyWriterPipeline:
 							logger.error("Dokument "+pdfpfad+" noch nicht eingetragen, joinen daher nicht möglich.")
 							raise DropItem(f"PDF hat Pfad {pdfpfad} statt {pfad} und Dateien können nicht zusammengeführt werden für {item['Num']}")
 			if not(pdf_da) and not('HTMLFiles' in item and item['HTMLFiles']):
-				logger.warning("weder PDF noch HTML geholt ("+item['Num']+")")
+				logger.error("weder PDF noch HTML geholt ("+item['Num']+")")
+				# Bei doppelten Dateien muss ich alle entfernen
+				json_file_key=pfad+".json"
+				if json_file_key in spider.files_written and not 'quelle' in spider.files_written[json_file_key]:
+					if (pfad+".pdf" in spider.files_written and not 'quelle' in spider.files_written[pfad+".pdf"]) or (pfad+".html" in spider.files_written and not 'quelle' in spider.files_written[pfad+".html"]):
+						logger.warning("zu einem defekten oder nicht vorhandenem pdf gibt es bereits ein .json mit korrektem .pdf oder .html. Daher bleib das json "+json_file_key)
+					else:
+						logger.warning("bereits geschriebenes json wegen fehlendem/kaputten PDF/HTML entfernt: "+item['Num']+", "+json_file_key+")")
+						del spider.files_written[json_file_key];
+				else:
+					logger.warning("noch nicht bereits geschriebenes json bei fehlendem/kaputten PDF/HTML entfernt: "+item['Num']+", "+json_file_key+")")
+					
+				
 				# Sollen wir Urteile ohne Text auch nehmen?
 				raise DropItem(f"Missing File for {item['Num']}")
 			else:

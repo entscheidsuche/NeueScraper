@@ -26,7 +26,7 @@ class TribunaSpider(BasisSpider):
 	reDecrypt2=re.compile('(?<=//OK)([0-9,"a-z.A-Z/\[\]]+partURL\",\")(?P<p1>[^"]+_)(?P<p2>[^"_]+)","(?P<p3>dossiernummer)","(?P<p4>[^"]+)')
 
 	rePfad=re.compile(r'[A-Z]:(?:\\.+)+\.pdf')
-	rePfad2=re.compile(r'[0-9a-f]{160}')
+	rePfad2=re.compile(r'[0-9a-f]{128,192}')
 	page_nr=0
 	trefferzahl=0
 	ENCRYPTED=False
@@ -84,6 +84,7 @@ class TribunaSpider(BasisSpider):
 		""" Parses the current search result page, downloads documents and yields the request for the next search
 		result page
 		"""
+		logger.info("Anfrage war: "+response.request.body.decode('utf-8'))
 		logger.info("Rohergebnis: "+response.body_as_unicode())
 		if response.status == 200 and len(response.body) > self.MINIMUM_PAGE_LEN:
 			# construct and download document links
