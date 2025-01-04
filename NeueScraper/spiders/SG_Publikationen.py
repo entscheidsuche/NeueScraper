@@ -51,7 +51,7 @@ class SG_Publikationen(BasisSpider):
 			logger.info("Hole nun Seite: "+str(seite+1))
 			yield self.get_next_request(seite+1)
 		else:
-			logger.info("Nur "+anzahl+" Treffer auf der Seite, daher Ende bei Seite "+seite)
+			logger.info("Nur "+str(anzahl)+" Treffer auf der Seite, daher Ende bei Seite "+seite)
 		
 			
 	def parse_document(self, response):

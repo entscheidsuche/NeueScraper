@@ -21,7 +21,7 @@ class CH_BGE(BasisSpider):
 	
 	SPRACHEN={"de": "D","fr": "F","it": "I"}
 	
-	reMeta=re.compile(r"^\d+\.\s+(?P<formal>.+(?:Urteil der|arrêt (?:de la|du)) (?P<VKammer>.+) (?:i\.S\.|dans la cause) [^_]+ (?P<Num2>\d+[A-F]?_\d+/(?:19|20)\d\d) (?:[^_]+ )?(?:vom|du)\s+(?P<Datum>\d\d?\.?(?:er)?\s*(?:"+"|".join(BasisSpider.MONATEde+BasisSpider.MONATEfr)+r")\s+(?:19|20)\d\d))$")
+	reMeta=re.compile(r"^\d+\.\s+(?P<formal>.+(?:Urteil der|arrêt (?:de la|du)) (?P<VKammer>.+) (?:i\.S\.|dans la cause) [^_]+ (?P<Num2>\d+[A-F]?(?:_|\.)\d+/(?:19|20)\d\d) (?:[^_]+ )?(?:vom|du)\s+(?P<Datum>\d\d?\.?(?:er)?\s*(?:"+"|".join(BasisSpider.MONATEde+BasisSpider.MONATEfr)+r")\s+(?:19|20)\d\d))$")
 	reMetaOhneGN=re.compile(r"^\d+\.\s+(?P<formal>.+(?:Urteil der|arrêt (?:de la|du)) (?P<VKammer>.+) (?:i\.S\.|dans la cause) [^_]+ (?:vom|du)\s+(?P<Datum>\d\d?\.?(?:er)?\s*(?:"+"|".join(BasisSpider.MONATEde+BasisSpider.MONATEfr)+r")\s+(?:19|20)\d\d))$")
 	reMetaSimple=re.compile(r"^\d+\s?\.\s+(?P<Rest>.+)$")
 	reRemoveDivs=re.compile(r"(</(div|span|a|artref)>)|(<(div|span|a|artref)[^>]+>)|(?:^<br>)|(?:<br>(?:(?=<br>)|$))")
@@ -93,12 +93,12 @@ class CH_BGE(BasisSpider):
 							item['EDatum']=self.norm_datum(str(jahr))
 					else:
 						logger.warning("Eintrags-Geschäftsnummer nicht parsbar "+ item['Num']+": "+meta+"\nin: "+text)
-						item['EDatum']=self.norm_datum(meta_parse.group('Datum'))
-						item['VKammer']=meta_parse.group('VKammer')					
+						item['EDatum']=self.norm_datum(meta_ohneGN.group('Datum'))
+						item['VKammer']=meta_ohneGN.group('VKammer')					
 				else:
 					item['EDatum']=self.norm_datum(meta_parse.group('Datum'))
 					item['VKammer']=meta_parse.group('VKammer')
-					item['Num2']=meta_parse.group('Num2')
+					item['Num2']=meta_parse.group('Num2').replace(".","_")
 						
 				subrequestliste=[]
 				for sprache in self.SPRACHEN:

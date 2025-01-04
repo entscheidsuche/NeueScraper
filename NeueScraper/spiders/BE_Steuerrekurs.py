@@ -29,4 +29,3 @@ class BE_Steuerrekurs(TribunaSpider):
 	DECRYPT_PAGE_URL = "https://www.strk-entscheide.apps.be.ch/tribunapublikation/tribunavtplus/loadTable"
 	DECRYPT_START ='7|0|11|https://www.strk-entscheide.apps.be.ch/tribunapublikation/tribunavtplus/|CAC80118FB77794F1FDFC1B51371CC63|tribunavtplus.client.zugriff.LoadTableService|urlEncodingTribuna|java.util.Map|java.util.HashMap/1797211028|java.lang.String/2004016611|partURL|'
 	DECRYPT_END = "|1|2|3|4|1|5|6|2|7|8|7|9|7|10|7|11|"
-

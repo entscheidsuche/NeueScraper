@@ -50,6 +50,8 @@ class VD_Omni(BasisSpider):
 		"nSeite": "1",
 	}
 	
+	custom_setting = { 'DOWNLOAD_DELAY': 1.0}
+	
 	HERKUNFT=["!","CCST","CDAP","JI","TA","CE","TC","TN"]
 	
 	reTreffer=re.compile(r"résultats:\s<b>\d+(?:\s-\s\d+)?</b>\sde\s(?P<Treffer>\d+)\sfiche\(s\)\strouvée\(s\)")

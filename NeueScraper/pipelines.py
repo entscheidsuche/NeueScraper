@@ -78,6 +78,7 @@ class MyWriterPipeline:
 
 		gesamt={'gesamt':0}
 		to_index={}
+		toBeDeleted=[]
 		for f in spider.files_written:
 			# Konsistenz überprüfen, damit einzelne .json ohne .html oder .pdf files nicht übrig bleiben
 			if f[-5:]=='.json':
@@ -86,7 +87,7 @@ class MyWriterPipeline:
 				if not (pdf_file in spider.files_written or html_file in spider.files_written):
 					#PDF und HTML fehlen und waren noch nie da:
 					logger.error("Zu "+f+" fehlen HTML und PDF und waren noch nie da.")
-					del spider.files_written[f]
+					toBeDeleted.append(f)
 #				elif pdf_file in spider.files_written and 'quelle' in spider.files_written[pdf_file]:
 #					# Datei war schon mal da, fehlt aber jetzt oder ist beschädigt
 #					logger.error("Zu "+f+" fehlen HTML und PDF, PDF war aber schon mal da.")
@@ -97,6 +98,8 @@ class MyWriterPipeline:
 #					logger.error("Zu "+f+" fehlen HTML und PDF, HTML war aber schon mal da.")
 #					# so tun, als ob das Dokument nicht mehr gefunden worden wäre
 #					spider.files_written[f]['quelle']=spider.files_written[html_file]['quelle']
+		for f in toBeDeleted:
+			del spider.files_written[f]
 
 		for f in spider.files_written:
 			# neu nicht mehr vorhandene Inhalte markieren
@@ -160,6 +163,7 @@ class MyWriterPipeline:
 		# Nachdem die Pipeline durchgelaufen ist, den Index-Request synchron machen
 		try:
 			antwort=requests.post("https://entscheidsuche.pansoft.de", data=json_jobs, headers= {'Content-Type': 'application/json'}, timeout=3600, verify=False)
+			# logger.info("Indexierungsrequest mit Daten: "+json.dumps(json_jobs))
 			logger.info("Indexierungsrequest mit Antwort: "+str(antwort.status_code))
 			if antwort.status_code >=300:
 				logger.error("Indexierungsfehler: "+antwort.text)

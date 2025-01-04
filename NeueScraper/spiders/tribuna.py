@@ -88,175 +88,178 @@ class TribunaSpider(BasisSpider):
 		logger.info("Rohergebnis: "+response.body_as_unicode())
 		if response.status == 200 and len(response.body) > self.MINIMUM_PAGE_LEN:
 			# construct and download document links
+
 			if self.page_nr==1:
 				treffer=self.reTreffer.search(response.body_as_unicode())
 				if treffer:
 					logger.info("Trefferzahl: "+treffer.group())
 					self.trefferzahl=int(treffer.group())
 			
-			content = self.reVor.sub('',response.body_as_unicode())
+			if self.trefferzahl>0:
+				content = self.reVor.sub('',response.body_as_unicode())
 			
-			logger.info("Ergebnisseite: "+content)
+				logger.info("Ergebnisseite: "+content)
 
-			werte=self.reAll.findall(content)
-			i=0
-			for wert in werte:
-				logger.info("Wert " +str(i)+": "+ wert)
-				i=i+1
+				werte=self.reAll.findall(content)
+				i=0
+				for wert in werte:
+					logger.info("Wert " +str(i)+": "+ wert)
+					i=i+1
 
-			korrektur=0
-			brauchbar=True
+				korrektur=0
+				brauchbar=True
 			
-			if self.reID.fullmatch(werte[3]):
-				id_=werte[3]
-			elif self.reID.fullmatch(werte[4]):
-				id_=werte[4]
-				korrektur=1
-			elif self.reID.fullmatch(werte[5]):
-				id_=werte[5]
-				korrektur=2
-			else:
-				logger.error("Type mismatch keine ID '"+werte[3]+"', '"+werte[3+1]+"', '"+werte[3+2]+"'")	
-				brauchbar=False
-
-			vkammer=""
-			if korrektur>0:
-				if len(werte[3])>8:
-					vkammer=werte[3]
+				if self.reID.fullmatch(werte[3]):
+					id_=werte[3]
+				elif self.reID.fullmatch(werte[4]):
+					id_=werte[4]
+					korrektur=1
+				elif self.reID.fullmatch(werte[5]):
+					id_=werte[5]
+					korrektur=2
 				else:
-					logger.warning("Type mismatch keine Kammer '"+werte[3]+"'")
+					logger.error("Type mismatch keine ID '"+werte[3]+"', '"+werte[3+1]+"', '"+werte[3+2]+"'")	
+					brauchbar=False
+
+				vkammer=""
+				if korrektur>0:
+					if len(werte[3])>8:
+						vkammer=werte[3]
+					else:
+						logger.warning("Type mismatch keine Kammer '"+werte[3]+"'")
 			
-			titel=werte[4+korrektur].replace("\\x27","'")
-			if len(titel)<8:
-				logger.warning("Type mismatch kein Titel '"+titel+"'")
-				titel=""
+				titel=werte[4+korrektur].replace("\\x27","'")
+				if len(titel)<8:
+					logger.warning("Type mismatch kein Titel '"+titel+"'")
+					titel=""
 				 
-			if self.reNum.fullmatch(werte[5+korrektur]):
-				num=werte[5+korrektur]
-			elif self.reNum.fullmatch(werte[5+korrektur+1]):
-				korrektur+=1
-				num=werte[5+korrektur]
-			elif self.reNum.fullmatch(werte[5+korrektur-1]):
-				korrektur-=1
-				num=werte[5+korrektur]
-			else:
-				logger.error("Type mismatch keine Geschäftsnummer '"+werte[5+korrektur-1]+"', '"+werte[5+korrektur]+"', '"+werte[5+korrektur+1]+"'")
-				brauchbar=False
+				if self.reNum.fullmatch(werte[5+korrektur]):
+					num=werte[5+korrektur]
+				elif self.reNum.fullmatch(werte[5+korrektur+1]):
+					korrektur+=1
+					num=werte[5+korrektur]
+				elif self.reNum.fullmatch(werte[5+korrektur-1]):
+					korrektur-=1
+					num=werte[5+korrektur]
+				else:
+					logger.error("Type mismatch keine Geschäftsnummer '"+werte[5+korrektur-1]+"', '"+werte[5+korrektur]+"', '"+werte[5+korrektur+1]+"'")
+					brauchbar=False
 
-			if self.reDatum.fullmatch(werte[6+korrektur]):
-				entscheiddatum=werte[6+korrektur]
-			elif self.reDatum.fullmatch(werte[6+korrektur+1]):
-				korrektur+=1
-				entscheiddatum=werte[6+korrektur]
-			else:
-				logger.error("Type mismatch kein Entscheiddatum '"+werte[6+korrektur]+"', '"+werte[6+korrektur+1]+"'")
-				brauchbar=False
+				if self.reDatum.fullmatch(werte[6+korrektur]):
+					entscheiddatum=werte[6+korrektur]
+				elif self.reDatum.fullmatch(werte[6+korrektur+1]):
+					korrektur+=1
+					entscheiddatum=werte[6+korrektur]
+				else:
+					logger.error("Type mismatch kein Entscheiddatum '"+werte[6+korrektur]+"', '"+werte[6+korrektur+1]+"'")
+					brauchbar=False
 			
-			leitsatz=werte[7+korrektur].replace("\\x27","'")
-			if len(leitsatz)<11:
-				if leitsatz != '-':
-					logger.warning("Type mismatch kein Leitsatz '"+leitsatz+"'")
-				leitsatz=""
+				leitsatz=werte[7+korrektur].replace("\\x27","'")
+				if len(leitsatz)<11:
+					if leitsatz != '-':
+						logger.warning("Type mismatch kein Leitsatz '"+leitsatz+"'")
+					leitsatz=""
 
-			neuePfadsyntax=False
-			if self.rePfad.fullmatch(werte[8+korrektur]):
-				pfad=werte[8+korrektur]
-			elif self.rePfad.fullmatch(werte[8+korrektur+1]):
-				korrektur+=1
-				pfad=werte[8+korrektur]
-			elif self.rePfad.fullmatch(werte[8+korrektur+2]):
-				korrektur+=2
-				pfad=werte[8+korrektur]
-			elif self.rePfad.fullmatch(werte[8+korrektur+3]):
-				korrektur+=3
-				pfad=werte[8+korrektur]
-			elif self.rePfad2.fullmatch(werte[8+korrektur]):
-				pfad=werte[8+korrektur]
-				neuePfadsyntax=True
-			elif self.rePfad2.fullmatch(werte[8+korrektur+1]):
-				korrektur+=1
-				pfad=werte[8+korrektur]
-				neuePfadsyntax=True
-			elif self.rePfad2.fullmatch(werte[8+korrektur+2]):
-				korrektur+=2
-				pfad=werte[8+korrektur]
-				neuePfadsyntax=True
-			elif self.rePfad2.fullmatch(werte[8+korrektur+3]):
-				korrektur+=3
-				pfad=werte[8+korrektur]
-				neuePfadsyntax=True
-			else:
-				logger.error("Type mismatch kein Pfad '"+werte[8+korrektur]+"', '"+werte[8+korrektur+1]+"', '"+werte[8+korrektur+2]+"'")	
-				brauchbar=False
-
-			l=len(werte)
-			if neuePfadsyntax==True and l>22:
-				l=l-8
-			if self.reDatum.fullmatch(werte[l-1]):
-				publikationsdatum=werte[l-1]
-			elif self.reDatum.fullmatch(werte[l-2]):
-				publikationsdatum=werte[l-2]
-			else:
-				logger.warning("Type mismatch letzter und vorletzter Eintrag kein Publikationsdatum '"+werte[len(werte)-1]+"', '"+werte[len(werte)-2]+"'")
-				publikationsdatum=""
-
-
-			if len(werte)>10+korrektur and self.reRG.fullmatch(werte[9+korrektur]):
-				rechtsgebiet=werte[9+korrektur]
-			elif len(werte)>11+korrektur and self.reRG.fullmatch(werte[10+korrektur]):
-				rechtsgebiet=werte[10+korrektur]
-			else:
-				rechtsgebiet=""
-				if len(werte)>10+korrektur:
-					logger.warning("Type mismatch kein Rechtsgebiet '"+werte[9+korrektur]+"', '"+werte[10+korrektur]+"'")
+				neuePfadsyntax=False
+				if self.rePfad.fullmatch(werte[8+korrektur]):
+					pfad=werte[8+korrektur]
+				elif self.rePfad.fullmatch(werte[8+korrektur+1]):
+					korrektur+=1
+					pfad=werte[8+korrektur]
+				elif self.rePfad.fullmatch(werte[8+korrektur+2]):
+					korrektur+=2
+					pfad=werte[8+korrektur]
+				elif self.rePfad.fullmatch(werte[8+korrektur+3]):
+					korrektur+=3
+					pfad=werte[8+korrektur]
+				elif self.rePfad2.fullmatch(werte[8+korrektur]):
+					pfad=werte[8+korrektur]
+					neuePfadsyntax=True
+				elif self.rePfad2.fullmatch(werte[8+korrektur+1]):
+					korrektur+=1
+					pfad=werte[8+korrektur]
+					neuePfadsyntax=True
+				elif self.rePfad2.fullmatch(werte[8+korrektur+2]):
+					korrektur+=2
+					pfad=werte[8+korrektur]
+					neuePfadsyntax=True
+				elif self.rePfad2.fullmatch(werte[8+korrektur+3]):
+					korrektur+=3
+					pfad=werte[8+korrektur]
+					neuePfadsyntax=True
 				else:
-					logger.warning("Type mismatch kein Rechtsgebiet '"+werte[9+korrektur]+"'")
+					logger.error("Type mismatch kein Pfad '"+werte[8+korrektur]+"', '"+werte[8+korrektur+1]+"', '"+werte[8+korrektur+2]+"'")	
+					brauchbar=False
 
-			if brauchbar:
-				numstr = num.replace(" ", "_")
-				#Ist die Signatur nicht eindeutig, so muss hier differenziert werden
-				signatur, gericht, kammer=self.detect("",vkammer,num)
-				
-				vgericht=gericht
-				if not vkammer:
-					vkammer=kammer
-				
-				item = {
-					'Kanton': self.kanton_kurz,
-					'Num':num ,
-					'Kammer':kammer,
-					'EDatum': entscheiddatum,
-					'PDatum': publikationsdatum,
-					'Titel': titel,
-					'Leitsatz': leitsatz,
-					'Rechtsgebiet': rechtsgebiet,
-					'DocId':id_,
-					'Raw': content,
-					'Signatur': signatur, 
-					'Gericht': gericht,
-					'VGericht': vgericht,
-					'VKammer': vkammer
-				}				
-				
-				logger.info("Pfad: "+pfad)
-				if self.ENCRYPTED:
-					if neuePfadsyntax:
-						pfad=numstr+"_"+pfad+"|dossiernummer|"+numstr
-					elif self.ASCII_ENCRYPTED:
-						ascii_pfad=''
-						for c in pfad:
-							ascii_pfad += '|'+str(ord(c))
-						pfad=ascii_pfad.replace("|92|92","|92")
-					body=self.DECRYPT_START+pfad+self.DECRYPT_END
-					logger.info("Decrypt-Body: "+body)
-					yield scrapy.Request(url=self.DECRYPT_PAGE_URL, method="POST", body=body, headers=self.HEADERS, callback=self.decrypt_path, errback=self.errback_httpbin, meta={"item":item})
+				l=len(werte)
+				if neuePfadsyntax==True and l>22:
+					l=l-8
+				if self.reDatum.fullmatch(werte[l-1]):
+					publikationsdatum=werte[l-1]
+				elif self.reDatum.fullmatch(werte[l-2]):
+					publikationsdatum=werte[l-2]
 				else:
-					href = self.PDF_PATTERN.format(self.DOWNLOAD_URL, numstr, id_,self.PDF_PATH, id_, numstr)
-					item['PDFUrls']=[href]
-					yield item
-			else:
-				logger.error("Parse Fehler bei Treffer "+str(self.page_nr)+" String: "+content)
+					logger.warning("Type mismatch letzter und vorletzter Eintrag kein Publikationsdatum '"+werte[len(werte)-1]+"', '"+werte[len(werte)-2]+"'")
+					publikationsdatum=""
 
+
+				if len(werte)>10+korrektur and self.reRG.fullmatch(werte[9+korrektur]):
+					rechtsgebiet=werte[9+korrektur]
+				elif len(werte)>11+korrektur and self.reRG.fullmatch(werte[10+korrektur]):
+					rechtsgebiet=werte[10+korrektur]
+				else:
+					rechtsgebiet=""
+					if len(werte)>10+korrektur:
+						logger.warning("Type mismatch kein Rechtsgebiet '"+werte[9+korrektur]+"', '"+werte[10+korrektur]+"'")
+					else:
+						logger.warning("Type mismatch kein Rechtsgebiet '"+werte[9+korrektur]+"'")
+
+				if brauchbar:
+					numstr = num.replace(" ", "_")
+					#Ist die Signatur nicht eindeutig, so muss hier differenziert werden
+					signatur, gericht, kammer=self.detect("",vkammer,num)
+				
+					vgericht=gericht
+					if not vkammer:
+						vkammer=kammer
+					
+					item = {
+						'Kanton': self.kanton_kurz,
+						'Num':num ,
+						'Kammer':kammer,
+						'EDatum': entscheiddatum,
+						'PDatum': publikationsdatum,
+						'Titel': titel,
+						'Leitsatz': leitsatz,
+						'Rechtsgebiet': rechtsgebiet,
+						'DocId':id_,
+						'Raw': content,
+						'Signatur': signatur, 
+						'Gericht': gericht,
+						'VGericht': vgericht,
+						'VKammer': vkammer
+					}				
+				
+					logger.info("Pfad: "+pfad)
+					if self.ENCRYPTED:
+						if neuePfadsyntax:
+							pfad=numstr+"_"+pfad+"|dossiernummer|"+numstr
+						elif self.ASCII_ENCRYPTED:
+							ascii_pfad=''
+							for c in pfad:
+								ascii_pfad += '|'+str(ord(c))
+							pfad=ascii_pfad.replace("|92|92","|92")
+						body=self.DECRYPT_START+pfad+self.DECRYPT_END
+						logger.info("Decrypt-Body: "+body)
+						yield scrapy.Request(url=self.DECRYPT_PAGE_URL, method="POST", body=body, headers=self.HEADERS, callback=self.decrypt_path, errback=self.errback_httpbin, meta={"item":item})
+					else:
+						href = self.PDF_PATTERN.format(self.DOWNLOAD_URL, numstr, id_,self.PDF_PATH, id_, numstr)
+						item['PDFUrls']=[href]
+						yield item
+				else:
+					logger.error("Parse Fehler bei Treffer "+str(self.page_nr)+" String: "+content)
+			else:
+				logger.warning("0 Treffer")
 			if self.page_nr < min(self.trefferzahl, self.MAX_PAGES):
 				body = self.get_next_request()
 				yield scrapy.Request(url=self.RESULT_PAGE_URL, method="POST", body=body, headers=self.HEADERS, callback=self.parse_page, errback=self.errback_httpbin)
