@@ -13,10 +13,15 @@ logger = logging.getLogger(__name__)
 
 class GL_Omni(BasisSpider):
 	name = 'GL_Omni'
+	custom_settings = {
+		"CONCURRENT_REQUESTS_PER_DOMAIN": 1,
+		"DOWNLOAD_DELAY": 2
+	}
+
 
 	SUCH_URL='/cgi-bin/nph-omniscgi.exe'
 	HOST ="https://findinfo.gl.ch"
-	TREFFER_PRO_SEITE = 50
+	TREFFER_PRO_SEITE = 10
 	BLAETTERN_URL="/cgi-bin/nph-omniscgi.exe?OmnisPlatform=WINDOWS&WebServerUrl=findinfo.gl.ch&WebServerScript=/cgi-bin/nph-omniscgi.exe&OmnisLibrary=JURISWEB&OmnisClass=rtFindinfoWebHtmlService&OmnisServer=JURISWEB,7000&Parametername=WEB&Schema=GLWEB&Source=&Aufruf=search&cTemplate=simple%2Fsearch_result.fiw&cTemplate_ValidationError=simple%2Fsearch.fiw&cSprache=DE&nSeite={Seite}&nAnzahlTrefferProSeite="+str(TREFFER_PRO_SEITE)+"&W10_KEY={W10}&nAnzahlTreffer={Trefferzahl}"
 	FORMDATA = {
 		"OmnisPlatform": "WINDOWS",
@@ -59,6 +64,7 @@ class GL_Omni(BasisSpider):
 			self.ab=ab
 			self.FORMDATA['dPublikationsdatum']=ab
 			self.FORMDATA['bHasPublikationsdatumBis']="1"
+			self.FORMDATA['dPublikationsdatumBis']="01.01.2100"
 		self.request_gen = [self.get_next_request()]
 
 
@@ -126,12 +132,12 @@ class GL_Omni(BasisSpider):
 		logger.info("parse_document response.status "+str(response.status))
 		antwort=response.body_as_unicode()
 		logger.info("parse_document Rohergebnis "+str(len(antwort))+" Zeichen")
-		logger.debug("parse_document Rohergebnis: "+antwort[:20000])
+		logger.debug("parse_document Rohergebnis: "+antwort[:40000])
 		
 		item=response.meta['item']	
 		html=response.xpath("//div[@class='WordSection1' or @class='Section1']")
 		if html == []:
-			logger.warning("Content nicht erkannt in "+antwort[:20000])
+			logger.warning("Content nicht erkannt in "+antwort[:40000])
 		else:
 			PH.write_html(html.get(), item, self)
 		regeste=response.xpath("//td[@colspan='2']/table/tr/td[./b/text()='Résumé contenant:']/following-sibling::td/b/text()")
