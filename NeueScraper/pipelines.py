@@ -166,7 +166,10 @@ class MyWriterPipeline:
 			# logger.info("Indexierungsrequest mit Daten: "+json.dumps(json_jobs))
 			logger.info("Indexierungsrequest mit Antwort: "+str(antwort.status_code))
 			if antwort.status_code >=300:
-				logger.error("Indexierungsfehler: "+antwort.text)
+				if "504 Gateway Time-out" in antwort.text:
+					logger.warning("Indexierungsfehler, Time-out:" +antwort.text)
+				else:
+					logger.error("Indexierungsfehler: "+antwort.text)
 		except Exception as e:
 			# Später hier zwischen Fehler und Timeout unterscheiden
 			logger.error("Fehler beim Indexieren: " + str(e.__class__))
@@ -548,7 +551,7 @@ class PipelineHelper:
 
 		if body is None:
 			html_content='<!DOCTYPE html><html lang="'+lang+'"><head><meta charset="utf-8"/></head><body>'+html_content+"</body></html>"
-		if utf is None:
+		elif utf is None:
 			if meta:
 				html_content=html_content[:meta.start()]+'<meta charset="utf-8"/>'+html_content[meta.start():]
 			elif head:
