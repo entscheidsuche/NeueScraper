@@ -42,3 +42,4 @@ class SZ_Verwaltungsgericht(TribunaSpider):
 	DECRYPT_END = '|1|2|3|4|1|5|6|2|7|8|7|9|7|10|7|11|'
 	reNum=re.compile('[A-Z0-9]{1,3}\s(19|20)\d\d\s\d+')
 
+# Bei einigen Dokumenten, so etwa II 2024 84, kommt auch beim manuellen Zugriff ein Fehler
