@@ -24,6 +24,7 @@ class TribunaSpider(BasisSpider):
 	reTreffer=re.compile('(?<=^//OK\\[)[0-9]+')
 	reDecrypt=re.compile('(?<=//OK\[1,\[")[0-9a-f]+')
 	reDecrypt2=re.compile('(?<=//OK)([0-9,"a-z.A-Z/\[\]]+partURL\",\")(?P<p1>[^"]+_)(?P<p2>[^"_]+)","(?P<p3>dossiernummer)","(?P<p4>[^"]+)')
+	reDecode=re.compile(r'\\x([0-9A-Fa-f]{2})')
 
 	rePfad=re.compile(r'[A-Z]:(?:\\.+)+\.pdf')
 	rePfad2=re.compile(r'[0-9a-f]{128,192}')
@@ -33,6 +34,8 @@ class TribunaSpider(BasisSpider):
 	ASCII_ENCRYPTED=False
 	COOKIE=False
 	VKAMMER=True
+	HOLE_AUCH_HTML = False
+	
 	#name = 'Tribuna, virtuell'
 	
 	def get_next_request(self):
@@ -241,6 +244,12 @@ class TribunaSpider(BasisSpider):
 					}				
 				
 					logger.info("Pfad: "+pfad)
+					
+					html_request=None
+					if self.HOLE_AUCH_HTML:
+						body=self.HTML_REQUEST.format(id_)
+						html_request=scrapy.Request(url=self.RESULT_PAGE_URL, method="POST", body=body, headers=self.HEADERS, callback=self.hole_html, errback=self.errback_httpbin, meta={"item":item})
+								
 					if self.ENCRYPTED:
 						if neuePfadsyntax:
 							pfad=numstr+"_"+pfad+"|dossiernummer|"+numstr
@@ -251,11 +260,14 @@ class TribunaSpider(BasisSpider):
 							pfad=ascii_pfad.replace("|92|92","|92")
 						body=self.DECRYPT_START+pfad+self.DECRYPT_END
 						logger.info("Decrypt-Body: "+body)
-						yield scrapy.Request(url=self.DECRYPT_PAGE_URL, method="POST", body=body, headers=self.HEADERS, callback=self.decrypt_path, errback=self.errback_httpbin, meta={"item":item})
+						yield scrapy.Request(url=self.DECRYPT_PAGE_URL, method="POST", body=body, headers=self.HEADERS, callback=self.decrypt_path, errback=self.errback_httpbin, meta={"item":item, "html_request":html_request})
 					else:
 						href = self.PDF_PATTERN.format(self.DOWNLOAD_URL, numstr, id_,self.PDF_PATH, id_, numstr)
 						item['PDFUrls']=[href]
-						yield item
+						if html_request:
+							yield html_request
+						else:
+							yield item
 				else:
 					logger.error("Parse Fehler bei Treffer "+str(self.page_nr)+" String: "+content)
 			else:
@@ -269,6 +281,7 @@ class TribunaSpider(BasisSpider):
 	def decrypt_path(self, response):
 		logger.info("Decrypt-Request: "+response.request.url)
 		item=response.meta['item']
+		html_request=response.meta['html_request']
 		logger.info("Decrypt-Path für DocID "+item['DocId'])
 		if response.status == 200:
 			logger.info("Rohergebnis Decrypt: "+response.body_as_unicode())
@@ -278,17 +291,46 @@ class TribunaSpider(BasisSpider):
 				href=self.PDF_PATTERN.format(self.DOWNLOAD_URL,numstr,item['DocId'],code.group(),numstr)
 				logger.info("PDF-URL: "+href)
 				item['PDFUrls']=[href]
-				yield item
+				if html_request:
+					yield html_request
+				else:
+					yield item
 			else:
 				code=self.reDecrypt2.search(response.body_as_unicode())
 				if code:
 					href=self.PDF_PATTERN.format(self.DOWNLOAD_URL,code.group("p1")+code.group("p2"),code.group("p2"),code.group("p4"))
 					logger.info("V2 PDF-URL: "+href)
 					item['PDFUrls']=[href]
-					yield item
+					if html_request:
+						yield html_request
+					else:
+						yield item
 					
 				else:
 					logger.error("Gecrypteter Pfad konnte nicht geparst werden.")
+					if html_request:
+						yield html_request
+					
 		else:
 			logger.error("Keine Antwort für gecrypteten Pfad")
+			if html_request:
+				yield html_request
+			
+	def hole_html(self, response):
+		logger.info("HTML-Request: "+response.request.url)
+		item=response.meta['item']
+		content = self.reVor.sub('',response.body_as_unicode())
+		logger.info("HTMLseite: "+content)
+		werte=self.reAll.findall(content)
+		xhtml=[i for i,v in enumerate(werte) if v=="xhtml"]
+		if xhtml:
+			item['HTMLUrls']=[response.request.url]
+			html_string=werte[xhtml[0]+1]
+			html_string=self.reDecode.sub(lambda m: chr(int(m.group(1), 16)),html_string)
+			html_string=html_string.replace("\n","")
+			logger.info("html: "+html_string)
+			PH.write_html(html_string, item, self)
+		yield item
+			
+
 
