@@ -125,7 +125,6 @@ class ZH_OG(BasisSpider):
 								'DocId': idE,
 								'Weiterzug': Weiterzug,
 								'Entscheidart': Entscheidart,
-								'Raw': Raw,
 								'PDFUrls': [PDFUrl],
 								'Signatur': signatur
 							}
