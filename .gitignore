@@ -19,3 +19,4 @@ project.egg-info/entry_points.txt
 project.egg-info/entry_points.txt
 project.egg-info/PKG-INFO
 project.egg-info/SOURCES.txt
+NeueScraper/spiders/test.py
