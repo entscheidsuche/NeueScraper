@@ -157,7 +157,7 @@ class SO_Omni(BasisSpider):
 		logger.info("parse_document response.status "+str(response.status))
 		antwort=response.body_as_unicode()
 		logger.info("parse_document Rohergebnis "+str(len(antwort))+" Zeichen")
-		logger.info("parse_document Rohergebnis: "+antwort)
+		logger.info("parse_document Rohergebnis: "+antwort[:20000])
 		if 'Cookie' in response.request.headers:
 			logger.debug("parse_document Cookie gesendet: "+response.request.headers['Cookie'].decode('UTF-8'))	
 		else:
