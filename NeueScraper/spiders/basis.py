@@ -22,10 +22,12 @@ class BasisSpider(scrapy.Spider):
 	reDatumEinfach=re.compile("(?P<Tag>\d\d?)\s*\.\s*(?P<Monat>\d\d?)\s*\.\s*(?P<Jahr>(?:19|20)\d\d)")
 	MONATEfr = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
 	MONATEde = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember']
+	MONATEit = [ "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"]
 	MONATEdeKurz = [m[:3] for m in MONATEde]
 	MONATEenKurz = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 	reDatumFR=re.compile(r"(?P<Tag>\d\d?)(?:er)?\s+(?P<Monat>(?:"+"|".join(MONATEfr)+r"))\s+(?P<Jahr>(?:19|20)\d\d)")
-	reDatumDE=re.compile(r"(?P<Tag>\d\d?)\.\s*(?P<Monat>(?:"+"|".join(MONATEde)+r"))\s+(?P<Jahr>(?:19|20)\d\d)")
+	reDatumDE=re.compile(r"(?P<Tag>\d\d?)\.?\s*(?P<Monat>(?:"+"|".join(MONATEde)+r"))\s+(?P<Jahr>(?:19|20)\d\d)")
+	reDatumIT=re.compile(r"(?P<Tag>\d\d?)[^ 0-9]?\s*(?P<Monat>(?:"+"|".join(MONATEit)+r"))\s+(?P<Jahr>(?:19|20)\d\d)")	
 	reDatumDEkurz=re.compile(r"(?P<Monat>"+"|".join(MONATEdeKurz)+")\s(?P<Tag>\d\d?),\s*(?P<Jahr>(?:19|20)\d\d)")
 	reDatumENkurz=re.compile(r"(?P<Monat>"+"|".join(MONATEenKurz)+")\s(?P<Tag>\d\d?),\s*(?P<Jahr>(?:19|20)\d\d)")
 	reDatumNurJahr=re.compile(r"(?:19|20)\d\d")	
@@ -34,9 +36,9 @@ class BasisSpider(scrapy.Spider):
 	reKurzpfad=re.compile(r"^[^/]+/(?P<kurz>[^\.]+)\.(?:pdf|html|json)$")
 
 	#name = 'Gerichtsdaten'
-	kantone = { 'de': {'CH':'Eidgenossenschaft','AG':'Aargau','AI':'Appenzell Innerrhoden','AR':'Appenzell Ausserrhoden','BE':'Bern','BL':'Basel-Land','BS':'Basel-Stadt','FR':'Freiburg','GE':'Genf','GL':'Glarus','GR':'Graubünden','JU':'Jura','LU':'Luzern','NE':'Neuenburg','NW':'Nidwalden','OW':'Obwalden','SG':'St.Gallen','SH':'Schaffhausen','SO':'Solothurn','SZ':'Schwyz','TG':'Thurgau','TI':'Tessin','UR':'Uri','VD':'Waadt','VS':'Wallis','ZG':'Zug','ZH':'Zürich'},
-		'fr': {'CH':'Conféderation','AG':'Argovie','AI':'Appenzell Rhodes-Intérieures','AR':'Appenzell Rhodes-Extérieures','BE':'Berne','BL':'Bâle-Campagne','BS':'Bâle-Ville','FR':'Fribourg','GE':'Genève','GL':'Glaris','GR':'Grisons','JU':'Jura','LU':'Lucerne','NE':'Neuchâtel','NW':'Nidwald','OW':'Obwald','SG':'Saint-Gall','SH':'Schaffhouse','SO':'Soleure','SZ':'Schwytz','TG':'Thurgovie','TI':'Tessin','UR':'Uri','VD':'Vaud','VS':'Valais','ZG':'Zoug','ZH':'Zurich'},
-		'it': {'CH':'Confederazione','AG':'Argovia','AI':'Appenzello Interno','AR':'Appenzello Interno','BE':'Berna','BL':'Basilea Campagna','BS':'Basilea Città','FR':'Friburgo','GE':'Ginevra','GL':'Glarona','GR':'Grigioni','JU':'Giura','LU':'Lucerna','NE':'Neuchâtel','NW':'Nidvaldo','OW':'Obvaldo','SG':'San Gallo','SH':'Sciaffusa','SO':'Soletta','SZ':'Svitto','TG':'Turgovia','TI':'Ticino','UR':'Uri','VD':'Vaud','VS':'Vallese','ZG':'Zugo','ZH':'Zurigo'}}
+	kantone = { 'de': {'CH':'Eidgenossenschaft','AG':'Aargau','AI':'Appenzell Innerrhoden','AR':'Appenzell Ausserrhoden','BE':'Bern','BL':'Basel-Land','BS':'Basel-Stadt','FR':'Freiburg','GE':'Genf','GL':'Glarus','GR':'Graubünden','JU':'Jura','LU':'Luzern','NE':'Neuenburg','NW':'Nidwalden','OW':'Obwalden','SG':'St.Gallen','SH':'Schaffhausen','SO':'Solothurn','SZ':'Schwyz','TG':'Thurgau','TI':'Tessin','UR':'Uri','VD':'Waadt','VS':'Wallis','ZG':'Zug','ZH':'Zürich', 'TA':'Schiedsgerichte'},
+		'fr': {'CH':'Conféderation','AG':'Argovie','AI':'Appenzell Rhodes-Intérieures','AR':'Appenzell Rhodes-Extérieures','BE':'Berne','BL':'Bâle-Campagne','BS':'Bâle-Ville','FR':'Fribourg','GE':'Genève','GL':'Glaris','GR':'Grisons','JU':'Jura','LU':'Lucerne','NE':'Neuchâtel','NW':'Nidwald','OW':'Obwald','SG':'Saint-Gall','SH':'Schaffhouse','SO':'Soleure','SZ':'Schwytz','TG':'Thurgovie','TI':'Tessin','UR':'Uri','VD':'Vaud','VS':'Valais','ZG':'Zoug','ZH':'Zurich', 'TA':'Tribunaux d\'arbitrage'},
+		'it': {'CH':'Confederazione','AG':'Argovia','AI':'Appenzello Interno','AR':'Appenzello Interno','BE':'Berna','BL':'Basilea Campagna','BS':'Basilea Città','FR':'Friburgo','GE':'Ginevra','GL':'Glarona','GR':'Grigioni','JU':'Giura','LU':'Lucerna','NE':'Neuchâtel','NW':'Nidvaldo','OW':'Obvaldo','SG':'San Gallo','SH':'Sciaffusa','SO':'Soletta','SZ':'Svitto','TG':'Turgovia','TI':'Ticino','UR':'Uri','VD':'Vaud','VS':'Vallese','ZG':'Zugo','ZH':'Zurigo', 'TA':'Tribunali arbitrali'}}
 	kantonssprachen= {'CH':'','AG':'de','AI':'de','AR':'de','BE':'','BL':'de','BS':'de','FR':'','GE':'fr','GL':'de','GR':'','JU':'fr','LU':'de','NE':'fr','NW':'de','OW':'de','SG':'de','SH':'de','SO':'de','SZ':'de','TG':'de','TI':'it','UR':'de','VD':'fr','VS':'','ZG':'de','ZH':'de'}
 	gerichte = {}
 	kanton= {}
@@ -552,34 +554,41 @@ class BasisSpider(scrapy.Spider):
 						neudat="{}-{:0>2}-{:0>2}".format(datde.group('Jahr'),monatzahl,datde.group('Tag'))
 						logger.debug("Konvertiere "+datum+" in "+neudat)
 					else:
-						datde=self.reDatumDEkurz.search(datum)
+						datde=self.reDatumIT.search(datum)
 						if datde:
 							monat=datde.group('Monat')
-							monatzahl=self.MONATEdeKurz.index(monat)+1
+							monatzahl=self.MONATEit.index(monat)+1
 							neudat="{}-{:0>2}-{:0>2}".format(datde.group('Jahr'),monatzahl,datde.group('Tag'))
 							logger.debug("Konvertiere "+datum+" in "+neudat)
 						else:
-							datde=self.reDatumENkurz.search(datum)
+							datde=self.reDatumDEkurz.search(datum)
 							if datde:
 								monat=datde.group('Monat')
-								monatzahl=self.MONATEenKurz.index(monat)+1
+								monatzahl=self.MONATEdeKurz.index(monat)+1
 								neudat="{}-{:0>2}-{:0>2}".format(datde.group('Jahr'),monatzahl,datde.group('Tag'))
 								logger.debug("Konvertiere "+datum+" in "+neudat)
 							else:
-								nurJahr=self.reDatumNurJahr.search(datum)
-								if nurJahr:
-									logger.warning("Jahreszahl statt vollständiges Datum: "+datum)
-									neudat=nurJahr.group(0)
+								datde=self.reDatumENkurz.search(datum)
+								if datde:
+									monat=datde.group('Monat')
+									monatzahl=self.MONATEenKurz.index(monat)+1
+									neudat="{}-{:0>2}-{:0>2}".format(datde.group('Jahr'),monatzahl,datde.group('Tag'))
+									logger.debug("Konvertiere "+datum+" in "+neudat)
 								else:
-									if error:
-										logger.error(error + " unbekanntes Datumsformat: "+datum)
-									elif warning:
-										logger.warning(warning + "unbekanntes Datumsformat: "+datum)
-									elif info:
-										logger.info(info + "unbekanntes Datumsformat: "+datum)
+									nurJahr=self.reDatumNurJahr.search(datum)
+									if nurJahr:
+										logger.warning("Jahreszahl statt vollständiges Datum: "+datum)
+										neudat=nurJahr.group(0)
 									else:
-										logger.error("unbekanntes Datumsformat: "+datum)
-									neudat="nodate"
+										if error:
+											logger.error(error + " unbekanntes Datumsformat: "+datum)
+										elif warning:
+											logger.warning(warning + "unbekanntes Datumsformat: "+datum)
+										elif info:
+											logger.info(info + "unbekanntes Datumsformat: "+datum)
+										else:
+											logger.error("unbekanntes Datumsformat: "+datum)
+										neudat="nodate"
 		datum=neudat
 		return datum
 
