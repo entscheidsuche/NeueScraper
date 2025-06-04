@@ -1,4 +1,5 @@
 LICENSE
+pyproject.toml
 setup.py
 NeueScraper/__init__.py
 NeueScraper/items.py
@@ -41,6 +42,7 @@ NeueScraper/spiders/SH_OG.py
 NeueScraper/spiders/SO_Omni.py
 NeueScraper/spiders/SZ_Gerichte.py
 NeueScraper/spiders/SZ_Verwaltungsgericht.py
+NeueScraper/spiders/TA_SST.py
 NeueScraper/spiders/TG_OG.py
 NeueScraper/spiders/TI_Gerichte.py
 NeueScraper/spiders/UR_Gerichte.py
@@ -56,9 +58,11 @@ NeueScraper/spiders/ZH_Steuerrekurs.py
 NeueScraper/spiders/ZH_Verwaltungsgericht.py
 NeueScraper/spiders/__init__.py
 NeueScraper/spiders/basis.py
+NeueScraper/spiders/test.py
 NeueScraper/spiders/tribuna.py
 NeueScraper/spiders/weblaw.py
 NeueScraper/spiders/weblawvaadin.py
+NeueScraper/spiders/weblawvaadin2.py
 project.egg-info/PKG-INFO
 project.egg-info/SOURCES.txt
 project.egg-info/dependency_links.txt
