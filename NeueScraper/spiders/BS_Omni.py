@@ -76,7 +76,7 @@ class BS_Omni(BasisSpider):
 		logger.debug("parse_trefferliste response.status "+str(response.status))
 		antwort=response.body_as_unicode()
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
-		logger.debug("parse_trefferliste Rohergebnis: "+antwort[:30000])
+		logger.info("parse_trefferliste Rohergebnis: "+antwort[:30000])
 	
 		treffer=response.xpath("//table[@width='100%' and @border='0' and @cellspacing='0' and @cellpadding='0']/tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0']/tr/td[@width='50%']").get()
 		logger.info("Trefferzahl: "+treffer)
