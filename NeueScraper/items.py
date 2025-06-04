@@ -21,6 +21,7 @@ class NeuescraperItem(scrapy.Item):
     VKammer = scrapy.Field()
     Num = scrapy.Field()
     Num2 = scrapy.Field()
+    noNumDisplay=scrapy.Field()
     EDatum = scrapy.Field()
     Titel = scrapy.Field()
     Leitsatz = scrapy.Field()

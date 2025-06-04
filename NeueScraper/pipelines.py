@@ -207,6 +207,7 @@ class MyWriterPipeline:
 			else:
 				logger.warning("keine Geschäftsnummer!")
 				item['Num']='unknown'
+				item['noNumDisplay']=True
 			pdf_da = ('PDFFiles' in item and item['PDFFiles'])
 			zweitnum=[]
 			if pdf_da: # Schauen ob das PDF wirklich da ist
@@ -755,7 +756,7 @@ class PipelineHelper:
 								scrapedate=oldfile['scrapedate']
 							else:
 								scrapedate='2023-01-01'
-				eintrag['PDF']={'Datei': item['PDFFiles'][0]['path'], 'URL': item['PDFFiles'][0]['url'], 'Checksum': item['PDFFiles'][0]['checksum']}
+			eintrag['PDF']={'Datei': item['PDFFiles'][0]['path'], 'URL': item['PDFFiles'][0]['url'], 'Checksum': item['PDFFiles'][0]['checksum']}
 		eintrag['Scrapedate']=scrapedate
 		if 'Nums' in item:
 			eintrag['Num']=item['Nums']+zweitnum		
@@ -804,7 +805,8 @@ class PipelineHelper:
 						else:
 							anzeige+=" "+item['PDatum']
 						anzeige+=" ("+spider.translation['publiziert'][sp]+")"
-					anzeige+=" "+item['Num']
+					if not "noNumDisplay" in item or not item['noNumDisplay']:
+						anzeige+=" "+item['Num']
 					if 'Num2' in item:
 						anzeige+=" ("+item['Num2']+")"
 					kopfzeile.append({'Sprachen': [sp], 'Text': anzeige})
