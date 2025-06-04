@@ -16,100 +16,111 @@ logger = logging.getLogger(__name__)
 class CH_EDOEB(BasisSpider):
 	name = 'CH_EDOEB'
 
-	URLs=[{'URL':"/edoeb/de/home/kurzmeldungen.html",'Kammer':'Kurzmeldungen'},{'URL':"/edoeb/de/home/deredoeb/infothek/archiv-ds.html",'Kammer': 'Archiv'},{'URL':"/edoeb/de/home/deredoeb/infothek/infothek-ds.html", 'Kammer': "Infothek"},{'URL':"/edoeb/de/home/oeffentlichkeitsprinzip/bgoe_empfehlungen.html",'Kammer':'Oeffentlichkeitsgesetz'}]
+	URLs=[{'URL':"/de/empfehlungen-nach-bgo",'Kammer':'BGÖ','Typ':'Liste'},{'URL':"/de/schlussberichte-empfehlungen-bis-31082023",'Kammer':'DSG','Typ':'Liste'},{'URL':'/de/weiterzuege-bis-31082023','Kammer':'Weiterzüge-DSG','Typ':'Liste'}]
 	HOST="https://www.edoeb.admin.ch"
+	custom_settings = {
+		"CONCURRENT_REQUESTS_PER_DOMAIN": 1,
+		"DOWNLOAD_DELAY": 2
+	}
+
 	
 	def __init__(self, neu=None):
 		self.neu=neu
 		super().__init__()
-		self.request_gen = [scrapy.Request(url=self.HOST+entry['URL'],callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={"Kammer":entry['Kammer']}) for entry in self.URLs]
+		self.request_gen = [scrapy.Request(url=self.HOST+entry['URL'],callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'entry':entry}) for entry in self.URLs]
 
 	def parse_trefferliste(self, response):
 		logger.info("parse_trefferliste response.status "+response.request.url+" "+str(response.status))
 		antwort=response.body_as_unicode()
-		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
+		entry=response.meta['entry']
+		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen, Typ: "+entry['Typ']+", Kammer: "+entry['Kammer'])
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:80000])
-		urteile=response.xpath("//div[(@class='mod mod-teaser clearfix ' and h4[a]) or (@class='mod mod-download' and p[a])]")
-		abschnitte=response.xpath('//div[@class="row" and div[div[div[ul[@class="list-unstyled " and li[a[@class="icon icon--before icon--pdf"]]]]]]]')
-		logger.info(str(len(urteile))+" Abschnitte Pattern1 gefunden und "+str(len(abschnitte))+" Abschnitte Pattern2 gefunden für "+response.meta['Kammer']+" ("+response.url+")")
-		if len(urteile)==0 and len(abschnitte)==0:
-			logger.warning("Keine Entscheide gefunden für "+response.url)
-		elif len(abschnitte)>0:
-			for a in abschnitte:
-				rubrik=PH.NC(a.xpath("//h3/text()").get(),replace="",warning="keine Rubrik")
-				logger.info("Rubrik "+rubrik)
-				texte=a.xpath('.//li/a[@class="icon icon--before icon--pdf"]')
-				for t in texte:
+		if entry['Typ']=='Liste':
+			strukturtext=PH.NC(response.xpath("//script[@id='__NUXT_DATA__']/text()").get(),error="keine Struktur NUXT_DATA gefunden")
+			struktur=json.loads(strukturtext)
+			findtext=entry['URL'][1:]+".json"
+
+			logger.info("Array mit "+str(len(struktur))+" Elementen")
+
+			startpunkte=[i for i, x in enumerate(struktur) if isinstance(x, dict) and findtext in x]
+
+			logger.info("Gefundene mögliche Startpunkte: "+json.dumps(startpunkte))
+			if not startpunkte:
+				logger.error("keine Startpunkte gefunden für: "+findtext)
+			else:
+				startpunkt=startpunkte[0]
+				weiter1=struktur[startpunkt][findtext]
+				logger.info("weiter1: "+str(weiter1))
+				weiter2=struktur[weiter1]["content"]
+				logger.info("weiter2: "+str(weiter2))
+				weiter3=struktur[weiter2][1]
+				logger.info("weiter3: "+str(weiter3))
+				weiter4=struktur[weiter3]['nestedContent']
+				logger.info("weiter4: "+str(weiter4))
+				for weiter5 in struktur[weiter4]:
+					logger.info("weiter5 Variante: "+str(weiter5))
+					if "nestedContent" in struktur[weiter5]:
+						weiter6=struktur[weiter5]['nestedContent']
+						logger.info("weiter6: "+str(weiter6))
+						for weiter7 in struktur[weiter6]:
+							logger.info("weiter7 Variante: "+str(weiter7))
+							if "properties" in struktur[weiter7]:
+								weiter8=struktur[weiter7]['properties']
+								logger.info("weiter8: "+str(weiter8))
+								if "listItems" in struktur[weiter8]:
+									logger.info("weiter8: "+str(weiter8))
+									weiter9=struktur[weiter8]['listItems']
+									logger.info("weiter9: "+str(weiter9))
+									liste=struktur[weiter9]
+									logger.info("Liste gefunden: "+json.dumps(liste))
+									for eintrag in liste:
+										item={}
+										item["Num"]=PH.NC(struktur[struktur[eintrag]["fileName"]],error="kein fileName gefunden für "+json.dumps(eintrag))
+										if item['Num'].lower().endswith(".pdf"):
+											item['Num']=item['Num'][:-4]
+										item["noNumDisplay"]=True
+										meta=struktur[eintrag]["metainfos"]
+										for i in struktur[meta]:
+											if "originalDate" in struktur[i]:
+												item["EDatum"]=PH.NC(self.norm_datum(struktur[struktur[i]["info"]]),warning="kein gültiges Datumsformat gefunden")
+										item["PDFUrls"]=[PH.NC(struktur[struktur[eintrag]["link"]],error="kein PDF-Link gefunden für: "+item["Num"])]
+										item["Titel"]=PH.NC(struktur[struktur[eintrag]["text"]],error="kein Titel gefunden für: "+item["Num"])
+										item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",entry['Kammer'],"")
+										logger.info("Eintrag: "+json.dumps(item))
+										yield item
+
+"""
+		elif entry['Typ']=='Berichte':
+			strukturtext=PH.NC(response.xpath("//script[@id='__NUXT_DATA__']/text()").get(),error="keine Struktur NUXT_DATA gefunden")
+			struktur=json.loads(strukturtext)
+			doc_grid_indices = [i for i, x in enumerate(struktur) if isinstance(x, str) and x=="dynamic-file-teaser"]
+			matching_dicts = [i for i, x in enumerate(struktur) if isinstance(x, dict) and x.get("identifier") in doc_grid_indices]
+			logger.info("matching_dicts: "+json.dumps(matching_dicts))
+			if len(matching_dicts)==0:
+				logger.error("keine Berichtslite gefunden")
+			elif len(matching_dicts)>1:
+				logger.warning("mehr als eine Berichtsliste gefunden: "+str(len(matching_dicts)))
+			else:
+				berichte=struktur[struktur[struktur[matching_dicts[0]]['properties']]['listItems']]
+				logger.info(str(len(berichte))+" Berichte ("+entry['Kammer']+") gefunden.")
+				for bericht in berichte:
 					item={}
-					logger.info("text Verarbeite nun: "+t.get())
-					url=urllib.parse.unquote(t.xpath("./@href").get())
-					logger.info("text URL: "+url)
-					if url[-4:].lower()==".pdf":
-						item['PDFUrls']=[self.HOST+url]
-						logger.info("text PDF-URL: "+item['PDFUrls'][0])
-					elif url[-4:].lower()==".htm" or url[-5:].lower()==".html":
-						item['HTMLUrls']=[self.HOST+url]
-						logger.info("text HTML-URL: "+item['HTMLUrls'][0])
-					else:
-						logger.error("text unbekannter Dokumenttyp bei "+url)
-					titel=PH.NC(a.xpath("./@title").get(),replace="",warning="kein Titel")
-					if titel:
-						item['Titel']=titel
-						item['Rechtsgebiet']=rubrik
-					else:
-						item['Titel']=rubrik
-					if a.xpath("./span/text()"):
-						datumstext=a.xpath("./span/text()").get()
-						edatum=self.norm_datum(datumstext, warning="text Kein Datum identifiziert")
-						if edatum!="nodate":
-							item['EDatum']=edatum
+					properties=struktur[bericht]
+					item['Titel']=struktur[properties['text']].strip()
+					logger.info("properties: "+json.dumps(struktur[properties]))
+					metadaten=struktur[struktur[properties]['metainfos']]
+					logger.info("Metadaten: "+json.dumps(metadaten))
+					datumsstrings=[struktur[i]['originalDate'] for i in metadaten if 'originalDate' in struktur[i]]
+					logger.info("datumsstrings: "+json.dumps(datumsstrings))
+					item['PDatum']=self.norm_datum(datumsstrings[0][:10], warning="Kein EDatum identifiziert")
+					item['EDatum']=self.norm_datum(struktur[properties['updatedAt']][:10], warning="Kein PDatum identifiziert")
+					item['PDFUrls']=[struktur[properties['link']]]
 					item['Num']=''
-					item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",response.meta['Kammer'],item['Num'])
-					if ('HTMLUrls' in item):
-						logger.info("text Hole HTML")
-						request = scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_html, errback=self.errback_httpbin, meta={'item': item})
-						yield request
-					else:
-						logger.info("text Lege PDF-Dokument ab: "+json.dumps(item))
-						yield item
-		else:
-			for entscheid in urteile:
-				item={}
-				logger.info("Verarbeite nun: "+entscheid.get())
-				url=urllib.parse.unquote(entscheid.xpath("./*/a/@href").get())
-				if url[-4:].lower()==".pdf":
-					item['PDFUrls']=[self.HOST+url]
-					logger.info("PDF-URL: "+item['PDFUrls'][0])
-				elif url[-4:].lower()==".htm" or url[-5:].lower()==".html":
-					item['HTMLUrls']=[self.HOST+url]
-					logger.info("HTML-URL: "+item['HTMLUrls'][0])
-				else:
-					logger.error("unbekannter Dokumenttyp bei "+url)
-							
-				meta=entscheid.xpath("./*/a/@title").get()
-				metas=meta.split(": ",1)
-				edatum=self.norm_datum(metas[0], warning="Kein Datum identifiziert")
-				if edatum!="nodate":
-					item['EDatum']=edatum
-				if len(metas)>1:
-					item['Titel']=metas[1]
-					item['Num']=metas[1]
-				else:
-					item['Num']=''
-					item['Titel']=''
-				if entscheid.xpath("./div[class='wrapper']/div"):
-					item['Leitsatz']=entscheid.xpath("./div[class='wrapper']/div/text()").get()
-					logger.info("Leitsatz gefunden: "+item['Leitsatz'])
-				else:
-					logger.info("keinen Leitsatz gefunden")
-				item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",response.meta['Kammer'],item['Num'])
-				if ('HTMLUrls' in item):
-					logger.info("Hole HTML")
-					request = scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_html, errback=self.errback_httpbin, meta={'item': item})
-					yield request
-				else:
-					logger.info("Lege PDF-Dokument ab: "+json.dumps(item))
+					item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",entry['Kammer'],"")
+					logger.info("text Lege PDF-Dokument ab: "+json.dumps(item))
 					yield item
+		else:
+			logger.error(entry['Typ']+" nicht verarbeitet")
 
 	def parse_html(self, response):
 		logger.info("parse_html response.status "+response.request.url+" "+str(response.status))
@@ -118,12 +129,21 @@ class CH_EDOEB(BasisSpider):
 		logger.info("parse_html Rohergebnis: "+antwort[:80000])
 		
 		item=response.meta['item']
-		item['Titel']=PH.NC(response.xpath('//div[@class="mod mod-headline"]/h2/text()').get(),replace=item['Titel'],warning="Kein Titel in "+antwort)
+		entry=response.meta['entry']
+		html=""
 		
-		html=response.xpath('//div[@class="mod mod-headline"]/h2')
-		html+=response.xpath('//div[@class="mod mod-text"]/article/*')
-		html+=response.xpath('//div[@class="clearfix"]/p')
-		html+=response.xpath('//div[@class="mod mod-link"]/p')
+		if entry['Typ']=="Presse":	
+			item['Titel']=PH.NC(response.xpath('//div[@class="contentHead"]/h1/text()').get(),replace=item['Titel'],warning="Kein Titel in "+antwort)
+		
+			html=response.xpath('//div[@class="contentHead"]/h1')
+			html+=response.xpath('//div[@class="mod mod-nsbnewsdetails"]/*')
+
+		elif entry['Typ']=='Meldungen':
+			html=response.xpath('//main[@id="main-content"]/*')
+
+		else:			
+			logger.error("unbekannter html-typ: "+entry['Typ'])
+			
 		if html == []:
 			logger.error("Content nicht erkannt in "+antwort[:20000])
 		else:
@@ -132,4 +152,4 @@ class CH_EDOEB(BasisSpider):
 				htmltext+=element.get()
 			PH.write_html(htmltext, item, self)
 			yield(item)
-	
+"""
