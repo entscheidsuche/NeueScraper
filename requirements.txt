@@ -1,4 +1,8 @@
-itemadapter==0.1.1
-pysftp==0.2.9
-cryptography==2.8
+itemadapter>=0.8.0         # <0.8 zieht altes importlib-metadata
+pysftpfork==1.3.0        # Drop-in-Ersatz für veraltetes pysftp
+paramiko>=3.5,<4         # zieht cryptography <42 automatisch
+# KEIN eigener cryptography-Eintrag!
+importlib-metadata>=6.8.0 # überschreibt evtl. Back-Ports
+
+
 
