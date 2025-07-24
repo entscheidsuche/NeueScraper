@@ -64,8 +64,8 @@ NeueScraper/spiders/tribuna.py
 NeueScraper/spiders/weblaw.py
 NeueScraper/spiders/weblawvaadin.py
 NeueScraper/spiders/weblawvaadin2.py
-project.egg-info/PKG-INFO
-project.egg-info/SOURCES.txt
-project.egg-info/dependency_links.txt
-project.egg-info/entry_points.txt
-project.egg-info/top_level.txt
+entscheidsuche.ch_Scraper.egg-info/PKG-INFO
+entscheidsuche.ch_Scraper.egg-info/SOURCES.txt
+entscheidsuche.ch_Scraper.egg-info/dependency_links.txt
+entscheidsuche.ch_Scraper.egg-info/entry_points.txt
+entscheidsuche.ch_Scraper.egg-info/top_level.txt
