@@ -15,7 +15,7 @@ import json
 import scrapy
 import inspect
 from scrapy.utils.python import to_bytes
-from scrapy.utils.boto import is_botocore
+# from scrapy.utils.boto import is_botocore
 from twisted.internet import defer, threads
 from itemadapter import ItemAdapter
 from scrapy.exceptions import DropItem
