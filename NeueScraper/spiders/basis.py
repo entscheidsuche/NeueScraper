@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class BasisSpider(scrapy.Spider):
 	elementchars=re.compile("[^-a-zA-Z0-9_]")
 	elementre=re.compile("^[a-zA-Z][-a-zA-Z0-9_]+$")
-	reDatumEinfach=re.compile("(?P<Tag>\d\d?)\s*\.\s*(?P<Monat>\d\d?)\s*\.\s*(?P<Jahr>(?:19|20)\d\d)")
+	reDatumEinfach=re.compile("(?P<Tag>\d\d?)\s*\.\s*(?P<Monat>\d\d?)\s*\.\s*(?P<Jahr>(?:19|20)?\d\d)")
 	MONATEfr = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
 	MONATEde = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember']
 	MONATEit = [ "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"]
@@ -72,15 +72,15 @@ class BasisSpider(scrapy.Spider):
 	def parse_gerichtsliste(self, response):
 		logger.debug("parse_gerichtsliste response.status "+str(response.status))
 		logger.info("parse_gerichtsliste Rohergebnis "+str(len(response.body))+" Zeichen")
-		logger.debug("parse_gerichtsliste Rohergebnis: "+response.body_as_unicode())
+		logger.debug("parse_gerichtsliste Rohergebnis: "+response.text)
 
 		self.scrapy_job=os.environ['SCRAPY_JOB']
 		logger.debug("SCRAPY_JOB: "+self.scrapy_job)
 
-		item= { 'Entscheidquellen': response.body_as_unicode() }
+		item= { 'Entscheidquellen': response.text }
 		yield(item)
 
-		virtualFile = StringIO(response.body_as_unicode())
+		virtualFile = StringIO(response.text)
 		reader = csv.DictReader(virtualFile)
 		for row in reader:
 			if 'Spider' in row:
@@ -126,7 +126,7 @@ class BasisSpider(scrapy.Spider):
 						signatur_e.set('Name', signatur)
 						# JSON-Eintrag weitermachen
 						if not gerichtssignatur in json_kanton['gerichte']:
-							logger.info("Gerichtsname "+gerichtssignatur+" abgleichen: "+json.dumps(signaturreihe))
+							logger.debug("Gerichtsname "+gerichtssignatur+" abgleichen: "+json.dumps(signaturreihe))
 							gerichtsname_de=signaturreihe['Stufe 2 de']
 							gerichtsname_fr=signaturreihe['Stufe 2 fr']
 							gerichtsname_it=signaturreihe['Stufe 2 it']
@@ -150,7 +150,7 @@ class BasisSpider(scrapy.Spider):
 								signaturreihe['Stufe 2 it']=gerichtsname_it
 							json_gericht={'de': gerichtsname_de, 'fr': gerichtsname_fr, 'it': gerichtsname_it, 'kammern': {}}
 							json_kanton['gerichte'][gerichtssignatur]=json_gericht
-							logger.info("Gerichtsname "+gerichtssignatur+" abgeglichen: "+json.dumps(signaturreihe))
+							logger.debug("Gerichtsname "+gerichtssignatur+" abgeglichen: "+json.dumps(signaturreihe))
 						else:
 							json_gericht=json_kanton['gerichte'][gerichtssignatur]
 						if not signatur in json_gericht:
@@ -374,8 +374,8 @@ class BasisSpider(scrapy.Spider):
 		
 	def parse_jobliste_S3(self, response):
 		logger.debug("parse_jobliste_S3 response.status "+str(response.status))
-		logger.info("parse_jobliste_S3 Rohergebnis "+str(len(response.body))+" Zeichen")
-		logger.debug("parse_jobliste_S3 Rohergebnis: "+response.body_as_unicode())
+		logger.info("parse_jobliste_S3 Rohergebnis "+str(len(response.text))+" Zeichen")
+		logger.debug("parse_jobliste_S3 Rohergebnis: "+response.text)
 		jobs=response.xpath("//*[local-name()='Contents']/*[local-name()='Key']/text()").getall()
 		if jobs:
 			jobs.sort(reverse=True)
@@ -387,8 +387,8 @@ class BasisSpider(scrapy.Spider):
 	def parse_dateiliste(self, response):
 		logger.info("parse_dateiliste response.status "+str(response.status))
 		logger.info("parse_dateiliste Rohergebnis "+str(len(response.body))+" Zeichen")
-		logger.info("parse_dateiliste Rohergebnis: "+response.body_as_unicode()[:10000])
-		previous_run=json.loads(response.body_as_unicode())
+		logger.info("parse_dateiliste Rohergebnis: "+response.text[:10000])
+		previous_run=json.loads(response.text)
 		if 'job' in previous_run and previous_run['job'] != 'nojob':
 			self.previous_run=previous_run
 			# Wird nur eine Teilabfrage gemacht, die Daten der vorherigen Abfrage übernehmen und mit der Quelle kennzeichnen
@@ -408,8 +408,8 @@ class BasisSpider(scrapy.Spider):
 	def parse_blockliste(self, response):
 		logger.info("parse_blockliste response.status "+str(response.status))
 		logger.info("parse_blockliste Rohergebnis "+str(len(response.body))+" Zeichen")
-		logger.info("parse_blockliste Rohergebnis: "+response.body_as_unicode()[:10000])
-		blockliste=json.loads(response.body_as_unicode())
+		logger.info("parse_blockliste Rohergebnis: "+response.text[:10000])
+		blockliste=json.loads(response.text)
 		if self.name in blockliste:
 			self.blockliste=blockliste[self.name]
 			logger.info("Blocklisteneinträge gefunden: "+json.dumps(blockliste[self.name]))
@@ -537,7 +537,10 @@ class BasisSpider(scrapy.Spider):
 			dat=self.reDatumEinfach.search(datum)
 			if dat:
 				logger.info("Datumsmatch für "+datum)
-				neudat="{}-{:0>2}-{:0>2}".format(dat.group('Jahr'),dat.group('Monat'),dat.group('Tag'))
+				jahr=dat.group('Jahr')
+				if len(jahr)==2:
+					jahr="20"+jahr
+				neudat="{}-{:0>2}-{:0>2}".format(jahr,dat.group('Monat'),dat.group('Tag'))
 				logger.debug("Konvertiere "+datum+" in "+neudat)
 			else:
 				datfr=self.reDatumFR.search(datum)
