@@ -22,3 +22,6 @@ project.egg-info/SOURCES.txt
 NeueScraper/spiders/test.py
 project.egg-info/SOURCES.txt
 project.egg-info/SOURCES.txt
+NeueScraper/spiders/SH_OG.py.alt
+NeueScraper/spiders/SH_OG.py.alt2
+NeueScraper/spiders/SH_OG.py.try
