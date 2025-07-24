@@ -53,7 +53,7 @@ class CH_VB(BasisSpider):
 
 	def parse_trefferliste(self, response):
 		logger.info("parse_trefferliste response.status "+str(response.status)+" für "+response.request.url)
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:80000])
 		noresult=response.xpath("//span[@class='docsNone']")
@@ -101,7 +101,7 @@ class CH_VB(BasisSpider):
 
 	def parse_detail(self, response):
 		logger.info("parse_detail response.status "+str(response.status))
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_detail Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_detail Rohergebnis: "+antwort[:200000])
 	

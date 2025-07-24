@@ -88,9 +88,9 @@ class CH_BVGer(BasisSpider):
 		ab=response.meta['ab']
 		bis=response.meta['bis']
 		logger.info("Suchanfrage_von_bis "+ab+"-"+bis+" Rohergebnis: "+str(len(response.body))+" Zeichen")
-		logger.info("Body: "+response.body_as_unicode())
+		logger.info("Body: "+response.text)
 		if response.status == 200 and len(response.body) > self.MINIMUM_PAGE_LEN:
-			ergebnis=self.reICEsession.search(response.body_as_unicode())
+			ergebnis=self.reICEsession.search(response.text)
 			iceSession=''
 			jSession=''
 			if ergebnis:
@@ -119,7 +119,7 @@ class CH_BVGer(BasisSpider):
 					
 	def intermediate_trefferliste(self,response):
 		logger.debug("Intermediate Trefferliste Rohergebnis "+str(len(response.body))+" Zeichen")
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.debug("Body: "+antwort)
 		jSession=response.meta['jSession']
 		iceSession=response.meta['iceSession']
@@ -133,7 +133,7 @@ class CH_BVGer(BasisSpider):
 
 	def trefferliste(self,response):
 		logger.debug("Trefferliste Rohergebnis "+str(len(response.body))+" Zeichen")
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.debug("Body: "+antwort)
 		#Antwort HTML kommt als CDATA daher kein XPATH hier
 		

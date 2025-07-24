@@ -83,7 +83,7 @@ class ZurichVerwgerSpider(BasisSpider):
 	def parse_trefferliste(self, response):
 		logger.info("parse_trefferliste response.status "+str(response.status))
 		logger.info("parse_trefferliste Rohergebnis "+str(len(response.body))+" Zeichen")
-		logger.info("parse_trefferliste Rohergebnis: "+response.body_as_unicode())
+		logger.info("parse_trefferliste Rohergebnis: "+response.text)
 		
 		treffer=response.xpath("(//table[@width='98%']//table[@width='100%']/tr/td/b/text())[2]").get()
 		if treffer is None:
@@ -167,9 +167,9 @@ class ZurichVerwgerSpider(BasisSpider):
 		"""
 		logger.debug("parse_page response.status "+str(response.status))
 		logger.info("parse_page Rohergebnis "+str(len(response.body))+" Zeichen")
-		logger.debug("parse_page Rohergebnis: "+response.body_as_unicode())
+		logger.debug("parse_page Rohergebnis: "+response.text)
 		item=response.meta['item']
-		PipelineHelper.write_html(response.body_as_unicode(), item, self)
+		PipelineHelper.write_html(response.text, item, self)
 		yield(item)								
 
 

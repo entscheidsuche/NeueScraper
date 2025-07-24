@@ -95,7 +95,7 @@ class SO_Omni(BasisSpider):
 			Cookie=response.headers['Set-Cookie'].decode('UTF-8').split(";")[0]
 		else:
 			logger.info("In der Trefferlistenresponse gibt es keine Cookies.")
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_trefferliste Rohergebnis: "+antwort)
 	
@@ -155,7 +155,7 @@ class SO_Omni(BasisSpider):
 	def parse_document(self, response):
 		logger.info(f"<X>Request-URL: '{response.request.url}', Org-URL: '{response.meta['org']}', Headers: {json.dumps({ k.decode('UTF-8'): response.request.headers[k].decode('UTF-8') for k in response.request.headers})}, Body: '{response.request.body}'")
 		logger.info("parse_document response.status "+str(response.status))
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_document Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_document Rohergebnis: "+antwort[:20000])
 		if 'Cookie' in response.request.headers:
@@ -166,7 +166,7 @@ class SO_Omni(BasisSpider):
 			logger.debug("parse_document Cookie erhalten: "+response.headers['Set-Cookie'].decode('UTF-8'))
 		else:
 			logger.debug("In der Documentresponse gibt es keine Cookies.")
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_document Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_document Rohergebnis: "+antwort[:20000])
 		

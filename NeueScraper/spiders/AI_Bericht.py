@@ -32,7 +32,7 @@ class AI_Bericht(BasisSpider):
 
 	def parse_trefferliste(self, response):
 		logger.debug("parse_trefferliste response.status "+str(response.status))
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:30000])
 	

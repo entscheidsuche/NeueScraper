@@ -29,8 +29,8 @@ class XX_Upload(BasisSpider):
 	def parse_list(self, response):
 		logger.info("parse_uploadliste response.status "+str(response.status))
 		logger.info("parse_uploadliste Rohergebnis "+str(len(response.body))+" Zeichen")
-		logger.info("parse_uploadliste Rohergebnis: "+response.body_as_unicode()[:10000])
-		uploadliste=json.loads(response.body_as_unicode())
+		logger.info("parse_uploadliste Rohergebnis: "+response.text[:10000])
+		uploadliste=json.loads(response.text)
 		logger.info(str(len(uploadliste))+" Upload-Einträge gefunden")
 		for upload in uploadliste:
 			item={}

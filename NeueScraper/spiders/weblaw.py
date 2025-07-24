@@ -36,21 +36,21 @@ class WeblawSpider(BasisSpider):
 	def parse_suchform(self,response):
 		logger.info("parse_suchform response.status "+str(response.status))
 		logger.info("parse_suchform Rohergebnis "+str(len(response.body))+" Zeichen")
-		logger.info("parse_suchform Rohergebnis: "+response.body_as_unicode())
-		qt=self.reQUERY_TICKET.search(response.body_as_unicode())
+		logger.info("parse_suchform Rohergebnis: "+response.text)
+		qt=self.reQUERY_TICKET.search(response.text)
 		if qt and qt.group('query_ticket'):
 			self.query_ticket=qt.group('query_ticket')
 			request=scrapy.Request(url=self.DOMAIN+self.SUCH_URL, method="POST", headers=self.HEADERS, body=self.TREFFERLISTE_BODY+self.query_ticket, callback=self.parse_trefferliste, errback=self.errback_httpbin, meta = {'offset': 0})
 			yield(request)
 		else:
-			logger.error("kein Query-Ticket gefunden in: "+response.body_as_unicode())
+			logger.error("kein Query-Ticket gefunden in: "+response.text)
 
 	def parse_trefferliste(self, response):
 		logger.info("parse_trefferliste response.status "+str(response.status))
 		logger.info("parse_trefferliste Rohergebnis "+str(len(response.body))+" Zeichen")
-		logger.info("parse_trefferliste Rohergebnis: "+response.body_as_unicode())
+		logger.info("parse_trefferliste Rohergebnis: "+response.text)
 		
-		tr=self.reTREFFER.search(response.body_as_unicode())
+		tr=self.reTREFFER.search(response.text)
 		if tr and tr.group('treffer'):
 			treffer=tr.group('treffer')
 			trefferZahl=int(treffer)

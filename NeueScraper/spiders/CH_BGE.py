@@ -55,7 +55,7 @@ class CH_BGE(BasisSpider):
 
 	def parse_trefferliste(self, response):
 		logger.info("parse_trefferliste response.status "+str(response.status)+" URL: "+response.url)
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:30000])
 		jahr=response.meta['Jahr']
@@ -122,7 +122,7 @@ class CH_BGE(BasisSpider):
 
 	def parse_regeste(self, response):
 		logger.info("parse_regeste response.status "+str(response.status)+": "+response.url)
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_regeste Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_regeste Rohergebnis: "+antwort[:10000])
 		
@@ -146,7 +146,7 @@ class CH_BGE(BasisSpider):
 
 	def parse_document(self, response):
 		logger.info("parse_document response.status "+str(response.status))
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_document Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_document Rohergebnis: "+antwort[:20000])
 		

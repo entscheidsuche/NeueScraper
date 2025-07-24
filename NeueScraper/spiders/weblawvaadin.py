@@ -39,7 +39,7 @@ class WeblawVaadinSpider(BasisSpider):
 
 	def parse_suchform(self, response):
 		logger.info("parse_suchform response.status "+str(response.status))
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_suchform Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_suchform Rohergebnis: "+antwort[:30000])
 		struktur=json.loads(antwort)
@@ -61,7 +61,7 @@ class WeblawVaadinSpider(BasisSpider):
 
 	def parse_trefferliste(self, response):
 		logger.info("parse_trefferliste response.status "+str(response.status))
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_trefferliste Rohergebnis: "+antwort)
 		
@@ -105,7 +105,7 @@ class WeblawVaadinSpider(BasisSpider):
 
 	def parse_document(self, response):
 		logger.info("parse_document response.status "+str(response.status))
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_document Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_document Rohergebnis: "+antwort[:20000])
 		

@@ -30,7 +30,7 @@ class LU_Gerichte(BasisSpider):
 
 	def parse_form(self, response):
 		logger.info("parse_form response.status "+str(response.status))
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_form Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_form Rohergebnis: "+antwort[:30000])
 		request = scrapy.FormRequest.from_response(response, formxpath=('//*[@id="maincontent_1_btnSearch"]'), callback=self.parse_weiter, meta={'Seite': 1})
@@ -38,7 +38,7 @@ class LU_Gerichte(BasisSpider):
 
 	def parse_weiter(self, response):
 		logger.info("parse_weiter response.status "+str(response.status))
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_weiter Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_weiter Rohergebnis: "+antwort[:30000])
 		seite=response.meta['Seite']
@@ -74,7 +74,7 @@ class LU_Gerichte(BasisSpider):
 
 	def parse_document(self, response):
 		logger.info("parse_document response.status "+str(response.status))
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_document Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.debug("parse_document Rohergebnis: "+antwort[:20000])
 		

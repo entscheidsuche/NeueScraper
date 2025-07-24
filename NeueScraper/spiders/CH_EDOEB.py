@@ -31,7 +31,7 @@ class CH_EDOEB(BasisSpider):
 
 	def parse_trefferliste(self, response):
 		logger.info("parse_trefferliste response.status "+response.request.url+" "+str(response.status))
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		entry=response.meta['entry']
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen, Typ: "+entry['Typ']+", Kammer: "+entry['Kammer'])
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:80000])
@@ -124,7 +124,7 @@ class CH_EDOEB(BasisSpider):
 
 	def parse_html(self, response):
 		logger.info("parse_html response.status "+response.request.url+" "+str(response.status))
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_html Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_html Rohergebnis: "+antwort[:80000])
 		

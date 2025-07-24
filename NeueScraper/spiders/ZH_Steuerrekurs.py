@@ -34,7 +34,7 @@ class ZH_Steuerrekurs(BasisSpider):
 
 	def parse_trefferliste(self, response):
 		logger.info("parse_trefferliste response.status "+str(response.status))
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:10000])
 		trefferzahlstring=PH.NC(response.xpath("substring-before(//div[@class='box ruling']/p[contains(.,' Entscheide gefunden')]/text(),' Entscheide gefunden')").get(),error='Trefferzahl nicht gefunden.')

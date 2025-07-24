@@ -33,7 +33,7 @@ class AG_Weitere(BasisSpider):
 	# Unklar ob es sich um eine Menüseite oder eine Trefferliste handelt
 	def parse_page(self, response):
 		logger.info("parse_page response.status "+str(response.status)+" for "+response.request.url)
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_page Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_page Rohergebnis: "+antwort[:40000])
 		

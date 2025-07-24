@@ -54,7 +54,7 @@ class ZurichSozversSpider(BasisSpider):
 
 	def parse_trefferliste(self, response):
 		logging.debug("parse_trefferliste response.status "+str(response.status))
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logging.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
 		logging.debug("parse_trefferliste Rohergebnis: "+antwort[:20000])
 		struktur=json.loads(antwort)
@@ -94,7 +94,7 @@ class ZurichSozversSpider(BasisSpider):
 		"""
 		logging.debug("parse_page response.status "+str(response.status))
 		item=response.meta['item']
-		text=response.body_as_unicode()
+		text=response.text
 		logging.info("parse_page Rohergebnis "+str(len(text))+" Zeichen für "+item['Num'])
 		logging.info("parse_page Rohergebnis: "+text[:10000])
 		html=response.xpath("//div[@class='cell small-12 contentContainer printArea']")

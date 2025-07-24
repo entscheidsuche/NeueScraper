@@ -74,7 +74,7 @@ class GenfSpider(BasisSpider):
 
 	def parse_trefferliste(self, response):
 		logger.info("parse_trefferliste response.status "+str(response.status))
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen für: "+response.request.url)
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:10000])
 		
@@ -133,7 +133,7 @@ class GenfSpider(BasisSpider):
 						
 	def parse_document(self, response):
 		logger.info("parse_document response.status "+str(response.status))
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_document Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_document Rohergebnis: "+antwort[:10000])
 		

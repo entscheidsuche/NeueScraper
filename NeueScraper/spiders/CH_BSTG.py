@@ -49,7 +49,7 @@ class CH_BSTG(BasisSpider):
 		
 	def parse_trefferliste(self, response):
 		logger.info("parse_einzelseite response.status "+str(response.status))
-		antwort=response.body_as_unicode()
+		antwort=response.text
 		logger.info("parse_einzelseite Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_einzelseite Rohergebnis: "+antwort[0:50000])
 		

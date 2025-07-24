@@ -75,7 +75,7 @@ class TribunaSpider(BasisSpider):
 		logger.info("Response Cookie Init with "+self.COOKIE_INIT+" with status: "+str(response.status))
 		if response.status == 200 and len(response.body) > self.MINIMUM_PAGE_LEN:
 			# construct and download document links
-			logger.info("Rohergebnis set_cookie: "+response.body_as_unicode())
+			logger.info("Rohergebnis set_cookie: "+response.text)
 			logger.info("Headers set_coookie: "+PH.mydumps(response.headers))
 			cookie=response.headers['Set-Cookie'].decode('ascii').split(';')[0].encode('ascii')
 			request=response.meta['request']
@@ -88,18 +88,18 @@ class TribunaSpider(BasisSpider):
 		result page
 		"""
 		logger.info("Anfrage war: "+response.request.body.decode('utf-8'))
-		logger.info("Rohergebnis: "+response.body_as_unicode())
+		logger.info("Rohergebnis: "+response.text)
 		if response.status == 200 and len(response.body) > self.MINIMUM_PAGE_LEN:
 			# construct and download document links
 
 			if self.page_nr==1:
-				treffer=self.reTreffer.search(response.body_as_unicode())
+				treffer=self.reTreffer.search(response.text)
 				if treffer:
 					logger.info("Trefferzahl: "+treffer.group())
 					self.trefferzahl=int(treffer.group())
 			
 			if self.trefferzahl>0:
-				content = self.reVor.sub('',response.body_as_unicode())
+				content = self.reVor.sub('',response.text)
 			
 				logger.info("Ergebnisseite: "+content)
 
@@ -284,8 +284,8 @@ class TribunaSpider(BasisSpider):
 		html_request=response.meta['html_request']
 		logger.info("Decrypt-Path für DocID "+item['DocId'])
 		if response.status == 200:
-			logger.info("Rohergebnis Decrypt: "+response.body_as_unicode())
-			code=self.reDecrypt.search(response.body_as_unicode())
+			logger.info("Rohergebnis Decrypt: "+response.text)
+			code=self.reDecrypt.search(response.text)
 			if code:
 				numstr = item['Num'].replace(" ", "_")
 				href=self.PDF_PATTERN.format(self.DOWNLOAD_URL,numstr,item['DocId'],code.group(),numstr)
@@ -296,7 +296,7 @@ class TribunaSpider(BasisSpider):
 				else:
 					yield item
 			else:
-				code=self.reDecrypt2.search(response.body_as_unicode())
+				code=self.reDecrypt2.search(response.text)
 				if code:
 					href=self.PDF_PATTERN.format(self.DOWNLOAD_URL,code.group("p1")+code.group("p2"),code.group("p2"),code.group("p4"))
 					logger.info("V2 PDF-URL: "+href)
@@ -319,7 +319,7 @@ class TribunaSpider(BasisSpider):
 	def hole_html(self, response):
 		logger.info("HTML-Request: "+response.request.url)
 		item=response.meta['item']
-		content = self.reVor.sub('',response.body_as_unicode())
+		content = self.reVor.sub('',response.text)
 		logger.info("HTMLseite: "+content)
 		werte=self.reAll.findall(content)
 		xhtml=[i for i,v in enumerate(werte) if v=="xhtml"]

@@ -61,7 +61,7 @@ class ZurichVerwgerSpider(BasisSpider):
 	def parse_trefferliste(self, response):
 		logger.debug("parse_trefferliste response.status "+str(response.status))
 		logger.info("parse_trefferliste Rohergebnis "+str(len(response.body))+" Zeichen")
-		logger.info("parse_trefferliste Rohergebnis: "+response.body_as_unicode()[:20000])
+		logger.info("parse_trefferliste Rohergebnis: "+response.text[:20000])
 	
 		treffer=response.xpath("//table[@style='padding: 0px; margin: 0px;' and @width='100%']/tr/td[@class='resultNavigation']/div[@style='padding-bottom: 4px;']/div[@style='text-align: right;']/b[3]/text()").get()
 		if treffer:
@@ -139,7 +139,7 @@ class ZurichVerwgerSpider(BasisSpider):
 		result page
 		"""
 		logger.debug("parse_page response.status "+str(response.status))
-		text=response.body_as_unicode()
+		text=response.text
 		logger.info("parse_page Rohergebnis "+str(len(text))+" Zeichen")
 		logger.debug("parse_page Rohergebnis: "+text[:5000])
 		item=response.meta['item']
