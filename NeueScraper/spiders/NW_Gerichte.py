@@ -42,6 +42,7 @@ class NW_Gerichte(BasisSpider):
 		else:
 			strukt=json.loads(daten)
 			for entscheid in strukt['data']:
+				logger.infor("Bearbeite Entscheid: "+json.dumps(entscheid))
 				item={}
 				item['EDatum']=self.norm_datum(entscheid['datum-sort'])
 				item['Titel']=entscheid['name']
