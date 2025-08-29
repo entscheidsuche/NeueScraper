@@ -17,9 +17,10 @@ class CH_BGE(BasisSpider):
 	AUFSETZJAHR = 1954
 
 
-	INITIAL_URL='/ext/eurospider/live/de/php/clir/http/index.php'
-	SUCH_URL='/ext/eurospider/live/de/php/clir/http/index.php?lang=de&type=simple_query&query_words=&lang=de&top_subcollection_clir=bge&from_year={von}&to_year={bis}&x=27&y=18'
-	HOST='https://www.bger.ch'
+	INITIAL_URL='/ext/eurospider/live/de/php/clir/http/index_atf.php?lang=de'
+	SUCH_URL='/ext/eurospider/live/de/php/clir/http/index_atf.php?year={band}&volume={volume}&lang=de&zoom=&system=clir'
+	EGMR_URL='/ext/eurospider/live/de/php/clir/http/index_cedh.php?lang=de'
+	HOST="https://search.bger.ch"
 	# https://search.bger.ch/ext/eurospider/live/de/php/clir/http
 	
 	SPRACHEN={"de": "D","fr": "F","it": "I"}
@@ -37,7 +38,7 @@ class CH_BGE(BasisSpider):
 		'Accept-Encoding': 'gzip, deflate, br, zstd',
 		'DNT': '1',
 		'Connection': 'keep-alive',
-		'Referer': 'https://search.bger.ch/ext/eurospider/live/de/php/clir/http/index.php',
+		'Referer': 'https://search.bger.ch/ext/eurospider/live/de/php/clir/http/index_atf.php?lang=de',
 		'Upgrade-Insecure-Requests': '1',
 		'Sec-Fetch-Dest': 'document',
 		'Sec-Fetch-Mode': 'navigate',
@@ -54,13 +55,13 @@ class CH_BGE(BasisSpider):
 	}
 
 
-	def mache_request(self,jar_id,jahr,seite=1):
-		if seite:
-			page="&page="+str(seite)
-		else:
-			page=""
-		request = scrapy.Request(url=self.HOST+self.SUCH_URL.format(von=jahr, bis=jahr)+page, headers=self.HEADER, callback=self.parse_trefferliste, errback=self.errback_httpbin, cookies={'powHash': '0000d05cb3cc07bd2ede4bfee13c80e587c6a816dd325afe2085f931b8d7c0a0', 'powNonce': '4554'}, meta={'cookiejar': jar_id, 'page': seite, 'Jahr': jahr})
-		return request		
+	def mache_requests(self,jar_id,jahr):
+		requests=[]
+		for volume in ["I","II","III","IV","V"]:
+			requests.append(scrapy.Request(url=self.HOST+self.SUCH_URL.format(band=jahr-1874, volume=volume), headers=self.HEADER, callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'cookiejar': jar_id, 'Volume': volume, 'Jahr': jahr}))
+		#EGMR-Request: dort immer alle Entscheide parsen
+		requests.append(scrapy.Request(url=self.HOST+self.EGMR_URL, headers=self.HEADER, callback=self.parse_EGMR_trefferliste, errback=self.errback_httpbin, meta={'cookiejar': jar_id}))
+		return requests		
 
 	def initial_request(self):
 		requests=[scrapy.Request(url=self.HOST+self.INITIAL_URL, headers=self.HEADER, meta={'cookiejar': 0}, callback=self.parse_cookie)]
@@ -79,6 +80,7 @@ class CH_BGE(BasisSpider):
 		logger.info(f"{len(requests)} Requests")
 		for r in requests:
 			yield r
+		
 
 	def request_generator(self,jar_id,ab=None):
 		requests=[]
@@ -88,7 +90,7 @@ class CH_BGE(BasisSpider):
 		else:
 			von=int(ab)
 		for jahr in range(von,bis+1):
-			requests.append(self.mache_request(jar_id,jahr))
+			requests=requests+self.mache_requests(jar_id,jahr)
 		return requests
 
 	def __init__(self, ab=None, neu=None):
@@ -104,70 +106,74 @@ class CH_BGE(BasisSpider):
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:30000])
 		jahr=response.meta['Jahr']
+		volume=response.meta['Volume']
 		jar_id=response.meta['cookiejar']
 		logger.info(f"parse_trefferliste Cookie Jar ID: {jar_id}")
 
-
-	
-		treffer_match=response.xpath("//div[@class='content']/div[@class='ranklist_header center']/text()").get()
-		if treffer_match is None:
-			if response.xpath("//div[@class='content']/div[@class='ranklist_content center']/text()[contains(.,'keine Leitentscheide gefunden')]"):
-				logger.info("keine Leitentscheide für "+str(jahr))
-			else:
-				logger.error("weder Treffer noch Meldung über keine Treffer gefunden in "+response.url)
+		urteile=response.xpath("//ol/li[a]")
+		if urteile is None:
+			logger.info("keine Leitentscheide für "+str(jahr)+" Volume "+volume)
 		else:
-			treffer=int(treffer_match.strip().split(" ")[0])
-		
-			anfangsposition=int(response.xpath("//div[@class='ranklist_content']/ol/@start").get())
-			urteile=response.xpath("//div[@class='ranklist_content']/ol/li")
-
-			logger.info("Liste von {} Urteilen. Start bei {} von {} Treffer".format(len(urteile),anfangsposition, treffer))
+			logger.info("Liste von {} Urteilen.".format(len(urteile)))
 		
 			for entscheid in urteile:
 				text=entscheid.get()
 				item={}
-				item['Num']="BGE "+entscheid.xpath("./span/a/text()").get()
-				item['HTMLUrls']=[entscheid.xpath("./span/a/@href").get()]
-				meta=PH.NC(entscheid.xpath("./div[@class='rank_data']/div[@class='urt small normal']/text()").get(),error="keine Metadaten gefunden für "+item['Num']+": "+text)
-				meta_parse=self.reMeta.search(meta)
-				if meta_parse is None:
-					meta_ohneGN=self.reMetaOhneGN.search(meta)
-					if meta_ohneGN is None:
-						meta_simple=self.reMetaSimple.search(meta)
-						if meta_simple is None:
-							logger.error("Eintrag nicht matchbar "+item['Num']+": "+meta+"\nin: "+text)
-						else:
-							logger.warning("Eintragsdetails nicht parsbar "+item['Num']+": "+meta+"\nin: "+text)
-							item['Formal_org']=meta_simple.group('Rest')
-							item['EDatum']=self.norm_datum(str(jahr))
-					else:
-						logger.warning("Eintrags-Geschäftsnummer nicht parsbar "+ item['Num']+": "+meta+"\nin: "+text)
-						item['EDatum']=self.norm_datum(meta_ohneGN.group('Datum'))
-						item['VKammer']=meta_ohneGN.group('VKammer')					
-				else:
-					item['EDatum']=self.norm_datum(meta_parse.group('Datum'))
-					item['VKammer']=meta_parse.group('VKammer')
-					item['Num2']=meta_parse.group('Num2').replace(".","_")
-						
+				item['Num']="BGE "+entscheid.xpath("./a/text()").get()
+				item['HTMLUrls']=[entscheid.xpath("./a/@href").get()]
+				
+				request = scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, headers=self.HEADER, meta={'cookiejar': jar_id, 'item': item, 'Jahr': jahr})
+				
 				subrequestliste=[]
+				basisurl=item['HTMLUrls'][0]
 				for sprache in self.SPRACHEN:
-					url=entscheid.xpath("./div[@class='rank_data']/div[@class='regeste small normal']/a[text()='"+self.SPRACHEN[sprache]+"']/@href").get()
-					if url:
-						subrequestliste.append(scrapy.Request(url=url, callback=self.parse_regeste, errback=self.errback_httpbin, headers=self.HEADER, cookies={'powHash': '0000d05cb3cc07bd2ede4bfee13c80e587c6a816dd325afe2085f931b8d7c0a0', 'powNonce': '4554'}, meta={'cookiejar': jar_id, 'item': item, 'Sprache': sprache}))
-				if len(subrequestliste)==0:
-					logger.info("Keine Links auf Regesten gefunden in "+text)
-					item['Leitsatz']=PH.NC(entscheid.xpath("./div[@class='rank_data']/div[@class='regeste small normal']/text()").get(),warning="keine Regeste gefunden bei "+item['Num']+": "+text)
+					url=basisurl.replace("%3Ade&lang=de","%3A"+sprache+"%3Aregeste&lang=de")
+					subrequestliste.append(scrapy.Request(url=url, callback=self.parse_regeste, errback=self.errback_httpbin, headers=self.HEADER, meta={'cookiejar': jar_id, 'item': item, 'Jahr': jahr, 'Sprache': sprache}))
 					
-				item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",item['VKammer'] if 'VKammer' in item else "",item['Num'])
-				request = scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, headers=self.HEADER, cookies={'powHash': '0000d05cb3cc07bd2ede4bfee13c80e587c6a816dd325afe2085f931b8d7c0a0', 'powNonce': '4554'}, meta={'cookiejar': jar_id, 'item': item})
 				subrequestliste.append(request)
 				request=subrequestliste[0]
 				del subrequestliste[0]
 				request.meta['requestliste']=subrequestliste
 				yield request
-			if anfangsposition+len(urteile)<treffer:
-				request=self.mache_request(jar_id,jahr,response.meta['page']+1)
-				yield request			
+
+	def parse_EGMR_trefferliste(self, response):
+		logger.info("parse_EGMR_trefferliste response.status "+str(response.status)+" URL: "+response.url)
+		antwort=response.text
+		logger.info("parse_EGMR_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
+		logger.info("parse_EGMR_trefferliste Rohergebnis: "+antwort[:30000])
+		jar_id=response.meta['cookiejar']
+		logger.info(f"parse_trefferliste Cookie Jar ID: {jar_id}")
+
+		urteile=response.xpath("//table[@width='75%' and @style='border: 0px; border-collapse: collapse;']/tr[td]")
+		if urteile is None:
+			logger.error("keine EGMR-Entscheide")
+		else:
+			logger.info("Liste von {} Urteilen.".format(len(urteile)))
+		
+			for entscheid in urteile:
+				item={}
+				text=entscheid.get()
+				item['Num']=PH.NC(entscheid.xpath("./td[2]/a/text()").get(),error="keine Geschäftsnummer in "+text)
+				item['Num2']=PH.NC(entscheid.xpath("./td[4]/text()").get(),warning="keine Fallname in "+text)
+				datumstring=PH.NC(entscheid.xpath("./td[1]/text()").get(),error="Kein Entscheiddatum in "+text)
+				item["EDatum"]=PH.NC(self.norm_datum(datumstring),error="Kein parsbares Entscheiddatum '"+datumstring+"' in "+text)
+				item['HTMLUrls']=[PH.NC(entscheid.xpath("./td[2]/a/@href").get(),error="Keine HTML URL in "+text)]
+				
+				request = scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_EGMR_document, errback=self.errback_httpbin, headers=self.HEADER, meta={'cookiejar': jar_id, 'item': item})
+				
+				subrequestliste=[]
+				basisurl=item['HTMLUrls'][0]
+				logger.info("basisurl: "+basisurl)
+				for sprache in self.SPRACHEN:
+					url=basisurl.replace(":de&lang=de",":"+sprache+":regeste&lang=de")
+					logger.info("angepasste basisurl: "+url)				
+					subrequestliste.append(scrapy.Request(url=url, callback=self.parse_regeste, errback=self.errback_httpbin, headers=self.HEADER, meta={'cookiejar': jar_id, 'item': item, 'Sprache': sprache}))
+					
+				subrequestliste.append(request)
+				request=subrequestliste[0]
+				del subrequestliste[0]
+				request.meta['requestliste']=subrequestliste
+				yield request
 
 	def parse_regeste(self, response):
 		logger.info("parse_regeste response.status "+str(response.status)+": "+response.url)
@@ -198,11 +204,61 @@ class CH_BGE(BasisSpider):
 		antwort=response.text
 		logger.info("parse_document Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_document Rohergebnis: "+antwort[:20000])
+		jahr=response.meta['Jahr']
 		
 		item=response.meta['item']	
+			
+		meta=response.xpath("//div[@class='paraatf']/text()")
+		item['VKammer']=''
+		if meta:
+			meta_string=meta.get()
+			meta_parse=self.reMeta.search(meta_string)
+			if meta_parse is None:
+				meta_ohneGN=self.reMetaOhneGN.search(meta_string)
+				if meta_ohneGN is None:
+					meta_simple=self.reMetaSimple.search(meta_string)
+					if meta_simple is None:
+						logger.error("Eintrag nicht matchbar "+item['Num']+": "+meta_string+"\nin: "+antwort)
+					else:
+						logger.warning("Eintragsdetails nicht parsbar "+item['Num']+": "+meta_string+"\nin: "+antwort)
+						item['Formal_org']=meta_simple.group('Rest')
+						item['EDatum']=self.norm_datum(str(jahr))
+				else:
+					logger.warning("Eintrags-Geschäftsnummer nicht parsbar "+ item['Num']+": "+meta_string+"\nin: "+antwort)
+					item['EDatum']=self.norm_datum(meta_ohneGN.group('Datum'))
+					item['VKammer']=meta_ohneGN.group('VKammer')					
+			else:
+				item['EDatum']=self.norm_datum(meta_parse.group('Datum'))
+				item['VKammer']=meta_parse.group('VKammer')
+				item['Num2']=meta_parse.group('Num2').replace(".","_")
+
+		item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",item['VKammer'],"")
+
 		html=response.xpath("//div[@id='highlight_content']/div[@class='content']")
 		if html == []:
 			logger.warning("Content nicht erkannt in "+antwort[:20000])
 		else:
 			PH.write_html(html.get(), item, self)
+
+		yield(item)
+		
+		
+	def parse_EGMR_document(self, response):
+		logger.info("parse_EGMR_document response.status "+str(response.status))
+		antwort=response.text
+		logger.info("parse_EGMR_document Rohergebnis "+str(len(antwort))+" Zeichen")
+		logger.info("parse_EGMR_document Rohergebnis: "+antwort[:20000])
+		
+		item=response.meta['item']	
+			
+		item['VKammer']='EGMR'
+
+		item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",item['VKammer'],item['Num'])
+
+		html=response.xpath("//div[@id='highlight_content']/div[@class='content']")
+		if html == []:
+			logger.warning("Content nicht erkannt in "+antwort[:20000])
+		else:
+			PH.write_html(html.get(), item, self)
+
 		yield(item)
