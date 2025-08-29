@@ -18,7 +18,7 @@ class NW_Gerichte(BasisSpider):
 	SUCH_URL='/rechtsprechung'
 	HOST ="https://www.nw.ch"
 
-	reURL=re.compile(r'<a href="(?P<URL>[^"]+)"')
+	reURL=re.compile(r'<a (?:.+\s+)*href="(?P<URL>[^"]+)"')
 	
 	def get_next_request(self):
 		request=scrapy.Request(url=self.HOST+self.SUCH_URL, callback=self.parse_trefferliste, errback=self.errback_httpbin)
