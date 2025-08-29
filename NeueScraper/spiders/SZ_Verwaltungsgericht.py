@@ -30,9 +30,11 @@ class SZ_Verwaltungsgericht(TribunaSpider):
 	MINIMUM_PAGE_LEN = 100
 	DOWNLOAD_URL = 'https://gerichte.sz.ch/vg/tribunavtplus/ServletDownload/'
 	PDF_PATTERN = "{}{}?path={}&pathIsEncrypted=1&dossiernummer={}"
-
+	HOLE_AUCH_HTML = True
 	ENCRYPTED = True
 	ASCII_ENCRYPTED = True
+	
+	HTML_REQUEST = '7|0|15|https://gerichte.sz.ch/vg/tribunavtplus/|CAC80118FB77794F1FDFC1B51371CC63|tribunavtplus.client.zugriff.LoadTableService|getDocumentDetails|java.lang.String/2004016611|java.util.List|[B/3308590456|java.lang.Boolean/476441737|Z|TRI|{}||java.util.ArrayList/4159755760|0|de|1|2|3|4|10|5|5|5|6|5|7|8|9|5|5|10|11|12|13|0|14|7|96|101|98|50|97|50|55|99|51|98|51|52|48|102|52|55|52|99|53|51|97|49|54|99|98|50|57|99|53|53|102|52|98|98|54|56|53|100|51|48|57|57|97|53|49|53|51|57|97|49|55|54|100|55|49|54|102|50|100|51|100|50|97|55|99|102|54|57|98|51|101|49|56|99|53|97|53|97|98|51|98|51|55|100|98|53|52|49|55|101|56|99|55|57|53|100|48|8|0|0|12|15|'
 	
 	DECRYPT_PAGE_URL = "https://gerichte.sz.ch/vg/tribunavtplus/loadTable"
 	# DECRYPT_START ='7|0|5|https://gerichte.sz.ch/tribunavtplus/|27D15B82643FBEE798506E3AEC7D40C0|tribunavtplus.client.zugriff.DecryptService|encrypt|[B/3308590456|1|2|3|4|2|5|5|5|58'
