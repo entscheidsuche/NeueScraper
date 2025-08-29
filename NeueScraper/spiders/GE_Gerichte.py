@@ -17,7 +17,7 @@ class GenfSpider(BasisSpider):
 	MAX_PAGES = 10000
 	TREFFER_PRO_SEITE = 500
 	SUCH_URL='/apps/decis/fr/{gericht}/search?search_meta=dt_decision%3A[{datum}+TO+{bis}]&decision_from={datum}&decision_to={bis}&sort_by=date&page_size={treffer_pro_seite}&page={seite}'
-	HOST ="http://justice.ge.ch"
+	HOST ="https://justice.ge.ch"
 	suchseiten={ 'capj': "GE_CAPJ_001",
 				'acjc': "GE_CJ_001",
 				'sommaires': "GE_CJ_002",
@@ -36,6 +36,8 @@ class GenfSpider(BasisSpider):
 				'cst': "GE_CJ_015",
 				'jtp': "GE_TP_001",
 				'dccr': "GE_TAPI_001"}
+
+	
 				
 	#reTreffer=re.compile(r'<span class=\"float_right txt_gras\">\s*(?P<num>[^<\s]+)\s+</span>\s+<b>\s+<a href=\"(?P<url>[^\"]+)(?:[^\s]|\s){10,80}du (?P<tag>\d\d?)\.(?P<monat>\d\d?)\.(?P<jahr>(?:19|20)\d\d)\s+,\s+(?P<ergebnis>[^ ]+)(?:[^\s]|\s){30,300}<div>\s+<b>Descripteurs</b> :\s+(?P<betreff>[^<]+[^\s<])\s+</div>\s+<div>\s+<b>Normes</b> :\s+(?P<normen>[^<]+[^\s<])\s+</div>\s+<div>\s+<b>Résumé</b> :\s+(?P<abstract>[^<]+[^<\s])')
 	#reTreffer=re.compile(r'<span class=\"float_right txt_gras\">\s*(?P<num>[^<\s]+)\s+</span>\s+<b>\s+<a href=\"(?P<url>[^\"]+)(?:[^\s]|\s){10,80}du (?P<tag>\d\d?)\.(?P<monat>\d\d?)\.(?P<jahr>(?:19|20)\d\d)\s+(?:sur\s(?P<vorinstanz>[^ ]+)\s+)?(?:\([^\)]+\)\s+)?,\s+(?P<ergebnis>[^ ]+)\s+-- score: <em>[^<]+</em>\s+</div>\s+<div class=\"data\">\s+<div>\s+<b>(?:Descripteurs</b> :\s+(?P<betreff>[^<]+[^\s<])\s+</div>(?:\s+<div>\s+<b>)?)?(?:Normes</b> :\s+(?P<normen>[^<]+[^\s<])\s+</div>(?:\s+<div>\s+<b>)?)?(?:Résumé</b> :\s+(?P<abstract>[^<]+[^<\s]))?')
@@ -142,7 +144,10 @@ class GenfSpider(BasisSpider):
 
 		pdf=html.xpath("//div[@class='col-lg-12 mt-4']/div[@style='float:right']/a[img]/@href")
 		if pdf:
-			item['PDFUrls']=[self.HOST+pdf.get()]
+			pdfstring=pdf.get()
+			pdfstringneu=pdfstring.replace("//","/")
+			logger.info(f"URL angepasst {pdfstring} nach {pdfstringneu}")
+			item['PDFUrls']=[self.HOST+pdfstringneu]
 		else:
 			logger.warning("kein PDF für "+item['Num'])
 
