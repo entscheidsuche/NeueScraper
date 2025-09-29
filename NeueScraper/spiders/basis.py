@@ -10,6 +10,7 @@ import json
 import re
 from lxml import etree
 import copy
+from scrapy.spidermiddlewares.httperror import HttpError
 
 from NeueScraper.pipelines import MyFilesPipeline
 from NeueScraper.pipelines import PipelineHelper
@@ -608,7 +609,18 @@ class BasisSpider(scrapy.Spider):
 		# log all errback failures,
 		# in case you want to do something special for some errors,
 		# you may need the failure's type
+		
 		logger.error(repr(failure))
+		if failure.check(HttpError):
+			response = failure.value.response
+			logger.error("HTTP %s on %s. Resp headers: %r. Request header %r", response.status, response.url, response.headers, response.request.headers)
+			body_preview = response.text[:10000]  # nicht alles loggen
+			logger.debug("Resp body (first 10000): %r", body_preview)
+
+		elif failure.check(DNSLookupError):
+			logger.error("DNS error on %s", failure.request.url)
+		elif failure.check(TimeoutError, TCPTimedOutError):
+			logger.error("Timeout on %s", failure.request.url)
 		
 
 		
