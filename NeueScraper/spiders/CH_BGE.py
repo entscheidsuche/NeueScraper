@@ -9,6 +9,7 @@ import datetime
 from NeueScraper.spiders.basis import BasisSpider
 from NeueScraper.pipelines import PipelineHelper as PH
 from scrapy.downloadermiddlewares.cookies import CookiesMiddleware
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -17,10 +18,14 @@ class CH_BGE(BasisSpider):
 	AUFSETZJAHR = 1954
 
 
-	INITIAL_URL='/ext/eurospider/live/de/php/clir/http/index_atf.php?lang=de'
-	SUCH_URL='/ext/eurospider/live/de/php/clir/http/index_atf.php?year={band}&volume={volume}&lang=de&zoom=&system=clir'
-	EGMR_URL='/ext/eurospider/live/de/php/clir/http/index_cedh.php?lang=de'
-	HOST="https://search.bger.ch"
+	INITIAL_URL='/bge_helper/request.php?stub=https%3A%2F%2Fsearch.bger.ch%2Fext%2Feurospider%2Flive%2Fde%2Fphp%2Fclir%2Fhttp%2Findex_atf.php&lang=de'
+	SUCH_URL='/bge_helper/request.php?stub=https%3A%2F%2Fsearch.bger.ch%2Fext%2Feurospider%2Flive%2Fde%2Fphp%2Fclir%2Fhttp%2Findex_atf.php&lang=de&zoom=&system=clir'
+	EGMR_URL='/bge_helper/request.php?stub=https%3A%2F%2Fsearch.bger.ch%2Fext%2Feurospider%2Flive%2Fde%2Fphp%2Fclir%2Fhttp%2Findex_cedh.php&lang=de'
+	HOST="https://entscheidsuche.ch"
+	HELPER="/bge_helper/request.php?stub="
+	# SUCH_URL='/ext/eurospider/live/de/php/clir/http/index_atf.php?year={band}&volume={volume}&lang=de&zoom=&system=clir'
+	# EGMR_URL='/ext/eurospider/live/de/php/clir/http/index_cedh.php?lang=de'
+	# HOST="https://search.bger.ch"
 	# https://search.bger.ch/ext/eurospider/live/de/php/clir/http
 	
 	SPRACHEN={"de": "D","fr": "F","it": "I"}
@@ -121,15 +126,22 @@ class CH_BGE(BasisSpider):
 				item={}
 				item['Num']="BGE "+entscheid.xpath("./a/text()").get()
 				item['HTMLUrls']=[entscheid.xpath("./a/@href").get()]
+				url=item['HTMLUrls'][0]
+				before, sep, after = url.partition('?')
+				encoded = quote(before, safe='') 
+				url=self.HOST+self.HELPER+encoded+"&"+after
+
 				
-				request = scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, headers=self.HEADER, meta={'cookiejar': jar_id, 'item': item, 'Jahr': jahr})
+				request = scrapy.Request(url=url, callback=self.parse_document, errback=self.errback_httpbin, headers=self.HEADER, meta={'cookiejar': jar_id, 'item': item, 'Jahr': jahr})
 				
 				subrequestliste=[]
 				basisurl=item['HTMLUrls'][0]
 				for sprache in self.SPRACHEN:
 					url=basisurl.replace("%3Ade&lang=de","%3A"+sprache+"%3Aregeste&lang=de")
 					subrequestliste.append(scrapy.Request(url=url, callback=self.parse_regeste, errback=self.errback_httpbin, headers=self.HEADER, meta={'cookiejar': jar_id, 'item': item, 'Jahr': jahr, 'Sprache': sprache}))
-					
+					before, sep, after = url.partition('?')
+					encoded = quote(before, safe='') 
+					url=self.HOST+self.HELPER+encoded+"&"+after
 				subrequestliste.append(request)
 				request=subrequestliste[0]
 				del subrequestliste[0]
@@ -158,15 +170,22 @@ class CH_BGE(BasisSpider):
 				datumstring=PH.NC(entscheid.xpath("./td[1]/text()").get(),error="Kein Entscheiddatum in "+text)
 				item["EDatum"]=PH.NC(self.norm_datum(datumstring),error="Kein parsbares Entscheiddatum '"+datumstring+"' in "+text)
 				item['HTMLUrls']=[PH.NC(entscheid.xpath("./td[2]/a/@href").get(),error="Keine HTML URL in "+text)]
+				url=item['HTMLUrls'][0]
+				before, sep, after = url.partition('?')
+				encoded = quote(before, safe='') 
+				url=self.HOST+self.HELPER+encoded+"&"+after
 				
-				request = scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_EGMR_document, errback=self.errback_httpbin, headers=self.HEADER, meta={'cookiejar': jar_id, 'item': item})
+				request = scrapy.Request(url=url, callback=self.parse_EGMR_document, errback=self.errback_httpbin, headers=self.HEADER, meta={'cookiejar': jar_id, 'item': item})
 				
 				subrequestliste=[]
 				basisurl=item['HTMLUrls'][0]
 				logger.info("basisurl: "+basisurl)
 				for sprache in self.SPRACHEN:
 					url=basisurl.replace(":de&lang=de",":"+sprache+":regeste&lang=de")
-					logger.info("angepasste basisurl: "+url)				
+					logger.info("angepasste basisurl: "+url)
+					before, sep, after = url.partition('?')
+					encoded = quote(before, safe='') 
+					url=self.HOST+self.HELPER+encoded+"&"+after
 					subrequestliste.append(scrapy.Request(url=url, callback=self.parse_regeste, errback=self.errback_httpbin, headers=self.HEADER, meta={'cookiejar': jar_id, 'item': item, 'Sprache': sprache}))
 					
 				subrequestliste.append(request)
