@@ -9,13 +9,14 @@ import datetime
 from NeueScraper.spiders.basis import BasisSpider
 from NeueScraper.pipelines import PipelineHelper as PH
 from scrapy.downloadermiddlewares.cookies import CookiesMiddleware
+from urllib.parse import quote
 
 
 logger = logging.getLogger(__name__)
 
 class CH_BGer(BasisSpider):
 	name = 'CH_BGer'
-	TAGSCHRITTE = 20
+	TAGSCHRITTE = 1
 	AUFSETZTAG = "01.01.2000"
 	DELTA=datetime.timedelta(days=TAGSCHRITTE-1)
 	EINTAG=datetime.timedelta(days=1)
@@ -23,6 +24,7 @@ class CH_BGer(BasisSpider):
 	INITIAL_URL='/ext/eurospider/live/de/php/aza/http/index.php'
 	SUCH_URL='/ext/eurospider/live/de/php/aza/http/index.php?lang=de&type=simple_query&query_words=&top_subcollection_aza=all&from_date={von}&to_date={bis}&x=22&y=14'
 	HOST='https://www.bger.ch'
+	PROXY='https://entscheidsuche.ch/bge_helper/request.php?stub='
 	HEADER={
 		'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:141.0) Gecko/20100101 Firefox/141.0',
 		'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -52,7 +54,12 @@ class CH_BGer(BasisSpider):
 			page="&page="+str(seite)
 		else:
 			page=""
-		request = scrapy.Request(url=self.HOST+self.SUCH_URL.format(von=von,bis=bis)+page, headers=self.HEADER, callback=self.parse_trefferliste, errback=self.errback_httpbin, cookies={'powHash': '0000d05cb3cc07bd2ede4bfee13c80e587c6a816dd325afe2085f931b8d7c0a0', 'powNonce': '4553'}, meta={'cookiejar': jar_id, 'page': seite, 'von': von, 'bis': bis})
+		url=self.HOST+self.SUCH_URL.format(von=von,bis=bis)+page
+		before, sep, after = url.partition('?')
+		encoded = quote(before, safe='') 
+		url=self.PROXY+encoded+"&"+after
+		
+		request = scrapy.Request(url=url, headers=self.HEADER, callback=self.parse_trefferliste, errback=self.errback_httpbin, cookies={'powHash': '0000d05cb3cc07bd2ede4bfee13c80e587c6a816dd325afe2085f931b8d7c0a0', 'powNonce': '4553'}, meta={'cookiejar': jar_id, 'page': seite, 'von': von, 'bis': bis, 'retry': 0})
 		return request		
 
 	def request_generator(self,jar_id,ab=None):
@@ -71,7 +78,11 @@ class CH_BGer(BasisSpider):
 		return requests
 		
 	def initial_request(self):
-		requests=[scrapy.Request(url=self.HOST+self.INITIAL_URL, headers=self.HEADER, meta={'cookiejar': 0}, callback=self.parse_cookie)]
+		url=self.HOST+self.INITIAL_URL
+		before, sep, after = url.partition('?')
+		encoded = quote(before, safe='') 
+		url=self.PROXY+encoded+"&"+after
+		requests=[scrapy.Request(url=url, headers=self.HEADER, meta={'cookiejar': 0}, callback=self.parse_cookie)]
 		return requests
 	
 	def __init__(self, ab=None, neu=None):
@@ -103,6 +114,7 @@ class CH_BGer(BasisSpider):
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:30000])
 		jar_id=response.meta['cookiejar']
 		logger.info(f"parse_trefferliste Cookie Jar ID: {jar_id}")
+		retry=response.meta['retry']
 	
 		trefferstring=PH.NC(response.xpath("//div[@class='content']/div[@class='ranklist_header center']/text()").get(),info="Trefferzahl nicht gefunden in: "+antwort)
 		if trefferstring=="":
@@ -110,7 +122,13 @@ class CH_BGer(BasisSpider):
 			if no_treffer and "keine Urteile gefunden" in no_treffer:
 				logger.info("keine Urteile im Zeitraum "+response.meta['von']+"-"+response.meta['bis'])
 			else:
-				logger.error("Weder Trefferzahl noch 'keine Treffer' gefunden in: "+response.url+": "+antwort)
+				if retry>4:
+					logger.error("Trotz 5 retries weder Trefferzahl noch 'keine Treffer' gefunden in: "+response.url+": "+antwort)
+				else:
+					request=response.request
+					request.meta['retry']=retry+1
+					logger.warning("Versuch "+str(retry)+": Weder Trefferzahl noch 'keine Treffer' gefunden in: "+response.url+": "+antwort)
+					yield scrapy.Request(url=request.url, headers=self.HEADER, callback=self.parse_trefferliste, errback=self.errback_httpbin, cookies={'powHash': '0000d05cb3cc07bd2ede4bfee13c80e587c6a816dd325afe2085f931b8d7c0a0', 'powNonce': '4553'}, meta=request.meta, dont_filter=True)
 		else:
 			treffer=int(trefferstring.split(" ")[0])
 			anfangsposition=int(response.xpath("//div[@class='ranklist_content']/ol/@start").get())
@@ -140,22 +158,29 @@ class CH_BGer(BasisSpider):
 						logger.info("Ersetze Leerzeichen in "+item['Num']+": "+item['Num2'])
 						
 					item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("",item['VKammer'],item['Num'])
-					request = scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, cookies={'powHash': '0000d05cb3cc07bd2ede4bfee13c80e587c6a816dd325afe2085f931b8d7c0a0', 'powNonce': '4553'}, meta={'item': item})
+					url=item['HTMLUrls'][0]
+					before, sep, after = url.partition('?')
+					encoded = quote(before, safe='') 
+					url=self.PROXY+encoded+"&"+after
+					request = scrapy.Request(url=url, callback=self.parse_document, errback=self.errback_httpbin, cookies={'powHash': '0000d05cb3cc07bd2ede4bfee13c80e587c6a816dd325afe2085f931b8d7c0a0', 'powNonce': '4553'}, meta={'item': item})
 					yield request
 			if anfangsposition+len(urteile)<treffer:
-				request=self.mache_request(jar_id, response.meta['von'],response.meta['bis'],response.meta['page']+1)
-				yield request			
+				if response.meta['page']==10:
+					logger.error("mehr als 100 Trreffer können wegen eines Bugs nicht angezeigt werden. Hier {} Treffer, von {} bis {} und Seite {}".format(treffer, response.meta['von'],response.meta['bis'],response.meta['page']))
+				else:
+					request=self.mache_request(jar_id, response.meta['von'],response.meta['bis'],response.meta['page']+1)
+					yield request			
 
 	def parse_document(self, response):
-		logger.info("parse_document response.status "+str(response.status))
+		logger.info("parse_document response.status "+str(response.status)+" for "+response.request.url)
 		antwort=response.text
 		logger.info("parse_document Rohergebnis "+str(len(antwort))+" Zeichen")
-		logger.info("parse_document Rohergebnis: "+antwort[:20000])
+		logger.info("parse_document Rohergebnis: "+antwort[:30000])
 		
 		item=response.meta['item']	
 		html=response.xpath("//div[@id='highlight_content']/div[@class='content']")
 		if html == []:
-			logger.warning("Content nicht erkannt in "+antwort[:20000])
+			logger.warning("Content nicht erkannt in "+antwort[:30000])
 		else:
 			PH.write_html(html.get(), item, self)
 		yield(item)
