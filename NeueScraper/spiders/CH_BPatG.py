@@ -34,6 +34,7 @@ class CH_BPatG(BasisSpider):
 		'tx_iscourtcases_entscheidesuche[join-technischesgebiet]': '',
 		'tx_iscourtcases_entscheidesuche[formsearch]': '1'}
 	HOST="https://www.bundespatentgericht.ch"
+
 	
 	def __init__(self, neu=None):
 		self.neu=neu
@@ -63,7 +64,7 @@ class CH_BPatG(BasisSpider):
 		logger.info("parse_entry Rohergebnis: "+antwort[:20000])
 		
 		item={}
-		item['PDFUrls']=[self.HOST+PH.NC(response.xpath("//table[@class='tx-is-courtcases']/tr/td[contains(.,'Entscheid als PDF')]/following-sibling::td/a/@href").get(),warning="kein PDF gefunden")]
+		item['PDFUrls']=[PH.NC(response.xpath("//table[@class='tx-is-courtcases']/tr/td[contains(.,'Entscheid als PDF')]/following-sibling::td/a/@href").get(),warning="kein PDF gefunden")]
 		item['Num']=PH.NC(response.xpath("//table[@class='tx-is-courtcases']/tr/td[contains(.,'Prozessnummer')]/following-sibling::td/text()").get(),warning="kein Geschäftsnummer")
 		item['EDatum']=self.norm_datum(PH.NC(response.xpath("//table[@class='tx-is-courtcases']/tr/td[contains(.,'Entscheiddatum')]/following-sibling::td/text()").get(),warning="kein Entscheiddatum"))
 		item['Entscheidart']=PH.NC(response.xpath("//table[@class='tx-is-courtcases']/tr/td[contains(.,'Art des Verfahrens')]/following-sibling::td/text()").get(),info="keine Verfahrensart")
