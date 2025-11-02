@@ -20,7 +20,6 @@ from twisted.internet import defer, threads
 from itemadapter import ItemAdapter
 from scrapy.exceptions import DropItem
 from io import BytesIO
-from scrapy.utils.misc import md5sum
 from lxml import etree
 import datetime
 import operator
@@ -31,6 +30,8 @@ from scrapy.settings import Settings
 from scrapy.exceptions import IgnoreRequest, NotConfigured
 import requests
 import hashlib
+import base64, binascii
+
 
 
 filenamechars=re.compile("[^-a-zA-Z0-9]")
@@ -300,10 +301,10 @@ class SFTPFilesStore:
 			spider=info.spider
 
 		# Upload file to SFTP
-		existiert_bereits=PipelineHelper.checkfile(spider, path, buf, checksum,LogFlag)
+		existiert_bereits, neubuf=PipelineHelper.checkfile(spider, path, buf, checksum,LogFlag)
 		if not existiert_bereits:
 			fullpath = f'{self.basedir}/{path}'
-			SFTPFilesStore.sftp_store_file(path=fullpath, file=buf, host=self.host, username=self.username, password=self.password)
+			SFTPFilesStore.sftp_store_file(path=fullpath, file=neubuf, host=self.host, username=self.username, password=self.password)
 
 	def stat_file(self, path, info):
 		return {}
@@ -459,7 +460,7 @@ class MyS3FilesStore(S3FilesStore):
 		# Upload file to S3 storage
 		key_name = f'{self.prefix}{path}'
 		logger.debug("pf key_name: "+key_name)
-		existiert_bereits=PipelineHelper.checkfile(spider, path, buf, checksum,LogFlag)
+		existiert_bereits, neubuf=PipelineHelper.checkfile(spider, path, buf, checksum,LogFlag)
 		if not existiert_bereits:
 			if self.is_botocore:
 				logger.debug("pf is_botocore")
@@ -471,7 +472,7 @@ class MyS3FilesStore(S3FilesStore):
 					self.s3_client.put_object,
 					Bucket=self.bucket,
 					Key=key_name,
-					Body=buf,
+					Body=neubuf,
 					Metadata={k: str(v) for k, v in (meta or {}).items()},
 					ACL=self.POLICY,
 					ContentType=ContentType,
@@ -487,7 +488,7 @@ class MyS3FilesStore(S3FilesStore):
 				if headers:
 					h.update(headers)
 				return threads.deferToThread(
-					k.set_contents_from_string, buf.getvalue(),
+					k.set_contents_from_string, neubuf.getvalue(),
 					headers=h, policy=self.POLICY)
 
 	def _get_boto_bucket(self):
@@ -572,27 +573,63 @@ class PipelineHelper:
 		# Die md5-Checksum bereits vorher berechnen, da das Abspeichern deferred erfolgt.
 		buf=BytesIO(html_content.encode(encoding='UTF-8'))
 		buf.seek(0)
-		checksum=md5sum(buf)
+		checksum=hashlib.md5(buf.getvalue()).hexdigest()
 		buf.seek(0)
 		MyFilesPipeline.common_store.persist_file(html_pfad, buf, info=None, spider=spider, meta=None, headers=None, item=item, ContentType='text/html', checksum=checksum)
 		item['HTMLFiles']=[{'url': item['HTMLUrls'][0], 'path': html_pfad, 'checksum': checksum}]
 
 	@staticmethod
+	def b64_decode(buf):
+		"""Base64/Base64URL-decode `ba` in place. True on success, False on failure."""
+
+		if hasattr(buf, "getvalue"):
+			data = bytes(buf.getvalue())
+		else:
+			data = bytes(buf.read())
+		if data:
+			data = re.sub(br"\s+", b"", data)  # ASCII-Whitespace entfernen
+		# Leere Eingabe ist ungültig
+		else:
+			logger.error("kein Bytestring für base64")
+			buf.seek(0)
+			return False, buf
+		# Padding ergänzen
+		data += b"=" * (-len(data) % 4)
+
+		# Zuerst Standard-Base64, dann (falls erlaubt) URL-safe versuchen
+		try:
+			out = base64.b64decode(data, validate=True)
+		except (binascii.Error, ValueError):
+			try:
+				out = base64.b64decode(data, altchars=b"-_", validate=True)
+			except (binascii.Error, ValueError):
+				logger.warning("kein Base64")
+				buf.seek(0)
+				return False, buf
+		return True, BytesIO(out)
+
+	@staticmethod
 	def checkfile(spider, path, buf, checksum,LogFlag):
 		scrapedate = datetime.datetime.now().strftime("%Y-%m-%d")
 		buf.seek(0)
+		neubuf=buf
 		if path[-4:]=='.pdf':
 			ende = buf.getvalue()[-10:]
 			if not (b'%%EOF' in ende):
-				logger.error("Datei "+path+" enthält keine PDF-Endemarkierung in: "+ende.decode('iso-8859-1'))
+				logger.warning(f"Datei {path} enthält keine PDF-Endemarkierung in: {ende.decode('iso-8859-1')} aber vielleiht base64?\n…")
+				ergebnis, neubuf=PipelineHelper.b64_decode(buf)
+				if ergebnis:
+					logger.info(f"Datei {path} war base64")
+					ende = buf.getvalue()[-10:]
+			if not (b'%%EOF' in ende):		
+				logger.error(f"Datei {path} enthält keine PDF-Endemarkierung in: {ende.decode('iso-8859-1')}, Datei: {buf.getvalue()[:30000]}\n…")
 				if path in spider.files_written:
 					del spider.files_written[path]
-				return True
-			else:
-				buf.seek(0)
+				return True, neubuf
+		neubuf.seek(0)
 		if checksum is None:
-			checksum=md5sum(buf)
-			buf.seek(0)
+			checksum=hashlib.md5(neubuf.getvalue()).hexdigest()
+			neubuf.seek(0)
 		existiert_bereits=False
 		if LogFlag and spider:
 			neustatus='neu'
@@ -628,7 +665,7 @@ class PipelineHelper:
 				spider.files_written[path]={'checksum': checksum, "status": neustatus, "last_change": last_change, "scrapedate": scrapedate}
 			else:
 				spider.files_written[path]={'checksum': checksum, "status": neustatus, "scrapedate": scrapedate}
-		return existiert_bereits
+		return existiert_bereits, neubuf
 
 	@staticmethod
 	def file_path(item, spider=None):
@@ -756,7 +793,11 @@ class PipelineHelper:
 								scrapedate=oldfile['scrapedate']
 							else:
 								scrapedate='2023-01-01'
-			eintrag['PDF']={'Datei': item['PDFFiles'][0]['path'], 'URL': item['PDFFiles'][0]['url'], 'Checksum': item['PDFFiles'][0]['checksum']}
+			if not 'PDFUrls' in item:
+				logger.error(f"Item {item['Num']} hat keine PDFUrls in make_json aber PDFFiles: {json.dumps(item)} in make_json.")
+				eintrag['PDF']={'Datei': item['PDFFiles'][0]['path'], 'URL': item['PDFFiles'][0]['url'], 'Checksum': item['PDFFiles'][0]['checksum']}
+			else:
+				eintrag['PDF']={'Datei': item['PDFFiles'][0]['path'], 'URL': item['PDFUrls'][0], 'Checksum': item['PDFFiles'][0]['checksum']}
 		eintrag['Scrapedate']=scrapedate
 		if 'Nums' in item:
 			eintrag['Num']=item['Nums']+zweitnum		
@@ -861,8 +902,7 @@ class PipelineHelper:
 				abstract.append({'Sprachen': list(spider.kantone), 'Text': " | ".join(abstracts)})
 		if len(abstract)>0:
 			eintrag['Abstract']=abstract
-		buf = BytesIO(json.dumps(eintrag).encode('UTF-8'))
-		checksum = md5sum(buf)
+		checksum = hashlib.md5(json.dumps(eintrag).encode('UTF-8')).hexdigest()
 		eintrag['ScrapyJob']=spider.scrapy_job
 		eintrag['Zeit UTC']=datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S")
 		eintrag['Checksum']=checksum
@@ -891,7 +931,11 @@ class PipelineHelper:
 		if 'PDFFiles' in item and item['PDFFiles']:
 			pdffile=PipelineHelper.xml_add_element(meta,'PDFFile',item['PDFFiles'][0]['path'])
 			pdffile.set('Checksum',item['PDFFiles'][0]['checksum'])
-			pdffile.set('URL',item['PDFFiles'][0]['url'])
+			if not 'PDFUrls' in item:
+				logger.error(f"Item {item['Num']} hat keine PDFUrls in make_xml.")
+				pdffile.set('URL',item['PDFFiles'][0]['url'])
+			else:
+				pdffile.set('URL',item['PDFUrls'][0])
 		if 'HTMLFiles' in item and item['HTMLFiles']:
 			htmlfile=PipelineHelper.xml_add_element(meta,'HTMLFile',item['HTMLFiles'][0]['path'])
 			htmlfile.set('Checksum',item['HTMLFiles'][0]['checksum'])
@@ -1083,8 +1127,30 @@ class MyFilesPipeline(FilesPipeline):
 		return PipelineHelper.file_path(item, info.spider if info is not None else None)+".pdf"
 
 	def get_media_requests(self, item, info):
-		urls = item[self.files_urls_field] if self.files_urls_field in item else []
-		return [scrapy.Request(url=u, meta={"item":item}) for u in urls]
+		if "ProxyUrls" in item and item["ProxyUrls"]:
+			if "PDFUrls" in item:
+				logger.info(f"Proxy für {item['Num']}, {item['PDFUrls'][0]} verwenden.")
+				urls = item["ProxyUrls"]
+				logger.info("ProxyUrls: "+json.dumps(item["ProxyUrls"]))
+			else:
+				logger.error(f"Kein PDFUrls in {item['Num']}, {json.dumps(item)} in get_media_requests")
+		else:
+			urls = item[self.files_urls_field] if self.files_urls_field in item else []
+
+		if "PdfHeaders" in item and item["PdfHeaders"]:
+			headers=item["PdfHeaders"]
+		else:
+			headers=None
+
+		if "CookieJar" in item:
+			jar_id=item['CookieJar']
+			logger.info(f"CookieJar für PDF: {jar_id}")
+			requests=[scrapy.Request(url=u, headers=headers, meta={'cookiejar': jar_id, 'item':item}, dont_filter=True) for u in urls]
+		else:
+			requests=[scrapy.Request(url=u, headers=headers, meta={"item":item}, dont_filter=True) for u in urls]
+			
+			
+		return requests
 
 
 	def file_downloaded(self, response, request, info=None, item=None):
@@ -1095,9 +1161,8 @@ class MyFilesPipeline(FilesPipeline):
 			logger.debug('item war in file_downloaded bereits gesetzt')
 		path = self.file_path(request, response, info, item=item)
 		ContentType='application/pdf' if path[-4:]=='.pdf' else None
+		checksum = hashlib.md5(response.body).hexdigest()
 		buf = BytesIO(response.body)
-		checksum = md5sum(buf)
-		buf.seek(0)
 		self.common_store.persist_file(path, buf, info, item=item, ContentType=ContentType) # Parameter item wurde hinzugefügt. store muss dazu angepasst werden (wurde hier für S3 getan)
 		return checksum
 

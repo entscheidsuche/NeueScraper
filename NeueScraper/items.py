@@ -33,6 +33,8 @@ class NeuescraperItem(scrapy.Item):
     PDFUrls = scrapy.Field()
     HTMLUrls = scrapy.Field()
     PDFFiles = scrapy.Field()
+    ProxyUrls = scrapy.Field()
+    PdfHeaders = scrapy.Field()
     HTMLFiles = scrapy.Field()
     Raw = scrapy.Field()
     Gerichtsbarkeit = scrapy.Field()
@@ -52,6 +54,7 @@ class NeuescraperItem(scrapy.Item):
     Formal_org=scrapy.Field()
     Sprache=scrapy.Field()
     Upload=scrapy.Field()
+    CookieJar=scrapy.Field()
     # pass
 
 

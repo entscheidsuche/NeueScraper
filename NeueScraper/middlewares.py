@@ -7,8 +7,73 @@
 
 from scrapy import signals
 import logging
+from urllib.parse import urljoin
+from w3lib.url import safe_url_string
+from scrapy.downloadermiddlewares.redirect import RedirectMiddleware, _build_redirect_request
+from scrapy.utils.httpobj import urlparse_cached
 
 logger = logging.getLogger(__name__)
+
+class ProxyAwareRedirectMiddleware(RedirectMiddleware):
+	"""Fängt 3xx ab, loggt die Kette, verpackt Location über spider.proxyUrl(), 
+		und erzwingt Zyte followRedirect=False für Folge-Requests."""
+
+	def process_request(self, request, spider):
+		# Für markierte Requests (meta['proxy_wrap']=True) 3xx nie serverseitig folgen
+		if 'item' in request.meta:
+			item=request.meta['item']
+			if "ProxyUrls" in item and item["ProxyUrls"]:
+				zyte = dict(request.meta.get("zyte_api") or {})
+				zyte["httpResponseHeaders"] = True
+				zyte["followRedirect"] = False
+				request.meta["zyte_api"] = zyte
+		return None
+
+	def process_response(self, request, response, spider):
+		# Nichts zu tun, wenn kein Redirect o. Request nicht markiert
+		if not 'item' in request.meta:
+			return response
+		else:
+			item=request.meta['item']
+			if (not ("ProxyUrls" in item and item["ProxyUrls"]) or response.status not in (301, 302, 303, 307, 308) or b"Location" not in response.headers):
+				return response
+
+        # Absolute Location aufbauen
+		location = safe_url_string(response.headers["Location"])
+		if response.headers["Location"].startswith(b"//"):
+			scheme = urlparse_cached(request).scheme
+			location = scheme + "://" + location.lstrip("/")
+		redirected_url = urljoin(item['PDFUrls'][0], location)
+
+		# Redirect-Kette pflegen (inkl. Set-Cookie zum Debuggen)
+		chain = list(request.meta.get("redirect_chain") or [])
+		chain.append({
+			"status": int(response.status),
+			"from": request.url,
+			"to": redirected_url,
+			"set_cookie": [v.decode("latin1") for v in response.headers.getlist(b"Set-Cookie")],
+		})
+
+		# Location über DEINEN bestehenden Wrapper führen (kein Doppel-Wrap, 
+		# da deine proxyUrl() das bereits verhindert)
+		if "ProxyUrls" in item and item["ProxyUrls"]:
+			redirected_url = spider.getProxyUrl(redirected_url)
+
+		# Folge-Request wie Upstream bauen (GET bei 302/303 etc.)
+		if response.status in (301, 307, 308) or request.method == "HEAD":
+			redirected = _build_redirect_request(request, url=redirected_url)
+		else:
+			redirected = self._redirect_request_using_get(request, redirected_url)
+
+		# Redirect-Kette & Zyte-Flags durchreichen
+		redirected.meta["redirect_chain"] = chain
+		zyte = dict(redirected.meta.get("zyte_api") or {})
+		zyte["httpResponseHeaders"] = True
+		zyte["followRedirect"] = False
+		redirected.meta["zyte_api"] = zyte
+
+		spider.logger.info("Redirect %s → %s [%s]", request.url, redirected_url, response.status)
+		return self._redirect(redirected, request, spider, response.status)
 
 
 class NeuescraperSpiderMiddleware:

@@ -11,11 +11,14 @@ import re
 from lxml import etree
 import copy
 from scrapy.spidermiddlewares.httperror import HttpError
+import base64
 
 from NeueScraper.pipelines import MyFilesPipeline
 from NeueScraper.pipelines import PipelineHelper
 
 logger = logging.getLogger(__name__)
+
+
 
 class BasisSpider(scrapy.Spider):
 	elementchars=re.compile("[^-a-zA-Z0-9_]")
@@ -35,6 +38,7 @@ class BasisSpider(scrapy.Spider):
 	reDatumOk=re.compile("(?:19|20)\d\d-\d\d-\d\d")
 	reSplitter=re.compile(r"[a-zA-Z0-9']+")
 	reKurzpfad=re.compile(r"^[^/]+/(?P<kurz>[^\.]+)\.(?:pdf|html|json)$")
+	PROXY='https://entscheidsuche.ch/scraping_proxy/request.php?scrapekey={}&stub='
 
 	#name = 'Gerichtsdaten'
 	kantone = { 'de': {'CH':'Eidgenossenschaft','AG':'Aargau','AI':'Appenzell Innerrhoden','AR':'Appenzell Ausserrhoden','BE':'Bern','BL':'Basel-Land','BS':'Basel-Stadt','FR':'Freiburg','GE':'Genf','GL':'Glarus','GR':'Graubünden','JU':'Jura','LU':'Luzern','NE':'Neuenburg','NW':'Nidwalden','OW':'Obwalden','SG':'St.Gallen','SH':'Schaffhausen','SO':'Solothurn','SZ':'Schwyz','TG':'Thurgau','TI':'Tessin','UR':'Uri','VD':'Waadt','VS':'Wallis','ZG':'Zug','ZH':'Zürich', 'TA':'Schiedsgerichte'},
@@ -45,6 +49,7 @@ class BasisSpider(scrapy.Spider):
 	kanton= {}
 	translation = { 'publiziert': {'de': 'publiziert', 'fr': 'publié', 'it': 'pubblicato'}}
 	CSV_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vR2sZY8Op7cLChL6Hu0aDZmbOrmX_UPtyxz86W-oeyuCemBs0poqxC-EU33i-JhH9PQ7SMqYOnIw5ou/pub?output=csv'
+	# CSV_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vR2sZY8Op7cLChL6Hu0aDZmbOrmX_UPtyxz86W-oeyuCemBs0poqxC-EU33i-JhH9PQ7SMqYOnIw5ou/pub?output=csv'
 	# CSV_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vR2sZY8Op7cLChL6Hu0aDZmbOrmX_UPtyxz86W-oeyuCemBs0poqxC-EU33i-JhH9PQ7SMqYOnIw5ou/pub?gid=1220663602&single=true&output=csv'
 	#JOBS_HOST='http://entscheidsuche.ch.s3.amazonaws.com/'
 	#JOBS_URL=JOBS_HOST+'?list-type=2&prefix=scraper%2F'
@@ -63,12 +68,26 @@ class BasisSpider(scrapy.Spider):
 	# Für alle Dokumente, für die wir keine Daten herbekommen können
 	ERSATZDATUM='2021-01-01'
 
+	@classmethod
+	def from_crawler(cls, crawler, *args, **kwargs):
+		spider = super().from_crawler(crawler, *args, **kwargs)  # setzt intern _set_crawler
+		logger.info("from_crawler aufgerufen")
+		# hier ist spider.crawler sicher vorhanden
+		return spider
+
 	def __init__(self):
 		super().__init__()
 
 	def start_requests(self):
+		logger.info("start_requests aufgerufen")
 		# lese erst einmal die Spiderdaten und danach werden die Spider in der request_gen geladen.
 		yield scrapy.Request(url=self.CSV_URL, callback=self.parse_gerichtsliste, errback=self.errback_httpbin)
+
+	def getProxyUrl(self,url):
+		logger.info(f"getProxyUrl aufgerufen mit {url}")
+		encoded = base64.urlsafe_b64encode(url.encode()).rstrip(b'=').decode()
+		proxyUrl=self.PROXY.format(self.crawler.settings.get('SCRAPINGPROXY'))+encoded
+		return proxyUrl
 
 	def parse_gerichtsliste(self, response):
 		logger.debug("parse_gerichtsliste response.status "+str(response.status))
@@ -76,7 +95,7 @@ class BasisSpider(scrapy.Spider):
 		logger.debug("parse_gerichtsliste Rohergebnis: "+response.text)
 
 		self.scrapy_job=os.environ['SCRAPY_JOB']
-		logger.debug("SCRAPY_JOB: "+self.scrapy_job)
+		logger.info("SCRAPY_JOB: "+self.scrapy_job)
 
 		item= { 'Entscheidquellen': response.text }
 		yield(item)
