@@ -9,7 +9,6 @@ import datetime
 import uuid
 from NeueScraper.spiders.basis import BasisSpider
 from NeueScraper.pipelines import PipelineHelper as PH
-from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -25,25 +24,30 @@ class WeblawVaadinSpider(BasisSpider):
 	TREFFERLISTE_p2=b'","com.vaadin.shared.ui.button.ButtonServerRpc","click",[{"metaKey":false, "altKey":false, "shiftKey":false, "ctrlKey":false, "relativeX":"10", "clientX":"728", "relativeY":"17", "clientY":"47", "button":"LEFT", "type":"1"}]]]'
 	NEXTPAGE_p1=b'\x1d[["0","com.vaadin.shared.ui.ui.UIServerRpc","scroll",["535","0"]],["'
 	NEXTPAGE_p2=b'","com.vaadin.shared.ui.orderedlayout.AbstractOrderedLayoutServerRpc","layoutClick",[{"metaKey":false, "altKey":false, "shiftKey":false, "ctrlKey":false, "relativeX":"66", "clientX":"284", "relativeY":"13", "clientY":"716", "button":"LEFT", "type":"8"},null]]]'
-	PROXY='https://entscheidsuche.ch/ar_helper/request.php?stub='
+
 		
 	reNum=re.compile(r' href="[^"]+">(?P<Num>[^<]+)</a>')
 	reTreffer=re.compile(r'Resultat\s+(?P<von>\d+)-(?P<bis>\d+)\s+von\s+(?P<gesamt>\d+)')
 	reKlammer=re.compile(r"^(?:<a[^>]+>)?\s*(?P<vor>[^\s(<][^(<]*[^\s(<])\s*(?:\((?P<in>[^)]+)\)\s*)?(?:</a>)?$")
-	
+
 	def generate_request(self):
 		self.userID="_" + uuid.uuid4().hex[:8]
 		self.SUCHFORM['userID']=self.userID
-		url=self.HOST+"/dashboard"
-		encoded = quote(url,safe='') 
-		url=self.PROXY+encoded
+		url=self.getProxyUrl(self.HOST+"/dashboard")
 		request=scrapy.Request(url=url, callback=self.parse_suchform, errback=self.errback_httpbin)
 		return request
 	
 	def __init__(self, ab=None, neu=None):
 		super().__init__()
 		self.neu=neu
+		
+	def start_requests(self):
+		# vor Super-Call Settings lesen / Defaults setzen
+		self.cfg = self.crawler.settings.get('MY_GLOBAL', 'default')
 		self.request_gen = [self.generate_request()]
+		for req in super().start_requests():
+			req.meta.setdefault('cfg', self.cfg)
+			yield req
 
 	def parse_suchform(self, response):
 		#Nur für Cookie holen:
@@ -56,9 +60,7 @@ class WeblawVaadinSpider(BasisSpider):
 		if jar:
 			pairs = "; ".join(f"{c.name}={c.value}" for c in jar)
 			logger.info(f"[Jar {jar_id}] ← after response: {pairs}")
-		url=self.HOST+"/searchQueryService"
-		encoded = quote(url,safe='') 
-		url=self.PROXY+encoded
+		url=self.getProxyUrl(self.HOST+"/searchQueryService")
 
 		request=scrapy.Request(url=url, headers=self.HEADER, body=json.dumps(self.SUCHFORM), method="POST", callback=self.parse_trefferliste, errback=self.errback_httpbin)
 		jar.add_cookie_header(request)
@@ -96,9 +98,7 @@ class WeblawVaadinSpider(BasisSpider):
 			else:
 				self.SUCHFORM['from']=10
 				logger.info("mehr Treffer, ab Treffer "+str(self.SUCHFORM['from'])+" von "+str(treffer))
-			url=self.HOST+"/searchQueryService"
-			encoded = quote(url) 
-			url=self.PROXY+encoded
+			url=self.getProxyUrl(self.HOST+"/searchQueryService")
 			request=scrapy.Request(url=url, body=json.dumps(self.SUCHFORM), headers=self.HEADER, method="POST", callback=self.parse_trefferliste, errback=self.errback_httpbin)
 			yield request
 		else:
