@@ -8,138 +8,130 @@ from scrapy.http.cookies import CookieJar
 import datetime
 from NeueScraper.spiders.basis import BasisSpider
 from NeueScraper.pipelines import PipelineHelper as PH
+from scrapy.http import JsonRequest
 
 logger = logging.getLogger(__name__)
 
 
 class BL_Gerichte(BasisSpider):
 	name = 'BL_Gerichte'
-
-	URLs={
-		"Kantonsgericht": { "url": "/politik-und-behorden/gerichte/rechtsprechung/kantonsgericht_rs/chronologische-anordnung", "direkt": False},
-		"Steuergericht": { "url": "/politik-und-behorden/gerichte/rechtsprechung/steuergericht", "direkt": False},
-		"Enteignungsgericht": { "url": "/politik-und-behorden/gerichte/rechtsprechung/enteignungsgericht/entscheide-chronologisch", "direkt": True},
-		"Zwangsmassnahmengericht": { "url": "/politik-und-behorden/gerichte/rechtsprechung/zwangsmassnahmengericht", "direkt": False}}
-	HOST="https://www.baselland.ch"
-	PROXY="http://v2202109132150164038.luckysrv.de:8181/"
-	
-	reJahre=re.compile(r'<a\s[^>]*href="(?P<URL>[^"]+)"[^>]*>\s*(?P<Jahr>(?:20|19)\d\d)\s*</a>')
-	
+	HOST="https://bl.swisslex.ch"
+	SEARCH="/api/retrieval/postSearch?sourceDetails=search-button"
+	DOC="/api/doc/getAsset?id={}&lang=de&queryLang=De&source=hitlist-search&transactionId={}"
+	PDF="/api/Content/GetFacsimile?facsimileGuid="
 	HEADER={
-		'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/119.0',
-		'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-		'Accept-Language': 'de,en-US;q=0.7,en;q=0.3',
-		'Accept-Encoding': 'gzip, deflate, br',
-		'DNT': '1',
-		'Connection': 'keep-alive',
-		'Upgrade-Insecure-Requests': '1',
-		'Sec-Fetch-Dest': 'document',
-		'Sec-Fetch-Mode': 'navigate',
-		'Sec-Fetch-Site': 'none',
-		'Sec-Fetch-User': '?1',
-		'Pragma': 'no-cache',
-		'Cache-Control': 'no-cache'
+		"Accept": "application/json, text/plain, */*",
+		"Accept-Language": "de-CH",
+		"Content-Type": "application/json",
+		"X-Application": "court",
+		"Authenticated": "false",
+		"Origin": "https://bl.swisslex.ch",
+		"Referer": "https://bl.swisslex.ch/de/recherche/search/new",
+		"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:144.0) Gecko/20100101 Firefox/144.0",
 	}
-	
-	def request_generator(self):
-		requests=[]
-		for r in self.URLs:
-			if self.URLs[r]['direkt']:
-				request = scrapy.Request(url=self.PROXY+self.HOST+self.URLs[r]['url'], callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'Gericht': r})			
-			else:
-				request = scrapy.Request(url=self.PROXY+self.HOST+self.URLs[r]['url'], callback=self.parse_jahresliste, errback=self.errback_httpbin, meta={'Gericht': r})
-			requests.append(request)
-		return requests
-	
+	HITSPERPAGE=100
+
+	# BODY={"paging":{"CurrentPage":1,"HitsPerPage":25},"searchFilter":{"searchText":"*","navigation":None,"searchLanguage":1,"law":None,"articleNumber":None,"paragraph":None,"subParagraph":None,"dateFrom":None,"dateUntil":None,"reference":None,"author":None,"practiceAreaGroupsCriteria":[],"assetTypeGroupsCriteria":[],"thesaurusType":1,"userSearchFilterId":None,"bookmarkSearchFilterId":None,"thesaurusInformation":None,"nSelected":0,"journalCriteria":[],"caseCollectionCriteria":[],"bookCriteria":[],"sourceDetails":"paging-359","paging":{"CurrentPage":359,"HitsPerPage":25},"drillDownFilter":{"sortOrder":0},"expandedFacettes":[],"filterAggregationQuery":False,"expandReferences":True,"selectedParts":31,"portalLanguage":"de"},"refineFilter":{"aggregationsFilter":[],"transformationFilter":[],"retrievalSortBy":0,"excludedDocumentIds":[]},"reRunTransactionID":None,"sourceTransactionID":None,"isLexCampus":False}
+	# BODY=b'{"paging":{"CurrentPage":1,"HitsPerPage":25},"searchFilter":{"searchText":null,"navigation":null,"searchLanguage":1,"law":null,"articleNumber":null,"paragraph":null,"subParagraph":null,"dateFrom":null,"dateUntil":null,"reference":null,"author":null,"practiceAreaGroupsCriteria":[],"assetTypeGroupsCriteria":[],"thesaurusType":1,"userSearchFilterId":null,"bookmarkSearchFilterId":null,"thesaurusInformation":null,"nSelected":0,"journalCriteria":[],"caseCollectionCriteria":[],"bookCriteria":[],"paging":{"CurrentPage":1,"HitsPerPage":25},"drillDownFilter":{"sortOrder":0},"expandedFacettes":[],"filterAggregationQuery":false,"expandReferences":true,"selectedParts":31,"portalLanguage":"de"},"refineFilter":{"aggregationsFilter":[],"transformationFilter":[],"retrievalSortBy":0,"excludedDocumentIds":[]},"reRunTransactionID":null,"sourceTransactionID":null,"isLexCampus":false}'
+	BODY = r'''{"paging":{"CurrentPage":1,"HitsPerPage":100},"searchFilter":{"searchText":null,"navigation":null,"searchLanguage":1,"law":null,"articleNumber":null,"paragraph":null,"subParagraph":null,"dateFrom":null,"dateUntil":null,"reference":null,"author":null,"practiceAreaGroupsCriteria":[],"assetTypeGroupsCriteria":[],"thesaurusType":1,"userSearchFilterId":null,"bookmarkSearchFilterId":null,"thesaurusInformation":null,"nSelected":0,"journalCriteria":[],"caseCollectionCriteria":[],"bookCriteria":[],"paging":{"CurrentPage":1,"HitsPerPage":25},"drillDownFilter":{"sortOrder":0},"expandedFacettes":[],"filterAggregationQuery":false,"expandReferences":true,"selectedParts":31,"portalLanguage":"de"},"refineFilter":{"aggregationsFilter":[],"transformationFilter":[],"retrievalSortBy":0,"excludedDocumentIds":[]},"reRunTransactionID":null,"sourceTransactionID":null,"isLexCampus":false}'''
+
+	reKammer=re.compile(r", (?P<Kammer>(?:Abteilung|Aufsichtsbehörde|Anwaltskommission) .*) vom")
+
 	def __init__(self, ab=None, neu=None):
 		self.ab=ab
 		self.neu=neu
 		super().__init__()
-		self.request_gen = self.request_generator()
 
-	def parse_jahresliste(self, response):
-		logger.info("parse_jahresliste response.status "+str(response.status))
-		antwort=response.text
-		logger.info("parse_jahresliste Rohergebnis "+str(len(antwort))+" Zeichen")
-		logger.info("parse_jahresliste Rohergebnis: "+antwort[:30000])
-		jahre=self.reJahre.findall(antwort)
-		if len(jahre)==0:
-			logger.error("Keine Entscheidjahre gefunden für "+response.meta['Gericht'])
-		else:
-			logger.info(str(len(jahre))+" Jahrgänge gefunden für "+response.meta['Gericht'])
-		for j in self.reJahre.finditer(antwort):
-			if self.ab is None or int(j.group('Jahr'))>=int(self.ab):
-				logger.info("Hole Jahr "+j.group('Jahr')+" für "+response.meta['Gericht']+" mit URL:"+j.group('URL'))
-				request = scrapy.Request(url=self.PROXY+j.group('URL'), callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'Gericht': response.meta['Gericht']})
-				yield request			
+	def generate_request(self, seite):
+		body=json.loads(self.BODY)
+		body["paging"]["HitsPerPage"]=self.HITSPERPAGE
+		body["paging"]["CurrentPage"]=seite
+		if self.ab:
+			body["searchFilter"]["dateFrom"]=self.ab
+		return JsonRequest(url=self.HOST+self.SEARCH, data=body, headers=self.HEADER, callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'seite': seite})
+	
 
+	def start_requests(self):
+		# vor Super-Call Settings lesen / Defaults setzen
+		self.cfg = self.crawler.settings.get('MY_GLOBAL', 'default')
+		# self.request_gen = [scrapy.Request(url=self.HOST+self.LOGIN, headers=self.HEADER, method="POST", body=json.dumps(self.BODY_LOGIN), callback=self.parse_login, errback=self.errback_httpbin)]
+		self.request_gen=[self.generate_request(1)]
+
+		for req in super().start_requests():
+			req.meta.setdefault('cfg', self.cfg)
+			yield req
+	
 	def parse_trefferliste(self, response):
 		logger.info("parse_trefferliste response.status "+str(response.status)+" für URL "+response.url)
 		antwort=response.text
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:30000])
-		#Teilweise sind die Jahre nochmal aufgeteilt
-		if not "Teiljahr" in response.meta:
-			andere_monate=response.xpath(".//a[contains(translate(.,'\xa0',' '),' bis ')]/@href")
-			for l in andere_monate:
-				logger.info("Andere Monate-URL: "+l.get())
-				request = scrapy.Request(url=self.PROXY+l.get(), callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'Gericht': response.meta['Gericht'], 'Teiljahr': True})
-				yield request
-		urteile=response.xpath("//table/tbody/tr[td[1]//a]")
-		if len(urteile)==0:
-			logger.warning("Keine Entscheide gefunden für "+response.meta['Gericht']+" URL: "+response.url)
-		else:
-			for entscheid in urteile:
-				item={}
-				logger.info("Verarbeite nun: "+entscheid.get())
-				url=entscheid.xpath("./td//a/@href").get()
-				item['VGericht']=response.meta['Gericht']
-				edatum=entscheid.xpath("string(./td//a)").get()
-				norm=self.norm_datum(edatum, warning="Kein Datum identifiziert")
-				if norm!="nodate":
-					item['EDatum']=norm
-				regeste=entscheid.xpath("string(./td[preceding-sibling::*])").get()
-				if regeste:
-					item['Leitsatz']=regeste.strip()
-				if url[:8]=='https://':
-					if url[-4:]=='.pdf' or 'downloads' in url:
-						item['Num']=url[:-4].split("/")[-1]
-						if len(item['Num'])<6:
-							item['Num']=url[:-4].split("/")[-2]+"/"+item['Num']
-						item['Signatur'], item['Gericht'], item['Kammer']=self.detect(item['VGericht'],"",item['Num'])
-						if "/downloads/" in url:
-							url+="/@@download/file/"+url.split("/downloads/")[-1]
-						else:
-							url+="/@@download/file/"+url.split("/")[-1]
-							
-						item['PDFUrls']=[self.PROXY+url]
-							
-						if self.check_blockliste(item):
-							logger.info("PDF-Item: "+json.dumps(item))
-							yield item
-					else:
-						item['HTMLUrls']=[self.PROXY+url]
-						item['Num']=url.split("/")[-1]
-						if len(item['Num'])<6:
-							item['Num']=url.split("/")[-2]+"/"+item['Num']
-						item['Signatur'], item['Gericht'], item['Kammer']=self.detect(item['VGericht'],"",item['Num'])
-						if self.check_blockliste(item):
-							request = scrapy.Request(url=self.PROXY+url, callback=self.parse_document, errback=self.errback_httpbin, meta={'Gericht': response.meta['Gericht'], 'item': item})
-							logger.info("HTML-Item bis jetzt: "+json.dumps(item))
-							yield request
-				else:
-					logger.warning("falscher Link: "+url+". Urteil wird ignoriert.")	
-
+		
+		seite=response.meta['seite']
+		
+		struktur=json.loads(antwort)
+		treffer=struktur['numberOfDocuments']
+		seitentreffer=len(struktur['hits'])
+		logger.info(f"{treffer} Entscheide gefunden – {seitentreffer} übergeben.")
+		transactionId=str(struktur['transactionId'])
+		for entscheid in struktur["hits"]:
+			item={}
+			entscheidtext=json.dumps(entscheid)
+			item['VGericht']=PH.NC(entscheid['courtDescription'],warning="kein Gericht in "+entscheidtext)
+			item['Leitsatz']=PH.NC(entscheid['description'],warning="kein Abstract in "+entscheidtext)
+			# Maximal 2 Geschäftsnummern übernehmen
+			nums=PH.NC(entscheid['caseLawNumbers'],warning="keine Geschäftnummer in "+entscheidtext)
+			num_array=nums.split(",")
+			item['Num']=num_array[0].strip()
+			if len(num_array)>1:
+				item['Num2']=num_array[1].strip()
+			item['EDatum']=self.norm_datum(PH.NC(entscheid['date'][0:10],warning="kein Entscheiddatum in "+entscheidtext))
+			titel=PH.NC(entscheid['title'],warning="keine formale Titelzeile in "+entscheidtext)
+			abteilungssuche=self.reKammer.search(titel)
+			if abteilungssuche:
+				item['VKammer']=abteilungssuche.group('Kammer')
+			else:
+				logger.warning(f"Keine Abteilung in {titel} erkannt.")
+				item['VKammer']=''
+			item['DocID']=PH.NC(entscheid['targetID'],error="keine ID in "+entscheidtext)
+			docurl=self.HOST+self.DOC.format(item['DocID'],transactionId)
+			item['Signatur'], item['Gericht'], item['Kammer'] = self.detect(item['VGericht'], item['VKammer'], item['Num'])
+			
+			logger.info("Entscheid: "+json.dumps(item))
+			headers=copy.deepcopy(self.HEADER)
+			headers['Referer']='https://bl.swisslex.ch/de/recherche/search/'+transactionId
+			item['PdfHeaders']=copy.deepcopy(headers)
+			item['PdfHeaders']['Referer']='https://bl.swisslex.ch/de/doc/claw/'+item['DocID']+'/search/'+transactionId
+			request=scrapy.Request(url=docurl, callback=self.parse_document, errback=self.errback_httpbin, meta={'item': item}, headers=headers)
+			yield request
+		if seitentreffer==self.HITSPERPAGE:
+			request=self.generate_request(seite+1)
+			yield request
+			
 	def parse_document(self, response):
 		logger.info("parse_document response.status "+str(response.status))
 		antwort=response.text
 		logger.info("parse_document Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_document Rohergebnis: "+antwort[:20000])
 		
-		item=response.meta['item']	
-		html=response.xpath("//div[@id='content-content']")
-		if html == []:
-			logger.warning("Content nicht erkannt in "+antwort[:20000])
+		item=response.meta['item']
+		struktur=json.loads(antwort)
+		# Gibt es ein Original PDF?
+		if 'facsimile' in struktur['content']:
+			item['PDFUrls']=[self.HOST+self.PDF+struktur['content']['facsimile']['fileID']]
 		else:
-			PH.write_html(html.get(), item, self)
+			logger.info(f"kein PDF vorhanden für {json.dumps(item)}")
+		
+		if 'assetContentAsHtml' in struktur['content']:
+			logger.info(f"Auf jeden Fall auch HTML holen {item['Num']}")
+			item['HTMLUrls']=[response.url]
+			PH.write_html(struktur['content']['assetContentAsHtml'], item, self)
+		else:
+			logger.info(f"kein HTML vorhanden für {json.dumps(item)}")
+		
+		if 'facsimile' not in struktur['content'] and 'assetContentAsHtml' not in struktur['content']:
+			logger.error(f"weder HTML noch PDF vorhanden für Entscheid {json.dumps(item)}")
+		else:
+			logger.info(f"Entscheid geholt: {json.dumps(item)}")
+
 		yield(item)
