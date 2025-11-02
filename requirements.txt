@@ -2,6 +2,6 @@ itemadapter>=0.8.0         # <0.8 zieht altes importlib-metadata
 pysftp==0.2.9             # Drop-in-Ersatz für veraltetes pysftp
 paramiko>=2.12,<3         # zieht cryptography <42 automatisch
 cryptography>=41,<42        # kompatibel zu Paramiko 2.x
-
+pycryptodomex>=3.20,<4
 
 
