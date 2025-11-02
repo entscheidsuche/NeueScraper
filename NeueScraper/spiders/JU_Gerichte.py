@@ -34,8 +34,7 @@ class JU_Gerichte(TribunaSpider):
 	DECRYPT_START = "7|0|11|https://jurisprudence.jura.ch/tribunavtplus/|CAC80118FB77794F1FDFC1B51371CC63|tribunavtplus.client.zugriff.LoadTableService|urlEncodingTribuna|java.util.Map|java.util.HashMap/1797211028|java.lang.String/2004016611|partURL|"
 #	DECRYPT_END = "|IchBinDerSchlues|1|2|3|4|2|5|5|6|7|"
 	DECRYPT_END = "|1|2|3|4|1|5|6|2|7|8|7|9|7|10|7|11|"
-	COOKIE = True
-	COOKIE_INIT ="https://entscheidsuche.ch/ju_helper/getCookie.php"
+	COOKIE = False
 	COOKIE_HEADERS = { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Accept-Language': 'en', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:79.0) Gecko/20100101 Firefox/79.0', 'Accept-Encoding': 'gzip, deflate'}
 	zyte_smartproxy_enabled = True
 	zyte_smartproxy_apikey = 'a88daef01f664ec3b39f5fd43fdcd685'
