@@ -65,6 +65,7 @@ NeueScraper/spiders/tribuna.py
 NeueScraper/spiders/weblaw.py
 NeueScraper/spiders/weblawvaadin.py
 NeueScraper/spiders/weblawvaadin2.py
+NeueScraper/spiders/weblawvaadin3.py
 entscheidsuche.ch_Scraper.egg-info/PKG-INFO
 entscheidsuche.ch_Scraper.egg-info/SOURCES.txt
 entscheidsuche.ch_Scraper.egg-info/dependency_links.txt
