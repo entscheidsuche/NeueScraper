@@ -100,8 +100,8 @@ class BL_Gerichte(BasisSpider):
 			logger.info("Entscheid: "+json.dumps(item))
 			headers=copy.deepcopy(self.HEADER)
 			headers['Referer']='https://bl.swisslex.ch/de/recherche/search/'+transactionId
-			item['PdfHeaders']=copy.deepcopy(headers)
-			item['PdfHeaders']['Referer']='https://bl.swisslex.ch/de/doc/claw/'+item['DocID']+'/search/'+transactionId
+			item['PDFHeaders']=copy.deepcopy(headers)
+			item['PDFHeaders']['Referer']='https://bl.swisslex.ch/de/doc/claw/'+item['DocID']+'/search/'+transactionId
 			request=scrapy.Request(url=docurl, callback=self.parse_document, errback=self.errback_httpbin, meta={'item': item}, headers=headers)
 			yield request
 		if seitentreffer==self.HITSPERPAGE:
