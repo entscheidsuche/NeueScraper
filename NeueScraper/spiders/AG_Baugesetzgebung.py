@@ -18,13 +18,24 @@ class AG_Baugesetzgebung(BasisSpider):
 	HOST='https://www.ag.ch'
 	URL='/app/search-service/api/v1/doctable'
 	
-	BODY={
-		"pagination": {"page": 0, "size": 1000},
+	BODY1={
+		"pagination": {"page": 0, "size": 200},
 		"filter": {
 			"operator": "in",
 			"field": "categories",
 			"values": [
 				"f46f0fe7-d92e-45a9-b5b7-0f3402debb21",
+			],
+		},
+		"sort": [{"field": "documentDatetime", "direction": "desc"}]
+	}
+
+	BODY2={
+		"pagination": {"page": 0, "size": 200},
+		"filter": {
+			"operator": "in",
+			"field": "categories",
+			"values": [
 				"a2f10c55-82f9-403c-b7fa-6a5dfc3cc01f",
 				"b8460a34-2978-4878-9f84-00b9c32b1114",
 				"110b2681-6e2a-4e11-9bfa-8e270b6cee24",
@@ -33,6 +44,7 @@ class AG_Baugesetzgebung(BasisSpider):
 		},
 		"sort": [{"field": "documentDatetime", "direction": "desc"}]
 	}
+
        
 	HEADERS = {
 		"Accept": "*/*",
@@ -57,7 +69,9 @@ class AG_Baugesetzgebung(BasisSpider):
 		self.request_gen = self.generate_request()
 
 	def generate_request(self):
-		return [scrapy.Request(url=self.HOST+self.URL, method="POSt", body=json.dumps(self.BODY), headers=self.HEADERS, callback=self.parse_page, errback=self.errback_httpbin)]
+		request1=scrapy.Request(url=self.HOST+self.URL, method="POST", body=json.dumps(self.BODY1), headers=self.HEADERS, callback=self.parse_page, errback=self.errback_httpbin)
+		request2=scrapy.Request(url=self.HOST+self.URL, method="POST", body=json.dumps(self.BODY2), headers=self.HEADERS, callback=self.parse_page, errback=self.errback_httpbin)		
+		return [request1,request2]
 
 	# Unklar ob es sich um eine Menüseite oder eine Trefferliste handelt
 	def parse_page(self, response):
@@ -71,6 +85,7 @@ class AG_Baugesetzgebung(BasisSpider):
 		logger.info(str(len(entries))+" Dokumente gefunden")
 		if entries:
 			for entry in entries:
+				logger.info("Verarbeite Entscheid "+json.dumps(entry))
 				item={}
 				item['PDFUrls']=[self.HOST+PH.NC(entry['targetUrls'][0]['url'], error="Url für PDF des Entscheids nicht gefunden in "+json.dumps(entry))]
 				item['EDatum']=PH.NC(self.norm_datum(entry['documentDatetime']), warning="kein Datum gefunden in "+json.dumps(entry))
