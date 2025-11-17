@@ -17,17 +17,23 @@ class WeblawVaadinSpider(BasisSpider):
 	custom_settings = {
         'COOKIES_ENABLED': True,
         "COOKIES_DEBUG":   True,
-        "DOWNLOAD_DELAY": 1.0,
-		"ZYTE_API_PRESERVE_DELAY": True
+		"CONCURRENT_REQUESTS": 1,
+		"CONCURRENT_REQUESTS_PER_DOMAIN": 1,
+		"CONCURRENT_REQUESTS_PER_IP": 0,
+		"AUTOTHROTTLE_ENABLED": False,
+		"CONCURRENT_ITEMS": 1,   # nur wenn auch Pipeline strikt seriell sein soll
     }
 
 	TREFFERLISTE_URL='/api/.netlify/functions/searchQueryService'
+
 		
 	reNum=re.compile(r' href="[^"]+">(?P<Num>[^<]+)</a>')
 	reTreffer=re.compile(r'Resultat\s+(?P<von>\d+)-(?P<bis>\d+)\s+von\s+(?P<gesamt>\d+)')
 	reKlammer=re.compile(r"^(?:<a[^>]+>)?\s*(?P<vor>[^\s(<][^(<]*[^\s(<])\s*(?:\((?P<in>[^)]+)\)\s*)?(?:</a>)?$")
 
 	def generate_requests(self):
+		self.HEADER3=copy.deepcopy(self.HEADER2)
+		self.HEADER3['Referer']=self.HOST+self.TREFFERLISTE_URL
 		self.userID="_" + uuid.uuid4().hex[:8]
 		self.SUCHFORM['userID']=self.userID
 		von=datetime.date.fromisoformat(self.ab)
@@ -41,7 +47,7 @@ class WeblawVaadinSpider(BasisSpider):
 			bis=von+datetime.timedelta(days=self.INTERVALL-1)
 			vonstring=von.isoformat()
 			bisstring=bis.isoformat()
-			request=scrapy.Request(url=url, headers=self.HEADER1, callback=self.parse_suchform, errback=self.errback_httpbin, meta={'noproxyurl': orgurl, 'cookiejar': jar_id, 'von': vonstring, "bis": bisstring,  "dont_redirect": True, "handle_httpstatus_list": [301,302,303,307,308], 'dont_cache': True}, dont_filter=True)
+			request=scrapy.Request(url=url, headers=self.HEADER1, callback=self.parse_suchform, errback=self.errback_httpbin, meta={'noproxyurl': orgurl, 'cookiejar': jar_id, 'von': vonstring, "bis": bisstring,  "dont_redirect": True, "handle_httpstatus_list": [301,302,303,307,308], 'dont_cache': True, 'referrer_policy': 'no-referrer'}, dont_filter=True)
 			von=von+datetime.timedelta(days=self.INTERVALL)
 			requests.append(request)
 		return requests
@@ -140,6 +146,7 @@ class WeblawVaadinSpider(BasisSpider):
 				text=json.dumps(i)
 				item['PDFUrls']=[PH.NC(meta1['originalUrl'][0],error="keine PDF-URL in "+text)]
 				item['PDFUrls'][0]=item['PDFUrls'][0].replace(' ','%20')
+				item['PDFHeaders']=self.HEADER3
 				item['ProxyUrls']=[self.getProxyUrl(item["PDFUrls"][0])]
 				item['Num']=PH.NC(meta1['title'][0].split(" ",1)[1],error="keine Num in "+text)
 				item['VGericht']=PH.NC(meta1['argvpBehoerde'][0],error="kein Gericht in "+text)

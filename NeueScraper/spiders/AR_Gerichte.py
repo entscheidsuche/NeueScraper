@@ -31,7 +31,7 @@ class AR_Gerichte(WeblawVaadinSpider):
 		"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:84.0) Gecko/20100101 Firefox/84.0",
 		"Referer": "https://rechtsprechung.ar.ch/dashboard",
 		"Origin": "https://rechtsprechung.ar.ch"}
-
+		
 	@classmethod
 	def update_settings(cls, settings):
 		super().update_settings(settings)
