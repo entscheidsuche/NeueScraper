@@ -616,7 +616,7 @@ class PipelineHelper:
 		if path[-4:]=='.pdf':
 			ende = buf.getvalue()[-10:]
 			if not (b'%%EOF' in ende):
-				logger.warning(f"Datei {path} enthält keine PDF-Endemarkierung in: {ende.decode('iso-8859-1')} aber vielleiht base64?\n…")
+				logger.warning(f"Datei {path} enthält keine PDF-Endemarkierung in aber vielleiht base64: {ende.decode('iso-8859-1')}\n…")
 				ergebnis, neubuf=PipelineHelper.b64_decode(buf)
 				if ergebnis:
 					logger.info(f"Datei {path} war base64")
@@ -1136,20 +1136,30 @@ class MyFilesPipeline(FilesPipeline):
 				logger.error(f"Kein PDFUrls in {item['Num']}, {json.dumps(item)} in get_media_requests")
 		else:
 			urls = item[self.files_urls_field] if self.files_urls_field in item else []
+			
+		meta={'item':item}
+		
+		if "PDFPosts" in item and item["PDFPosts"]:
+			method="POST"
+			body=item["PDFPosts"][0]
+		else:
+			method="GET"
+			body=None
 
-		if "PdfHeaders" in item and item["PdfHeaders"]:
-			headers=item["PdfHeaders"]
+		if "PDFHeaders" in item and item["PDFHeaders"]:
+			headers=item["PDFHeaders"]
+			logger.info(f"get_media_requests: PDFHeaders ist gesetzt und wird übernommen: {headers}")
+			meta['zyte_api_automap'] = True
+			meta['referrer_policy'] = "no-referrer-when-downgrade"
 		else:
 			headers=None
 
 		if "CookieJar" in item:
 			jar_id=item['CookieJar']
+			meta['cookiejar']=jar_id
 			logger.info(f"CookieJar für PDF: {jar_id}")
-			requests=[scrapy.Request(url=u, headers=headers, meta={'cookiejar': jar_id, 'item':item}, dont_filter=True) for u in urls]
-		else:
-			requests=[scrapy.Request(url=u, headers=headers, meta={"item":item}, dont_filter=True) for u in urls]
 			
-			
+		requests=[scrapy.Request(url=u, headers=headers, method=method, body=body, meta=meta, dont_filter=True) for u in urls]
 		return requests
 
 
