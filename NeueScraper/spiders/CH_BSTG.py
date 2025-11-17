@@ -20,7 +20,7 @@ class CH_BSTG(BasisSpider):
 	# URL='/api/.netlify/functions/searchQueryService'
 	PDFURL="/api/getDocumentFile/"
 	MAX=100
-	tage=60
+	tage=64
 	AB="2005-01-01"
 	HEADER={'Content-Type': 'application/json', 'Accept': '*/*', 'Origin': 'https://bstger.weblaw.ch', 'Referer': 'https://bstger.weblaw.ch/?sort-field=relevance&sort-direction=relevance'}
 	
@@ -35,7 +35,8 @@ class CH_BSTG(BasisSpider):
 		abdate=date.fromisoformat(abdatum)
 		bisdate=abdate+timedelta(self.tage)
 		bisdatum=(bisdate+timedelta(1)).strftime("%Y-%m-%d")
-		self.JSON['metadataDateMap']={'publicationDate' : { 'from': abdate.strftime("%Y-%m-%dT00:00:00.000Z"), 'to': bisdate.strftime("%Y-%m-%dT23:59:59.999Z")}}
+		#publicationDate wäre nicht granular genug, da an einem Tag mal mehr als 1000 Entscheide veröffentlicht wurden.
+		self.JSON['metadataDateMap']={'rulingDate' : { 'from': abdate.strftime("%Y-%m-%dT00:00:00.000Z"), 'to': bisdate.strftime("%Y-%m-%dT23:59:59.999Z")}}
 		self.JSON['userID']=userID
 		self.JSON['sessionDuration']=epoch
 		if fromwert>0: self.JSON['from']=fromwert
