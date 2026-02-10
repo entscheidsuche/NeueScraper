@@ -55,12 +55,12 @@ class LU_Gerichte(BasisSpider):
 			text=entscheid.get()
 			url=self.HOST+PH.NC(entscheid.xpath('.//a/@href').get(),error="keine URL gefunden in "+text)
 			item['HTMLUrls']=[url]
-			item['Leitsatz']=PH.NC(entscheid.xpath("./td[@style='width: 40%']/text()").get(), warning="kein Leitsatz in "+text)
+			item['Leitsatz']=PH.NC(entscheid.xpath("./td[not(@class)]/text()").get(), warning="kein Leitsatz in "+text)
 			item['Num']=PH.NC(entscheid.xpath("./td/a/text()").get(), error="keine Geschäftsnummer in "+text)
-			num2=PH.NC(entscheid.xpath("./td[@style='width: 20%'][3]/text()").get(), info="keine zweite Geschäftsnummer in "+text)
+			num2=PH.NC(entscheid.xpath("./td[@class='dt-body-nowrap'][3]/text()").get(), info="keine zweite Geschäftsnummer in "+text)
 			if num2:
 				item['Num2']=num2
-			edatum_roh=PH.NC(entscheid.xpath("./td[@style='width: 20%'][1]/text()").get(), info="kein Entscheiddatum in "+text)
+			edatum_roh=PH.NC(entscheid.xpath("./td[@class='dt-body-nowrap'][1]/text()").get(), info="kein Entscheiddatum in "+text)
 			item['EDatum']=self.norm_datum(edatum_roh)
 			logger.info("Entscheid: "+json.dumps(item))
 			request=scrapy.Request(url=item['HTMLUrls'][0], callback=self.parse_document, errback=self.errback_httpbin, meta={'item': item})
