@@ -71,8 +71,8 @@ class BasisSpider(scrapy.Spider):
 	@classmethod
 	def from_crawler(cls, crawler, *args, **kwargs):
 		spider = super().from_crawler(crawler, *args, **kwargs)  # setzt intern _set_crawler
+		spider.scrapy_job = os.environ.get("SHUB_JOBKEY")
 		logger.info("from_crawler aufgerufen")
-		# hier ist spider.crawler sicher vorhanden
 		return spider
 
 	def __init__(self):
