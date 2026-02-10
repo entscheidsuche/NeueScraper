@@ -163,7 +163,7 @@ class MyWriterPipeline:
 		MyFilesPipeline.common_store.persist_file(pfad_index, BytesIO(json_index.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
 		# Nachdem die Pipeline durchgelaufen ist, den Index-Request synchron machen
 		try:
-			antwort=requests.post("https://entscheidsuche.pansoft.de", data=json_jobs, headers= {'Content-Type': 'application/json'}, timeout=3600, verify=False)
+			antwort=requests.post("https://entscheidsuche.pansoft.de", data=json_jobs, headers= {'Content-Type': 'application/json'}, timeout=3600)
 			# logger.info("Indexierungsrequest mit Daten: "+json.dumps(json_jobs))
 			logger.info("Indexierungsrequest mit Antwort: "+str(antwort.status_code))
 			if antwort.status_code >=300:
