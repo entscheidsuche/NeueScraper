@@ -5,150 +5,138 @@ import logging
 from scrapy.http.cookies import CookieJar
 import datetime
 import json
+import copy
 import urllib3
+
 from urllib.parse import quote, unquote
 from NeueScraper.spiders.basis import BasisSpider
 from NeueScraper.pipelines import MyFilesPipeline
 from NeueScraper.pipelines import PipelineHelper as PH
+from scrapy.downloadermiddlewares.cookies import CookiesMiddleware
+
 
 
 logger = logging.getLogger(__name__)
 
-class ZurichVerwgerSpider(BasisSpider):
+class VD_FindInfoSpider(BasisSpider):
 	name = 'VD_FindInfo'
 	
 	custom_settings = {
-        'COOKIES_ENABLED': True
-    }
+        'COOKIES_ENABLED': True,
+		"COOKIES_DEBUG": True
+	}
 
-	HOST ="https://www.findinfo-tc.vd.ch"
-	SUCH_URL='/justice/findinfo-pub/internet/SimpleSearch.action'
-	HTML_URL='/justice/findinfo-pub/html/'
-	PAGE_URL='/justice/findinfo-pub/internet/SimpleSearch.action?showPage=&page='
+
+	HOST ="https://prestations.vd.ch"
+	SUCH_URL='/pub/101623/api/search'
+	COOKIE_URL="/pub/101623/"
+	PDF_URL='/pub/101623/api/decision/download/'
+	STARTJAHR=2009
 	ab=None
 	reMeta=re.compile(r'<b>Cour</b>:\s<acronym title=\"(?P<VKammer>[^\"]+)\">(?P<Kurz>[^<]+)</acronym>\s*<br>\s*(?:<b>Date\s(?:décision</b>:\s(?:<span class="highlight">)?(?P<EDatum>[^<]+)(?:</span>)?(?:<br><b>Date\s)?)?(?:publication</b>:\s(?:<span class="highlight">)?(?P<PDatum>[^<]+)(?:</span>)?)?\s*<br>)?\s*(?:<b>N°\sdécision</b>:\s+(?P<Num>[^<]+)<br>\s*)?(?P<Rest>(?:.|\s)+)$')
 	#reMeta=re.compile(r'<b>Cour</b>:\s<acronym title=\"(?P<VKammer>[^\"]+)\">(?P<Kurz>[^<]+)</acronym><br>(?:<b>Date\s(?:décision</b>:\s(?P<EDatum>[^<]+)<br>(?:<b>Date\s)?)?(?:publication</b>:\s(?P<PDatum>[^<]+)<br>(?:<b>N°\sdécision</b>:\s+(?P<Num>[^<]+)<br>)?(?P<Rest>.+)$')
 	reURL=re.compile(r'/justice/findinfo-pub/internet/search/result.jsp\?path=(?P<URL>[^&]+)')
+	HEADERS={ 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36', "Content-Type": "application/json", "Accept": "application/json, text/plain, */*", "Cache-Control": "no-cache", "Pragma": "no-cache"}
 
 	TREFFER_PRO_SEITE = 50
-	FORMDATA = {
-		"search.criteria.dossierNr": "",
-		"search.criteria.decisionDateSearchRange.dateFrom": "",
-		"search.criteria.decisionDateSearchRange.dateTo": "",
-		"search.criteria.publicationFirstPublDateSearchRange.dateFrom": "",
-		"search.criteria.publicationFirstPublDateSearchRange.dateTo": "",
-		"search.criteria.orgUnitIds": "",
-		"search.criteria.fulltextKeywordString": "",
-		"search": "Rechercher",
-		"search.pageSize": str(TREFFER_PRO_SEITE),
-		"_sourcePage": "/internet/dossiers_overview.jsp",
-		"__fp": "aqHRlcbSe8VaRFthDeaYjpuTT61vfqJdAI9qSW6J3qc="
-	}
-
+	FORMDATA = {"page":0,"pageSize":str(TREFFER_PRO_SEITE),"sortBy":"DATE_DE_DECISION","queryTarget":"ALL","modelesDecision":[],"resultatsDecision":None,"naturesAffaire":None,"compositionsCour":None,"autoritesDirectrice":None,"juges":None,"greffiers":[],"resultatsRecours":None,"jurivoc":{"inclusions":[],"exclusions":[]},"articlesDeLoi":{"inclusions":[],"exclusions":[]},"datePublication":{},"dateDecision":{},"query":"*","autoritePremiereInstance":None,"numAffaire":None,"numDecision":None}
 	def request_generator(self, ab=None):
+		aktjahr = datetime.date.today().year
 		if ab:
-			self.FORMDATA['search.criteria.publicationFirstPublDateSearchRange.dateFrom']=ab
-		request=scrapy.FormRequest(url=self.HOST+self.SUCH_URL, formdata=self.FORMDATA, method="POST", callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': 1})
-		return request
+			abjahr=int(ab.split("-")[0])
+		else:
+			abjahr=self.STARTJAHR
+		
+		requests=[]
+		for jahr in range(abjahr,aktjahr+1):
+			form=copy.deepcopy(self.FORMDATA)
+			if jahr==abjahr and ab:
+				form['datePublication']["from"]=ab.split('-') # ab muss Format YYYY-MM-DD haben
+			else:
+				form['datePublication']["from"]=[str(jahr),"1","1"] # ab muss Format YYYY-MM-DD haben
+			form['datePublication']["to"]=[str(jahr),"12","31"]
+			logger.info(f"Habe Request für {jahr} generiert: {json.dumps(form)}")
+			
+			# request=scrapy.Request(url=self.getProxyUrl(self.HOST+self.COOKIE_URL),method="GET", meta={'form':form, 'cookiejar': aktjahr-abjahr}, callback=self.parse_cookie, errback=self.errback_httpbin, headers=self.HEADERS)
+			request=scrapy.Request(url=self.HOST+self.COOKIE_URL,method="GET", meta={'form':form, 'cookiejar': jahr-abjahr}, callback=self.parse_cookie, errback=self.errback_httpbin, headers=self.HEADERS, dont_filter=True)
+			requests.append(request)
+			
+		return requests
+		
+	def parse_cookie(self, response):
+		antwort=response.text
+		logger.info("parse_cookie Rohergebnis "+str(len(antwort))+" Zeichen: "+response.url)
+		logger.info(f"parse_cookie Headers: {response.headers.getlist('Set-Cookie')}")
+		logger.info("parse_cookie Rohergebnis: "+antwort[:30000])
+		jar_id=response.meta['cookiejar']
+		logger.info(f"Cookie Jar ID: {jar_id}")
+		jar = self.cookies_mw.jars[jar_id]
+		cookies = { c.name: { "value": c.value, "domain": c.domain, "path": c.path, "expires": c.expires, "secure": c.secure, "rest": dict(getattr(c, "_rest", {}) or {})} for c in jar}
+		logger.info(f"Cookie Jar Content: {json.dumps(cookies)}")
+		headers=copy.deepcopy(self.HEADERS)
+		headers['X-XSRF-TOKEN']=cookies['XSRF-TOKEN']['value']
+		headers['Referer']="https://prestations.vd.ch/pub/101623/?page=0&pageSize=50&queryTarget=ALL&sortBy=DATE_DE_DECISION"
+		headers['Origin']=self.HOST
+		logger.info(f"Sende headers: {json.dumps(headers)} mit body {json.dumps(response.meta['form'])}")
+		# request=scrapy.Request(url=self.getProxyUrl(self.HOST+self.SUCH_URL), body=json.dumps(response.meta['form']), method="POST", callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': 0, 'cookiejar': response.meta['cookiejar'], 'body': json.dumps(response.meta['form'])}, headers=headers)
+		request=scrapy.Request(url=self.HOST+self.SUCH_URL, body=json.dumps(response.meta['form']), method="POST", callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': 0, 'cookiejar': response.meta['cookiejar'], 'body': response.meta['form']}, headers=headers)
+		yield(request)
 
 
 	def __init__(self, ab=None, neu=None):
 		super().__init__()
 		self.ab=ab
 		self.neu=neu
-		self.request_gen=[self.request_generator(ab)]
+
+
 
 	def parse_trefferliste(self, response):
 		logger.debug("parse_trefferliste response.status "+str(response.status))
 		logger.info("parse_trefferliste Rohergebnis "+str(len(response.body))+" Zeichen")
 		logger.info("parse_trefferliste Rohergebnis: "+response.text[:20000])
-	
-		treffer=response.xpath("//table[@style='padding: 0px; margin: 0px;' and @width='100%']/tr/td[@class='resultNavigation']/div[@style='padding-bottom: 4px;']/div[@style='text-align: right;']/b[3]/text()").get()
-		if treffer:
-			logger.info("Insgesamt "+treffer+" Treffer.")
-		else:
-			logger.error("Trefferzahl nicht erkannt.")
-		trefferZahl=int(treffer)
+
+		resultdict=json.loads(response.text)
+		treffer=resultdict['response']['totalElements']
+		entscheide=resultdict['response']['content']
+		trefferZahl=len(entscheide)
+		seite=response.meta['page']
+		body=copy.deepcopy(response.meta['body'])
+		logger.info(f"Insgesamt {treffer} Treffer, Seite {seite}, Treffer auf der Seite {trefferZahl}")
+		if treffer==10000:
+			logger.error(f"Treffermenge zu groos {treffer}")
+		if treffer==0:
+			logger.warning("kein Treffer")
 		
-		entscheide=response.xpath("//tr[td[@id='big' and @class='resultValue']/a]")
-		logger.info("Entscheide in Trefferliste: "+str(len(entscheide)))
+		logger.info("Entscheide in Trefferlistenseite: "+str(len(entscheide)))
 		
 		for entscheid in entscheide:
 			item={}
-			logger.info("Verarbeite Entscheid: "+entscheid.get())
-			url=entscheid.xpath(".//a/@href").get()
-			urls=self.reURL.search(url)
-			if urls is None:
-				logger.error("Url '"+url+"' konnte nicht erkannt werden")
-			else:
-				logger.debug("URL Anfangs: "+urls.group("URL"))
-				url_unq=unquote(urls.group("URL"))
-				logger.debug("Unquote: "+url_unq)				
-				url_iso=url_unq.encode("iso-8859-1")
-				logger.debug(b"ISO: "+url_iso)
-				url=self.HOST+self.HTML_URL+quote(url_iso)
-				logger.debug("URL Ende: "+url)
-				
-			item['HTMLUrls']=[url]
-			item['Num']=entscheid.xpath(".//a/acronym/text()").get()
-			meta=entscheid.xpath("./following-sibling::tr/td[@class='resultValue' and b/text()='Cour']").get()
-			if meta:
-				logger.debug("Metastring: "+meta)
-			else:
-				logger.error("Metastring nicht gefunden.")
-			metas=self.reMeta.search(meta)
-			if metas is None:
-				logger.error("Metainformation nicht erkannt in: "+meta)
-			else:
-				item['VKammer']=metas.group("VKammer")
-				kurz=metas.group("Kurz")
-				if metas.group("PDatum"):
-					pdatum_roh=metas.group("PDatum")
-					if pdatum_roh:
-						item['PDatum']=self.norm_datum(pdatum_roh)
-					edatum_roh=metas.group("EDatum")
-					if edatum_roh:
-						item['EDatum']=self.norm_datum(edatum_roh)
-				if metas.group("Num") and len(metas.group("Num"))>5:
-					item['Num']=metas.group("Num")
-				rest=metas.group("Rest")
-				if len(rest)>10:
-					logger.warning("Long_Restmeta: "+rest)
-				else:
-					logger.info("Restmeta: "+rest)
-				normen=entscheid.xpath(".//td[@class='keywords' and div/text()='Article']/div[@class='odd' or @class='even']/text()").getall()
-				if len(normen)>0:
-					item['Normen']=", ".join([n.strip() for n in normen])
-				leitsatz=entscheid.xpath(".//td[@class='keywords' and div/text()='Jurivoc']/div[@class='odd' or @class='even']/text()").getall()
-				if len(leitsatz)>0:
-					item['Leitsatz']=", ".join([l.strip() for l in leitsatz])
-				item['Signatur'], item['Gericht'], item['Kammer']=self.detect("","#"+kurz+"#",item['Num'])
-				logger.debug("Item bislang: "+json.dumps(item))
-				logger.info("Hole nun "+url)
-				request=scrapy.Request(url=url, callback=self.parse_page, errback=self.errback_httpbin, meta = {'item':item})
-				if self.check_blockliste(item):
-					yield(request)
+			logger.info("Verarbeite Entscheid: "+json.dumps(entscheid))
+			item['DocID']=PH.NC(entscheid['decisionHit']['id'],error=f"keine DocID in {json.dumps(entscheid)}")
+			item['Num']=PH.NC(entscheid['decisionHit']['affaireHit']['numero'],error=f"keine Geschäftsnummer in {json.dumps(entscheid)}")
+			if entscheid['decisionHit']['resume']:
+				item['Leitsatz']=PH.NC(entscheid['décisionHit']['resume'],warning=f"Fehler beim Abstract in {json.dumps(entscheid)}")
+			item['EDATUM']=PH.NC(entscheid['decisionHit']['dateDecision'],warning=f"kein Entscheiddatum in {json.dumps(entscheid)}")
+			item['PDATUM']=PH.NC(entscheid['decisionHit']['datePublication'],warning=f"kein Publikationsdatum in {json.dumps(entscheid)}")
+			item['Titel']=PH.NC(entscheid['decisionHit']['natureAffaire'],warning=f"kein Titel in {json.dumps(entscheid)}")
+			item['PDFUrls']=[self.HOST+self.PDF_URL+item['DocID']]
+			kurz=PH.NC(entscheid['decisionHit']['affaireHit']['autoriteDirectrice'],warning=f"keine Kammer erkannt in {json.dumps(entscheid)}")
+			item['Signatur'], item['Gericht'], item['Kammer']=self.detect("","#"+kurz+"#",item['Num'])
+			yield(item)
 		seite=response.meta['page']
-		if seite*self.TREFFER_PRO_SEITE<trefferZahl:
-			request=scrapy.Request(url=self.HOST+self.PAGE_URL+str(seite+1), callback=self.parse_trefferliste, errback=self.errback_httpbin, meta = {'page':seite+1})
+		if (seite+1)*self.TREFFER_PRO_SEITE<treffer:
+			headers=response.request.headers
+			jar_id=response.meta['cookiejar']
+			jar = self.cookies_mw.jars[jar_id]
+			cookies = { c.name: { "value": c.value, "domain": c.domain, "path": c.path, "expires": c.expires, "secure": c.secure, "rest": dict(getattr(c, "_rest", {}) or {})} for c in jar}
+			logger.info(f"parse_trefferliste Cookie Jar Content: {json.dumps(cookies)}")
+			if not headers['X-XSRF-TOKEN'].decode("utf-8") == cookies['XSRF-TOKEN']['value']:
+				logger.info(f"XSRF-Token hat gewechselt von {headers['X-XSRF-TOKEN']} auf {cookies['XSRF-TOKEN']['value']}")
+				headers=copy.deepcopy(headers)
+				headers['X-XSRF-TOKEN']=cookies['XSRF-TOKEN']['value']
+			body['page']=seite+1
+			logger.info(f"Lade nun Seite {seite+1} von {treffer} für {trefferZahl} Treffer bei {self.TREFFER_PRO_SEITE} Treffer pro Seite.")
+			# request=scrapy.Request(url=self.getProxyUrl(self.HOST+self.SUCH_URL), body=body, method="POST", callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': seite+1, 'cookiejar': response.meta['cookiejar'], 'body': body}, headers=response.request.headers)
+			request=scrapy.Request(url=self.HOST+self.SUCH_URL, body=json.dumps(body), method="POST", callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': seite+1, 'cookiejar': jar_id, 'body': body}, headers=headers)
 			yield request
 		
-
-	def parse_page(self, response):	
-		""" Parses the current search result page, downloads documents and yields the request for the next search
-		result page
-		"""
-		logger.debug("parse_page response.status "+str(response.status))
-		text=response.text
-		logger.info("parse_page Rohergebnis "+str(len(text))+" Zeichen")
-		logger.debug("parse_page Rohergebnis: "+text[:5000])
-		item=response.meta['item']
-		#Falls in der Trefferliste kein Datum war, dann versuchen es aus dem Dokument zu lesen
-		if not "EDatum" in item:
-			edatum=response.xpath("..//span[starts-with(.,'Arrêt du')]/text()")
-			if edatum:
-				item['EDatum']=PH.NC(self.norm_datum(edatum.get()[0][8:]),warning="kein Datum im Dokumenttext gefunden bei "+item['Num']+": "+text[:5000])
-				self.norm_datum(edatum[0][8:])
-
-		PH.write_html(text, item, self)
-		yield(item)						
