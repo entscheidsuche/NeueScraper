@@ -11,7 +11,9 @@ import re
 from lxml import etree
 import copy
 from scrapy.spidermiddlewares.httperror import HttpError
+from scrapy.downloadermiddlewares.cookies import CookiesMiddleware
 import base64
+from scrapy import signals
 
 from NeueScraper.pipelines import MyFilesPipeline
 from NeueScraper.pipelines import PipelineHelper
@@ -39,6 +41,7 @@ class BasisSpider(scrapy.Spider):
 	reSplitter=re.compile(r"[a-zA-Z0-9']+")
 	reKurzpfad=re.compile(r"^[^/]+/(?P<kurz>[^\.]+)\.(?:pdf|html|json)$")
 	PROXY='https://entscheidsuche.ch/scraping_proxy/request.php?scrapekey={}&stub='
+	handle_httpstatus_all = True
 
 	#name = 'Gerichtsdaten'
 	kantone = { 'de': {'CH':'Eidgenossenschaft','AG':'Aargau','AI':'Appenzell Innerrhoden','AR':'Appenzell Ausserrhoden','BE':'Bern','BL':'Basel-Land','BS':'Basel-Stadt','FR':'Freiburg','GE':'Genf','GL':'Glarus','GR':'Graubünden','JU':'Jura','LU':'Luzern','NE':'Neuenburg','NW':'Nidwalden','OW':'Obwalden','SG':'St.Gallen','SH':'Schaffhausen','SO':'Solothurn','SZ':'Schwyz','TG':'Thurgau','TI':'Tessin','UR':'Uri','VD':'Waadt','VS':'Wallis','ZG':'Zug','ZH':'Zürich', 'TA':'Schiedsgerichte'},
@@ -71,14 +74,35 @@ class BasisSpider(scrapy.Spider):
 	@classmethod
 	def from_crawler(cls, crawler, *args, **kwargs):
 		spider = super().from_crawler(crawler, *args, **kwargs)  # setzt intern _set_crawler
+		spider.crawler = crawler
+		logger.info("Attribut crawler gesetzt")
 		spider.scrapy_job = os.environ.get("SHUB_JOBKEY")
 		logger.info("from_crawler aufgerufen")
+		spider.cookies_mw = None
+		crawler.signals.connect(spider._on_engine_started, signal=signals.engine_started)
 		return spider
+
+	def _on_engine_started(self):
+		# ab hier existiert self.crawler.engine.downloader.middleware
+		for mw in self.crawler.engine.downloader.middleware.middlewares:
+			if isinstance(mw, CookiesMiddleware):
+				self.cookies_mw = mw
+				break
+
+		if self.cookies_mw is None:
+			self.logger.warning("CookiesMiddleware nicht gefunden (COOKIES_ENABLED evtl. False?)")
+		else:
+			self.logger.info("CookiesMiddleware gefunden")
 
 	def __init__(self):
 		super().__init__()
+		self.request_gen=None
 
 	def start_requests(self):
+		# Wenn noch kein Requestgenerator aufgerufen worden ist, es jetzt machen.
+		if not self.request_gen:
+			logger.info("Rufe den reuqest_generator aus dem Basis_Spider auf.")
+			self.request_gen=self.request_generator(self.ab)
 		logger.info("start_requests aufgerufen")
 		# lese erst einmal die Spiderdaten und danach werden die Spider in der request_gen geladen.
 		yield scrapy.Request(url=self.CSV_URL, callback=self.parse_gerichtsliste, errback=self.errback_httpbin)
@@ -633,6 +657,8 @@ class BasisSpider(scrapy.Spider):
 		if failure.check(HttpError):
 			response = failure.value.response
 			logger.error("HTTP %s on %s. Resp headers: %r. Request header %r", response.status, response.url, response.headers, response.request.headers)
+			if response.request.method=="POST":
+				logger.error(f"Post Request URL {response.request.url} und Body {response.request.body}")
 			body_preview = response.text[:10000]  # nicht alles loggen
 			logger.debug("Resp body (first 10000): %r", body_preview)
 
