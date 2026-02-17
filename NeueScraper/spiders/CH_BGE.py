@@ -19,7 +19,7 @@ class CH_BGE(BasisSpider):
 
 
 	INITIAL_URL='/bge_helper/request.php?stub=https%3A%2F%2Fsearch.bger.ch%2Fext%2Feurospider%2Flive%2Fde%2Fphp%2Fclir%2Fhttp%2Findex_atf.php&lang=de'
-	SUCH_URL='/bge_helper/request.php?stub=https%3A%2F%2Fsearch.bger.ch%2Fext%2Feurospider%2Flive%2Fde%2Fphp%2Fclir%2Fhttp%2Findex_atf.php&lang=de&zoom=&system=clir'
+	SUCH_URL='/bge_helper/request.php?stub=https%3A%2F%2Fsearch.bger.ch%2Fext%2Feurospider%2Flive%2Fde%2Fphp%2Fclir%2Fhttp%2Findex_atf.php%3Fyear%3D{band}%26volume%3D{volume}%26lang%3Dde%26zoom=%3D%26system%3Dclir'
 	EGMR_URL='/bge_helper/request.php?stub=https%3A%2F%2Fsearch.bger.ch%2Fext%2Feurospider%2Flive%2Fde%2Fphp%2Fclir%2Fhttp%2Findex_cedh.php&lang=de'
 	HOST="https://entscheidsuche.ch"
 	HELPER="/bge_helper/request.php?stub="
@@ -30,8 +30,9 @@ class CH_BGE(BasisSpider):
 	
 	SPRACHEN={"de": "D","fr": "F","it": "I"}
 	
-	reMeta=re.compile(r"^\d+\.\s+(?P<formal>.+(?:Urteil der|arrêt (?:de la|du)) (?P<VKammer>.+) (?:i\.S\.|dans la cause) [^_]+ (?P<Num2>\d+[A-F]?(?:_|\.)\d+/(?:19|20)\d\d) (?:[^_]+ )?(?:vom|du)\s+(?P<Datum>\d\d?\.?(?:er)?\s*(?:"+"|".join(BasisSpider.MONATEde+BasisSpider.MONATEfr)+r")\s+(?:19|20)\d\d))$")
-	reMetaOhneGN=re.compile(r"^\d+\.\s+(?P<formal>.+(?:Urteil der|arrêt (?:de la|du)) (?P<VKammer>.+) (?:i\.S\.|dans la cause) [^_]+ (?:vom|du)\s+(?P<Datum>\d\d?\.?(?:er)?\s*(?:"+"|".join(BasisSpider.MONATEde+BasisSpider.MONATEfr)+r")\s+(?:19|20)\d\d))$")
+	reMeta=re.compile(r"^\d+\.\s+(?P<formal>.+(?:(?:Auszug aus dem )?(?:Urteil|Entscheid) (?:der|des)|(?:Extrait de l'a|A)rrêt (?:de la|du)|Estratto dalla sentenza) (?P<VKammer>.+) (?:i\.S\.|dans la cause) [^_]+ (?P<Num2>\d+[A-F]?(?:_|\.)\d+/(?:19|20)\d\d) (?:[^_]+ )?(?:vom|du)\s+(?P<Datum>\d\d?\.?(?:er)?\s*(?:"+"|".join(BasisSpider.MONATEde+BasisSpider.MONATEfr+BasisSpider.MONATEit)+r")\s+(?:19|20)\d\d))$")
+	reMetaOhneGN=re.compile(r"^\d+\.\s+(?P<formal>.+(?:(?:Auszug aus dem )?(?:Urteil|Entscheid) (?:der|des)|(?:Extrait de l'a|A)rrêt (?:de la|du)|Estratto dalla sentenza) (?P<VKammer>.+)\s+(?:vom|du)\s+(?P<Datum>\d\d?\.?(?:er)?\s*(?:"+"|".join(BasisSpider.MONATEde+BasisSpider.MONATEfr+BasisSpider.MONATEit)+r")\s+(?:19|20)\d\d))$")
+	reMetaOhneKammer=re.compile(r"^\d+\.\s+(?P<formal>.+(?:(?:Auszug aus dem )?(?:Urteil|Entscheid)|(?:Extrait de l\'a|A)rrêt (?:de la|du)|Estratto dalla sentenza)\s+(?:vom|du)\s+(?P<Datum>\d\d?\.?(?:er)?\s*(?:"+"|".join(BasisSpider.MONATEde+BasisSpider.MONATEfr+BasisSpider.MONATEit)+r")\s+(?:19|20)\d\d)\s+i\.S\.\s+.+\.)\s*$")
 	reMetaSimple=re.compile(r"^\d+\s?\.\s+(?P<Rest>.+)$")
 	reRemoveDivs=re.compile(r"(</(div|span|a|artref)>)|(<(div|span|a|artref)[^>]+>)|(?:^<br>)|(?:<br>(?:(?=<br>)|$))")
 	reDoubleSpaces=re.compile(r"\s\s+")
@@ -64,6 +65,7 @@ class CH_BGE(BasisSpider):
 		requests=[]
 		for volume in ["I","II","III","IV","V"]:
 			requests.append(scrapy.Request(url=self.HOST+self.SUCH_URL.format(band=jahr-1874, volume=volume), headers=self.HEADER, callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'cookiejar': jar_id, 'Volume': volume, 'Jahr': jahr}))
+			logger.info(f"URL für {jahr} {volume}: "+self.HOST+self.SUCH_URL.format(band=jahr-1874, volume=volume))
 		#EGMR-Request: dort immer alle Entscheide parsen
 		requests.append(scrapy.Request(url=self.HOST+self.EGMR_URL, headers=self.HEADER, callback=self.parse_EGMR_trefferliste, errback=self.errback_httpbin, meta={'cookiejar': jar_id}))
 		return requests		
@@ -82,7 +84,7 @@ class CH_BGE(BasisSpider):
 		cookies=json.dumps([{"name": c.name,"value": c.value,"domain": c.domain,"path": c.path,"expires": c.expires,"secure": c.secure,"discard": c.discard,"rest": getattr(c, "_rest", {})} for c in cm.jars[jar_id] ],ensure_ascii=False)
 		logger.info("Cookies: "+cookies)
 		requests = self.request_generator(jar_id,self.ab)
-		logger.info(f"{len(requests)} Requests")
+		logger.info(f"Habe generiert: {len(requests)} Requests")
 		for r in requests:
 			yield r
 		
@@ -95,7 +97,9 @@ class CH_BGE(BasisSpider):
 		else:
 			von=int(ab)
 		for jahr in range(von,bis+1):
-			requests=requests+self.mache_requests(jar_id,jahr)
+			logger.info(f"Generiere Request für Jahr {jahr} und habe bis jetzt schon {len(requests)} Requests.")
+			requests+=self.mache_requests(jar_id,jahr)
+		logger.info(f"Gebe zurück {len(requests)} Requests")
 		return requests
 
 	def __init__(self, ab=None, neu=None):
@@ -119,7 +123,7 @@ class CH_BGE(BasisSpider):
 		if urteile is None:
 			logger.info("keine Leitentscheide für "+str(jahr)+" Volume "+volume)
 		else:
-			logger.info("Liste von {} Urteilen.".format(len(urteile)))
+			logger.info("Liste von {} Urteilen".format(len(urteile))+" für "+str(jahr)+" Volume "+volume)
 		
 			for entscheid in urteile:
 				text=entscheid.get()
@@ -160,7 +164,7 @@ class CH_BGE(BasisSpider):
 		if urteile is None:
 			logger.error("keine EGMR-Entscheide")
 		else:
-			logger.info("Liste von {} Urteilen.".format(len(urteile)))
+			logger.info("Liste von {} EGMR-Urteilen.".format(len(urteile)))
 		
 			for entscheid in urteile:
 				item={}
@@ -235,13 +239,19 @@ class CH_BGE(BasisSpider):
 			if meta_parse is None:
 				meta_ohneGN=self.reMetaOhneGN.search(meta_string)
 				if meta_ohneGN is None:
-					meta_simple=self.reMetaSimple.search(meta_string)
-					if meta_simple is None:
-						logger.error("Eintrag nicht matchbar "+item['Num']+": "+meta_string+"\nin: "+antwort)
+					meta_ohneKammer=self.reMetaOhneKammer.search(meta_string)
+					if meta_ohneKammer is None:
+						meta_simple=self.reMetaSimple.search(meta_string)
+						if meta_simple is None:
+							logger.error("Eintrag nicht matchbar "+item['Num']+": "+meta_string+"\nin: "+antwort)
+						else:
+							logger.warning("Eintragsdetails nicht parsbar "+item['Num']+": "+meta_string+"\nin: "+antwort)
+							item['Formal_org']=meta_simple.group('Rest')
+							item['EDatum']=self.norm_datum(str(jahr))
 					else:
-						logger.warning("Eintragsdetails nicht parsbar "+item['Num']+": "+meta_string+"\nin: "+antwort)
-						item['Formal_org']=meta_simple.group('Rest')
-						item['EDatum']=self.norm_datum(str(jahr))
+						logger.warning("Eintrags-Kammer und GN nicht parsbar "+": "+meta_string+"\nin: "+antwort)
+						item['Formal_org']=meta_ohneKammer.group('formal')
+						item['EDatum']=self.norm_datum(meta_ohneKammer.group('Datum'))
 				else:
 					logger.warning("Eintrags-Geschäftsnummer nicht parsbar "+ item['Num']+": "+meta_string+"\nin: "+antwort)
 					item['EDatum']=self.norm_datum(meta_ohneGN.group('Datum'))
