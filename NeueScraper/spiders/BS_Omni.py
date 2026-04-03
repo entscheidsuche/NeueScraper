@@ -16,8 +16,14 @@ class BS_Omni(BasisSpider):
 
 	SUCH_URL='/cgi-bin/nph-omniscgi.exe'
 	HOST ="https://rechtsprechung.gerichte.bs.ch"
-	TREFFER_PRO_SEITE = 50
-	BLAETTERN_URL="/cgi-bin/nph-omniscgi.exe?OmnisPlatform=WINDOWS&WebServerUrl=rechtsprechung.gerichte.bs.ch&WebServerScript=/cgi-bin/nph-omniscgi.exe&OmnisLibrary=JURISWEB&OmnisClass=rtFindinfoWebHtmlService&OmnisServer=JURISWEB,7000&Parametername=WEB&Schema=BS_FI_WEB&Source=&Aufruf=validate&cTemplate=search_resulttable.html&cTemplate_ValidationError=search.html&cSprache=DE&nSeite={Seite}&bInstanzInt=true{bInstanzInt}&bInstanzInt_%23NULL=%23NULL&nAnzahlTrefferProSeite="+str(TREFFER_PRO_SEITE)+"&W10_KEY={W10}&nAnzahlTreffer={Trefferzahl}"
+	TREFFER_PRO_SEITE = 50	
+	BLAETTERN_URL="/cgi-bin/nph-omniscgi.exe?OmnisPlatform=WINDOWS&WebServerUrl=&WebServerScript=/cgi-bin/nph-omniscgi.exe&OmnisLibrary=JURISWEB&OmnisClass=rtFindinfoWebHtmlService&OmnisServer=JURISWEB,7000&Parametername=WEB&Schema=BS_FI_WEB&Source=&Aufruf=validate&cTemplate=search_resulttable.html&cTemplate_ValidationError=search.html&cSprache=DE&nSeite={Seite}&nAnzahlTrefferProSeite="+str(TREFFER_PRO_SEITE)+"&W10_KEY={W10}&nAnzahlTreffer={Trefferzahl}"
+	
+	# https://rechtsprechung.gerichte.bs.ch/cgi-bin/nph-omniscgi.exe?OmnisPlatform=WINDOWS&WebServerUrl=&WebServerScript=/cgi-bin/nph-omniscgi.exe&OmnisLibrary=JURISWEB&OmnisClass=rtFindinfoWebHtmlService&OmnisServer=JURISWEB,7000&Parametername=WEB&Schema=BS_FI_WEB&Source=&Aufruf=validate&cTemplate=search_resulttable.html&cTemplate_ValidationError=search.html&cSprache=DE&nSeite=2&nAnzahlTrefferProSeite=5&W10_KEY=3200476&nAnzahlTreffer=10508
+	# https://rechtsprechung.gerichte.bs.ch/cgi-bin/nph-omniscgi.exe?OmnisPlatform=WINDOWS&WebServerUrl=&WebServerScript=/cgi-bin/nph-omniscgi.exe&OmnisLibrary=JURISWEB&OmnisClass=rtFindinfoWebHtmlService&OmnisServer=JURISWEB,7000&Parametername=WEB&Schema=BS_FI_WEB&Source=&Aufruf=validate&cTemplate=search_resulttable.html&cTemplate_ValidationError=search.html&cSprache=DE&nSeite=2&nAnzahlTrefferProSeite=50&W10_KEY=3200474&nAnzahlTreffer=8398
+	# https://rechtsprechung.gerichte.bs.ch/cgi-bin/nph-omniscgi.exe?OmnisPlatform=WINDOWS&WebServerUrl=&WebServerScript=/cgi-bin/nph-omniscgi.exe&OmnisLibrary=JURISWEB&OmnisClass=rtFindinfoWebHtmlService&OmnisServer=JURISWEB,7000&Parametername=WEB&Schema=BS_FI_WEB&Source=&Aufruf=validate&cTemplate=search_resulttable.html&cTemplate_ValidationError=search.html&cSprache=DE&nSeite=2&nAnzahlTrefferProSeite=50&W10_KEY=3200478&nAnzahlTreffer=8398
+	# https://rechtsprechung.gerichte.bs.ch/cgi-bin/nph-omniscgi.exe?OmnisPlatform=WINDOWS&WebServerUrl=&WebServerScript=/cgi-bin/nph-omniscgi.exe&OmnisLibrary=JURISWEB&OmnisClass=rtFindinfoWebHtmlService&OmnisServer=JURISWEB,7000&Parametername=WEB&Schema=BS_FI_WEB&Source=&Aufruf=validate&cTemplate=search_resulttable.html&cTemplate_ValidationError=search.html&cSprache=DE&nSeite=3&nAnzahlTrefferProSeite=5&W10_KEY=3200480&nAnzahlTreffer=10508
+		
 	FORMDATA = {
 		"OmnisPlatform": "WINDOWS",
 		"WebServerUrl": "rechtsprechung.gerichte.bs.ch",
@@ -46,6 +52,11 @@ class BS_Omni(BasisSpider):
 		"nAnzahlTrefferProSeite": str(TREFFER_PRO_SEITE)
 	}
 	
+	HEADER={
+		"Referer": "https://rechtsprechung.gerichte.bs.ch/cgi-bin/nph-omniscgi.exe",
+		"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:149.0) Gecko/20100101 Firefox/149.0"
+	}
+	
 	HERKUNFT=["AG", "SVG"]
 	
 	reTreffer=re.compile(r"</b>\svon\s(?P<Treffer>\d+)\sgefundenen\sGesch")
@@ -58,7 +69,7 @@ class BS_Omni(BasisSpider):
 			logger.info("Starte nun "+self.HERKUNFT[0])
 			formdata=copy.deepcopy(self.FORMDATA)
 			formdata['bInstanzInt_'+self.HERKUNFT[0]]=self.HERKUNFT[0]
-			request=scrapy.FormRequest(url=self.HOST+self.SUCH_URL, formdata=formdata, method="POST", callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': 1, 'herkunft': self.HERKUNFT[0]})
+			request=scrapy.FormRequest(url=self.HOST+self.SUCH_URL, formdata=formdata, method="POST", headers=self.HEADER, callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': 1, 'herkunft': self.HERKUNFT[0], 'formdata': formdata})
 			del self.HERKUNFT[0]
 		return request
 	
@@ -75,11 +86,11 @@ class BS_Omni(BasisSpider):
 	def parse_trefferliste(self, response):
 		logger.debug("parse_trefferliste response.status "+str(response.status))
 		antwort=response.text
-		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
+		logger.info("parse_trefferliste Rohergebnis "+response.request.url+": "+str(len(antwort))+" Zeichen")
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:30000])
 	
 		treffer=response.xpath("//table[@width='100%' and @border='0' and @cellspacing='0' and @cellpadding='0']/tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0']/tr/td[@width='50%']").get()
-		logger.info("Trefferzahl: "+treffer)
+		logger.info(f"Trefferzahl: {treffer}")
 		treffers=self.reTreffer.search(treffer)
 		if treffers:
 			trefferzahl=int(treffers.group('Treffer'))
@@ -111,6 +122,12 @@ class BS_Omni(BasisSpider):
 			yield request
 	
 		if seite*self.TREFFER_PRO_SEITE < trefferzahl:
+			formdata=copy.deepcopy(response.meta['formdata'])
+			formdata['WebServerUrl']=""
+			formdata['nSeite']=str(seite+1)
+			request=scrapy.FormRequest(url=self.HOST+self.SUCH_URL, formdata=formdata, method="POST", headers=self.HEADER, callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': seite+1, 'herkunft': self.HERKUNFT[0], 'formdata': formdata})
+			yield request
+			'''
 			href=response.xpath("//table[@width='100%' and @border='0' and @cellspacing='0' and @cellpadding='0']/tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0' and @border='0']/tr/td[@align='right']/a/@href")
 			if href==[]:
 				logger.error("Blätterlink nicht gefunden: "+antwort)
@@ -119,10 +136,11 @@ class BS_Omni(BasisSpider):
 				W10=self.reW10.search(href_string)
 				if W10:
 					next_url=self.HOST+self.BLAETTERN_URL.format(W10=W10.group('Key'),Seite=str(seite+1),bInstanzInt='&bInstanzInt_'+response.meta['herkunft']+"="+response.meta['herkunft'],Trefferzahl=trefferzahl)
-					request=scrapy.Request(url=next_url, callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': seite+1, 'herkunft': response.meta['herkunft']})
+					request=scrapy.Request(url=next_url, headers=self.HEADER, callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': seite+1, 'herkunft': response.meta['herkunft']})
 					yield request
 				else:
 					logger.error("W10 für das Blättern nicht gefunden: "+antwort)
+			'''
 		else:
 			# Die weiteren Quellen aufrufen (nun sequentiell machen, da parallel geblockt wird)
 			request=self.get_next_request()
