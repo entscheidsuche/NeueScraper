@@ -145,7 +145,7 @@ class BasisSpider(scrapy.Spider):
 			logger.debug("Spider "+spidername+" hat "+str(len(spidereintrag))+ " Spidereinträge")
 			for signaturreihe in spidereintrag:
 				signatur=signaturreihe['Signatur']
-				if not signaturreihe['Test'].lower=='test':
+				if not signaturreihe['Test'].lower()=='test':
 					teile=signatur.split('_')
 					kantonskurz=teile[0]			
 					gerichtssignatur=teile[0]+"_"+teile[1]	
