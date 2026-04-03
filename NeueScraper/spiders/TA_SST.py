@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class TA_SST(BasisSpider):
 	name = 'TA_SST'
 
-	URL="/rechsprechung"
+	URL="/rechtsprechung"
 	HOST="https://www.sportstribunal.ch"
 	
 	HEADER={
@@ -38,7 +38,7 @@ class TA_SST(BasisSpider):
 
 	
 	def request_generator(self):
-		requests=[scrapy.Request(url=self.HOST+self.URL, callback=self.parse_trefferliste, errback=self.errback_httpbin)]			
+		requests=[scrapy.Request(url=self.HOST+self.URL, callback=self.parse_trefferliste, errback=self.errback_httpbin, headers=self.HEADER)]			
 		return requests
 	
 	def __init__(self, ab=None, neu=None):
@@ -53,7 +53,7 @@ class TA_SST(BasisSpider):
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:30000])
 
-		urteile=response.xpath("//a[@class='file pdf' and following::h2[normalize-space(.)='Richtlinien zur Anonymisierung']]")
+		urteile=response.xpath("//a[@class='file pdf']")
 		if len(urteile)==0:
 			logger.warning("Keine Entscheide gefunden.")
 		else:
