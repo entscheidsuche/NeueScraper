@@ -163,7 +163,7 @@ class MyWriterPipeline:
 		MyFilesPipeline.common_store.persist_file(pfad_index, BytesIO(json_index.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
 		# Nachdem die Pipeline durchgelaufen ist, den Index-Request synchron machen
 		try:
-			antwort=requests.post("https://entscheidsuche.pansoft.de", data=json_jobs, headers= {'Content-Type': 'application/json'}, timeout=3600)
+			antwort=requests.post("https://entscheidsuche.pansoft.de", data=json_jobs, headers= {'Content-Type': 'application/json'}, timeout=3600, verify=False)
 			# logger.info("Indexierungsrequest mit Daten: "+json.dumps(json_jobs))
 			logger.info("Indexierungsrequest mit Antwort: "+str(antwort.status_code))
 			if antwort.status_code >=300:
@@ -332,7 +332,8 @@ class SFTPFilesStore:
 		"""Opens a FTP connection with passed credentials,sets current directory
 		to the directory extracted from given path, then uploads the file to server
 		"""
-		logger.info(f"sftp_store_file: Host: {host}, Path: {path}, Username ({username}), Passwort({('*'*len(password))}) gesetzt")
+		ip = requests.get('https://api.ipify.org').text
+		logger.info(f"sftp_store_file: Host: {host}, Path: {path}, Username ({username}), Passwort({('*'*len(password))}) gesetzt mit IP-Adresse {ip}")
 		cnopts=pysftp.CnOpts()
 		# Eigentlich sollte hier auf ein Hostsfile zugegriffen werden, aber das geht nicht so einfach.
 		cnopts.hostkeys = None
@@ -344,17 +345,18 @@ class SFTPFilesStore:
 			if SFTPFilesStore.sftp_instanz and SFTPFilesStore.sftp_instanz_dir == dirname:
 				if SFTPFilesStore.sftp_usage_count > 1000: # ab und zu mal neue Verbindung verwenden
 					sftp=None
+					sftp.close()
 					SFTPFilesStore.sftp_instanz=None
 					SFTPFilesStore.sftp_instanz_dir = None
 					SFTPFilesStore.sftp_usage_count = 0
-					sftp.close()
 				sftp=SFTPFilesStore.sftp_instanz
 				try:
 					logger.info(f"Schreibe nun in bereits geöfnnete sftp-Verbindung in Pfad {path} die Datei {filename}")
 					sftp.putfo(file,filename, confirm=False)
 					file.close()
+					logger.info(f"Erfolg bei sftp-Verbindung in Pfad {path} die Datei {filename} mit IP {ip}")
 				except:
-					logger.error("Inner SFTP Exception mit bestehender Verbidnung " +str(e.__class__) +" occurred.")
+					logger.error(f"Inner SFTP Exception mit bestehender Verbidnung {e.__class__} occurred {ip}.")
 					logger.info("versuche es erneut")
 					file.seek(0)
 					sftp=None
@@ -372,11 +374,11 @@ class SFTPFilesStore:
 						SFTPFilesStore.sftp_instanz_dir = dirname
 						SFTPFilesStore.sftp_usage_count = 0
 					except Exception as e:
-						logger.error("Inner SFTP Exception mit neuer Verbindung " +str(e.__class__) +" occurred.")
+						logger.error(f"Inner SFTP Exception mit neuer Verbindung {e.__class__} occurred {ip}.")
 				else:
-					logger.error("Konnte keine sftp-Verbindung öffnen.")
+					logger.error(f"Konnte keine sftp-Verbindung öffnen mit {ip}.")
 		except Exception as e:
-			logger.error("Outer SFTP Exception " +str(e) +" occurred.")
+			logger.error(f"Outer SFTP Exception {e} occurred mit {ip}.")
 
 
 
