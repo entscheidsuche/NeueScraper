@@ -41,15 +41,17 @@ class CH_BSTG(BasisSpider):
 		self.JSON['sessionDuration']=epoch
 		if fromwert>0: self.JSON['from']=fromwert
 		elif 'from' in self.JSON: del self.JSON['from']
-		return scrapy.http.JsonRequest(url=self.HOST+self.URL, headers=self.HEADER, data=self.JSON, callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'from': fromwert, 'abdatum': abdatum, 'bisdatum':bisdatum, 'userID': userID})
+		return scrapy.http.JsonRequest(url=self.getProxyUrl(self.HOST+self.URL), headers=self.HEADER, data=self.JSON, callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'from': fromwert, 'abdatum': abdatum, 'bisdatum':bisdatum, 'userID': userID})
 	
+	def request_generator(self, ab):
+		return [self.get_next_request(ab)]
+		
 	def __init__(self, ab=None, neu=None):
 		super().__init__()
 		self.ab=ab
 		if not ab:
 			ab=self.AB	
 		self.neu=neu
-		self.request_gen = [self.get_next_request(ab)]
 		
 	def parse_trefferliste(self, response):
 		logger.info("parse_einzelseite response.status "+str(response.status))
@@ -86,6 +88,7 @@ class CH_BSTG(BasisSpider):
 					item['DocID']=PH.NC(entscheid['leid'], error="keine leid gefunden in "+json.dumps(entscheid))
 					#item['PDFUrls']=[self.HOST+PH.NC(entscheid['metadataKeywordTextMap']['originalUrl'][0], error="keine URL in "+json.dumps(entscheid))]
 					item['PDFUrls']=[self.HOST+self.PDFURL+item['DocID']+"?locale=de&userID="+userID]
+					item['ProxyUrls']=[self.getProxyUrls(self.HOST+self.PDFURL+item['DocID']+"?locale=de&userID="+userID)]
 					fileName=PH.NC(entscheid['metadataKeywordTextMap']['fileName'][0],error="Kein Filename für "+json.dumps(entscheid))
 					item['PDFPosts']=[json.dumps({'documentTitle':fileName})]
 					if 'rulingDate' in entscheid['metadataDateMap']:
