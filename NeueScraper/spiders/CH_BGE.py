@@ -30,9 +30,9 @@ class CH_BGE(BasisSpider):
 	
 	SPRACHEN={"de": "D","fr": "F","it": "I"}
 	
-	reMeta=re.compile(r"^\d+\.\s+(?P<formal>.+(?:(?:Auszug aus dem )?(?:Urteil|Entscheid) (?:der|des)|(?:Extrait de l'a|A)rrêt (?:de la|du)|Estratto dalla sentenza) (?P<VKammer>.+) (?:i\.S\.|dans la cause) [^_]+ (?P<Num2>\d+[A-F]?(?:_|\.)\d+/(?:19|20)\d\d) (?:[^_]+ )?(?:vom|du)\s+(?P<Datum>\d\d?\.?(?:er)?\s*(?:"+"|".join(BasisSpider.MONATEde+BasisSpider.MONATEfr+BasisSpider.MONATEit)+r")\s+(?:19|20)\d\d))$")
-	reMetaOhneGN=re.compile(r"^\d+\.\s+(?P<formal>.+(?:(?:Auszug aus dem )?(?:Urteil|Entscheid) (?:der|des)|(?:Extrait de l'a|A)rrêt (?:de la|du)|Estratto dalla sentenza) (?P<VKammer>.+)\s+(?:vom|du)\s+(?P<Datum>\d\d?\.?(?:er)?\s*(?:"+"|".join(BasisSpider.MONATEde+BasisSpider.MONATEfr+BasisSpider.MONATEit)+r")\s+(?:19|20)\d\d))$")
-	reMetaOhneKammer=re.compile(r"^\d+\.\s+(?P<formal>.+(?:(?:Auszug aus dem )?(?:Urteil|Entscheid)|(?:Extrait de l\'a|A)rrêt (?:de la|du)|Estratto dalla sentenza)\s+(?:vom|du)\s+(?P<Datum>\d\d?\.?(?:er)?\s*(?:"+"|".join(BasisSpider.MONATEde+BasisSpider.MONATEfr+BasisSpider.MONATEit)+r")\s+(?:19|20)\d\d)\s+i\.S\.\s+.+\.)\s*$")
+	reMeta=re.compile(r"^\d+\.\s+(?P<formal>.*(?:(?:Auszug aus dem )?(?:Urteil|Entscheid) (?:der|des)|(?:Extrait de l'a|A)rrêt (?:de la|du)|Estratto dalla sentenza) (?P<VKammer>.+) (?:i\.S\.|dans la cause) [^_]+ (?P<Num2>\d+[A-F]?(?:_|\.)\d+/(?:19|20)\d\d) (?:[^_]+ )?(?:vom|du)\s+(?P<Datum>\d\d?\.?(?:er)?\s*(?:"+"|".join(BasisSpider.MONATEde+BasisSpider.MONATEfr+BasisSpider.MONATEit)+r")\s+(?:19|20)\d\d))$")
+	reMetaOhneGN=re.compile(r"^\d+\.\s+(?P<formal>.*(?:(?:Auszug aus dem )?(?:Urteil|Entscheid) (?:der|des)|(?:Extrait de l'a|A)rrêt (?:de la|du)|Estratto dalla sentenza) (?P<VKammer>.+)\s+(?:vom|du)\s+(?P<Datum>\d\d?\.?(?:er)?\s*(?:"+"|".join(BasisSpider.MONATEde+BasisSpider.MONATEfr+BasisSpider.MONATEit)+r")\s+(?:19|20)\d\d))$")
+	reMetaOhneKammer=re.compile(r"^\d+\.\s+(?P<formal>.*(?:(?:Auszug aus dem )?(?:Urteil|Entscheid)|(?:Extrait de l\'a|A)rrêt (?:de la|du)|Estratto dalla sentenza)\s+(?:vom|du)\s+(?P<Datum>\d\d?\.?(?:er)?\s*(?:"+"|".join(BasisSpider.MONATEde+BasisSpider.MONATEfr+BasisSpider.MONATEit)+r")\s+(?:19|20)\d\d)\s+i\.S\.\s+.+\.)\s*$")
 	reMetaSimple=re.compile(r"^\d+\s?\.\s+(?P<Rest>.+)$")
 	reRemoveDivs=re.compile(r"(</(div|span|a|artref)>)|(<(div|span|a|artref)[^>]+>)|(?:^<br>)|(?:<br>(?:(?=<br>)|$))")
 	reDoubleSpaces=re.compile(r"\s\s+")
@@ -58,8 +58,11 @@ class CH_BGE(BasisSpider):
 	custom_settings = {
 		"COOKIES_ENABLED": True,
 		"COOKIES_DEBUG": True,   # optional
+		"DOWNLOAD_DELAY": 4,
+		"CONCURRENT_REQUESTS_PER_DOMAIN": 2,
+		"AUTOTHROTTLE_ENABLED": True,
+		"AUTOTHROTTLE_TARGET_CONCURRENCY": 2.0,
 	}
-
 
 	def mache_requests(self,jar_id,jahr):
 		requests=[]
@@ -68,7 +71,7 @@ class CH_BGE(BasisSpider):
 			logger.info(f"URL für {jahr} {volume}: "+self.HOST+self.SUCH_URL.format(band=jahr-1874, volume=volume))
 		#EGMR-Request: dort immer alle Entscheide parsen
 		requests.append(scrapy.Request(url=self.HOST+self.EGMR_URL, headers=self.HEADER, callback=self.parse_EGMR_trefferliste, errback=self.errback_httpbin, meta={'cookiejar': jar_id}))
-		return requests		
+		return requests
 
 	def initial_request(self):
 		requests=[scrapy.Request(url=self.HOST+self.INITIAL_URL, headers=self.HEADER, meta={'cookiejar': 0}, callback=self.parse_cookie)]
@@ -83,13 +86,13 @@ class CH_BGE(BasisSpider):
 		cm = next(mw for mw in self.crawler.engine.downloader.middleware.middlewares if isinstance(mw, CookiesMiddleware))
 		cookies=json.dumps([{"name": c.name,"value": c.value,"domain": c.domain,"path": c.path,"expires": c.expires,"secure": c.secure,"discard": c.discard,"rest": getattr(c, "_rest", {})} for c in cm.jars[jar_id] ],ensure_ascii=False)
 		logger.info("Cookies: "+cookies)
-		requests = self.request_generator(jar_id,self.ab)
+		requests = self.my_request_generator(jar_id,self.ab)
 		logger.info(f"Habe generiert: {len(requests)} Requests")
 		for r in requests:
 			yield r
 		
 
-	def request_generator(self,jar_id,ab=None):
+	def my_request_generator(self,jar_id,ab=None):
 		requests=[]
 		bis=datetime.date.today().year
 		if ab is None:
@@ -102,12 +105,13 @@ class CH_BGE(BasisSpider):
 		logger.info(f"Gebe zurück {len(requests)} Requests")
 		return requests
 
+	def request_generator(self, ab):
+		return self.initial_request()
+
 	def __init__(self, ab=None, neu=None):
 		super().__init__()
 		self.neu=neu
 		self.ab=ab
-		self.request_gen = self.initial_request()
-
 
 	def parse_trefferliste(self, response):
 		logger.info("parse_trefferliste response.status "+str(response.status)+" URL: "+response.url)
