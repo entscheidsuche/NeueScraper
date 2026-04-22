@@ -15,8 +15,18 @@ logger = logging.getLogger(__name__)
 class CH_WEKO(BasisSpider):
 	name = 'CH_WEKO'
 
-	URL="/weko/de/home/praxis/publizierte-entscheide.html"
+	# URL="/weko/de/home/praxis/publizierte-entscheide.html"
+	URL="/de/entscheide"
 	HOST="https://www.weko.admin.ch"
+	
+	custom_settings = {
+		"COOKIES_ENABLED": True,
+		"COOKIES_DEBUG": True,   # optional
+		"DOWNLOAD_DELAY": 4,
+		"CONCURRENT_REQUESTS_PER_DOMAIN": 2,
+		"AUTOTHROTTLE_ENABLED": True,
+		"AUTOTHROTTLE_TARGET_CONCURRENCY": 2.0,
+	}
 	
 	def __init__(self, neu=None):
 		self.neu=neu
@@ -28,7 +38,8 @@ class CH_WEKO(BasisSpider):
 		antwort=response.text
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:80000])
-		urteile=response.xpath("//div[@class='mod mod-download']/p")
+		# urteile=response.xpath("//ul/li/a[@class='download-item']")
+		urteile=response.xpath("//ul/li[a[@class='download-item']]")
 		if len(urteile)==0:
 			logger.warning("Keine Entscheide gefunden für "+response.meta['Gericht'])
 		else:
@@ -36,11 +47,15 @@ class CH_WEKO(BasisSpider):
 				item={}
 				logger.info("Verarbeite nun: "+entscheid.get())
 				url=entscheid.xpath("./a/@href").get()
-				item['PDFUrls']=[self.HOST+url]
-				meta=entscheid.xpath("./a/@title").get()
+				item['PDFUrls']=[url]
+				meta=entscheid.xpath("./a/div/h4[@class='download-item__title']/text()").get()
 				metas=meta.split(": ",1)
 				if len(metas)>1:
 					metas2=metas[1].split(" vom ")
+					if len(metas2)==1:
+						metas2=metas[1].split(" du ")
+					if len(metas2)==1:
+						metas2=metas[1].split(" del ")
 					if len(metas2)>1:
 						edatum=self.norm_datum(metas2[1], warning="Kein Datum identifiziert")
 						item['Entscheidart']=metas2[0]
@@ -50,13 +65,21 @@ class CH_WEKO(BasisSpider):
 					item['Num']=metas[0]
 				else:
 					metas2=meta.split(" vom ")
+					if len(metas2)==1:
+						metas2=meta.split(" du ")
+					if len(metas2)==1:
+						metas2=meta.split(" del ")
 					if len(metas2)>1:
 						edatum=self.norm_datum(metas2[1], warning="Kein Datum identifiziert")
 						item['Num']=metas2[0]
 					else:
 						edatum=self.norm_datum(meta, warning="Kein Datum identifiziert")
-						item['Num']="unbekannt"					
+						item['Num']=meta
+				publiziert=entscheid.xpath("./a/div/p/span[@class='meta-info__item'][last()]/text()")
+				if publiziert:
+					item['PDatum']=self.norm_datum(publiziert.get(), warning=f"Kein Publikationsdatum in {publiziert}")
 				if edatum!="nodate":
 					item['EDatum']=edatum
 				item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("","",item['Num'])
+				logger.info(f"Entscheid gelesen: {json.dumps(item)}")
 				yield item
