@@ -125,7 +125,7 @@ class BS_Omni(BasisSpider):
 			formdata=copy.deepcopy(response.meta['formdata'])
 			formdata['WebServerUrl']=""
 			formdata['nSeite']=str(seite+1)
-			request=scrapy.FormRequest(url=self.HOST+self.SUCH_URL, formdata=formdata, method="POST", headers=self.HEADER, callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': seite+1, 'herkunft': self.HERKUNFT[0], 'formdata': formdata})
+			request=scrapy.FormRequest(url=self.HOST+self.SUCH_URL, formdata=formdata, method="POST", headers=self.HEADER, callback=self.parse_trefferliste, errback=self.errback_httpbin, meta={'page': seite+1, 'herkunft': response.meta['herkunft'], 'formdata': formdata})
 			yield request
 			'''
 			href=response.xpath("//table[@width='100%' and @border='0' and @cellspacing='0' and @cellpadding='0']/tr/td/table[@width='100%' and @cellspacing='0' and @cellpadding='0' and @border='0']/tr/td[@align='right']/a/@href")
