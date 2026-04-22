@@ -74,8 +74,12 @@ class MyWriterPipeline:
 					job_typ="neu"
 					logger.info("Löschlauf")
 				else:
-					job_typ="komplett"
-					logger.info("keine Dokumente eines vorherigen Laufes gefunden.")
+					if gelesen==0:
+						logger.error("keine Dokumente aus dem vorherigen Lauf und keine Dokumente gelsen! Keinen Indexierungsrequest.")
+						return
+					else:
+						job_typ="komplett"
+						logger.info("keine Dokumente eines vorherigen Laufes gefunden.")
 
 		gesamt={'gesamt':0}
 		to_index={}
