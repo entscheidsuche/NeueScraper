@@ -26,6 +26,7 @@ import operator
 import pysftp
 import posixpath
 import pathlib
+import time
 from scrapy.settings import Settings
 from scrapy.exceptions import IgnoreRequest, NotConfigured
 import requests
@@ -274,6 +275,13 @@ class SFTPFilesStore:
 	sftp_instanz = None
 	sftp_instanz_dir = None
 	sftp_usage_count = 0
+	# Externe IP-Adresse (für Logmeldungen) - wird nur einmal pro Spider-Lauf
+	# ermittelt, damit nicht jeder SFTP-Aufruf einen synchronen HTTP-Request
+	# an api.ipify.org auslöst und dort potenziell hängenbleibt.
+	_cached_ip = None
+	# Schwelle für Connection-Recycling: nach so vielen putfo-Aufrufen wird die
+	# bestehende SFTP-Connection geschlossen und eine frische geöffnet.
+	SFTP_RECYCLE_AFTER = 1000
 
 	def __init__(self, uri=None):
 		if uri is None:
@@ -331,58 +339,94 @@ class SFTPFilesStore:
 			if first_call:
 				sftp.chdir(path)
 
+	@classmethod
+	def _get_ip(cls):
+		"""Ermittelt die externe IP einmal pro Lauf und cached sie.
+		Verhindert, dass jeder sftp_store_file-Aufruf einen synchronen
+		HTTP-Request macht, der den Reactor blockieren kann."""
+		if cls._cached_ip is None:
+			try:
+				cls._cached_ip = requests.get('https://api.ipify.org', timeout=2).text
+			except Exception as e:
+				logger.warning(f"_get_ip: api.ipify.org nicht erreichbar ({e!r}), nutze 'unknown'.")
+				cls._cached_ip = 'unknown'
+		return cls._cached_ip
+
 	@staticmethod
 	def sftp_store_file(*, path, file, host, username, password):
-		"""Opens a FTP connection with passed credentials,sets current directory
-		to the directory extracted from given path, then uploads the file to server
+		"""Opens a SFTP connection with passed credentials, sets current directory
+		to the directory extracted from given path, then uploads the file to server.
+		Loggt Entry/Exit/Duration auf INFO, damit Hänger im SFTP-Pfad sofort sichtbar sind.
+		Re-cycelt die SFTP-Verbindung alle SFTP_RECYCLE_AFTER putfo-Aufrufe.
 		"""
-		ip = requests.get('https://api.ipify.org').text
-		logger.info(f"sftp_store_file: Host: {host}, Path: {path}, Username ({username}), Passwort({('*'*len(password))}) gesetzt mit IP-Adresse {ip}")
-		cnopts=pysftp.CnOpts()
+		# Grösse der Datei für die Log-Zeile bestimmen (best-effort)
+		size = -1
+		try:
+			cur = file.tell()
+			file.seek(0, 2)
+			size = file.tell()
+			file.seek(cur)
+		except Exception:
+			pass
+		ip = SFTPFilesStore._get_ip()
+		logger.info(f"SFTP entry path={path} size={size}")
+		t_start = time.monotonic()
+
+		cnopts = pysftp.CnOpts()
 		# Eigentlich sollte hier auf ein Hostsfile zugegriffen werden, aber das geht nicht so einfach.
 		cnopts.hostkeys = None
 		try:
-			sftp=None
+			sftp = None
 			file.seek(0)
 			dirname, filename = posixpath.split(path)
-			sftp=None
+
 			if SFTPFilesStore.sftp_instanz and SFTPFilesStore.sftp_instanz_dir == dirname:
-				if SFTPFilesStore.sftp_usage_count > 1000: # ab und zu mal neue Verbindung verwenden
-					sftp=None
-					sftp.close()
-					SFTPFilesStore.sftp_instanz=None
+				if SFTPFilesStore.sftp_usage_count > SFTPFilesStore.SFTP_RECYCLE_AFTER:
+					# bestehende Verbindung schliessen und frische öffnen
+					try:
+						SFTPFilesStore.sftp_instanz.close()
+					except Exception as e:
+						logger.warning(f"SFTP-Recycling: close() fehlgeschlagen: {e!r}")
+					logger.info(f"SFTP-Recycling: Verbindung nach {SFTPFilesStore.sftp_usage_count} Uses erneuert.")
+					SFTPFilesStore.sftp_instanz = None
 					SFTPFilesStore.sftp_instanz_dir = None
 					SFTPFilesStore.sftp_usage_count = 0
-				sftp=SFTPFilesStore.sftp_instanz
-				try:
-					logger.info(f"Schreibe nun in bereits geöfnnete sftp-Verbindung in Pfad {path} die Datei {filename}")
-					sftp.putfo(file,filename, confirm=False)
-					file.close()
-					logger.info(f"Erfolg bei sftp-Verbindung in Pfad {path} die Datei {filename} mit IP {ip}")
-				except:
-					logger.error(f"Inner SFTP Exception mit bestehender Verbidnung {e.__class__} occurred {ip}.")
-					logger.info("versuche es erneut")
-					file.seek(0)
-					sftp=None
-					SFTPFilesStore.sftp_instanz=None
-					SFTPFilesStore.sftp_instanz_dir = None
+				sftp = SFTPFilesStore.sftp_instanz
+				if sftp is not None:
+					try:
+						logger.debug(f"Schreibe nun in bereits geöfnnete sftp-Verbindung in Pfad {path} die Datei {filename}")
+						sftp.putfo(file, filename, confirm=False)
+						file.close()
+						SFTPFilesStore.sftp_usage_count += 1
+						logger.debug(f"Erfolg bei sftp-Verbindung in Pfad {path} die Datei {filename} mit IP {ip}")
+					except Exception as e:
+						logger.error(f"Inner SFTP Exception mit bestehender Verbindung {e.__class__.__name__}: {e!r} mit IP {ip}.")
+						logger.info("versuche es erneut mit neuer Verbindung")
+						file.seek(0)
+						sftp = None
+						SFTPFilesStore.sftp_instanz = None
+						SFTPFilesStore.sftp_instanz_dir = None
+						SFTPFilesStore.sftp_usage_count = 0
 			if sftp is None:
-				sftp=pysftp.Connection(host=host, username=username, password=password, cnopts=cnopts, log=True)
+				sftp = pysftp.Connection(host=host, username=username, password=password, cnopts=cnopts, log=True)
 				if sftp:
 					try:
 						SFTPFilesStore.sftp_makedirs_cwd(sftp, dirname)
 						logger.info(f"Schreibe in neue Verbindung für Pfad {path} die Datei {filename}")
-						sftp.putfo(file,filename, confirm=False)
+						sftp.putfo(file, filename, confirm=False)
 						file.close()
-						SFTPFilesStore.sftp_instanz=sftp
+						SFTPFilesStore.sftp_instanz = sftp
 						SFTPFilesStore.sftp_instanz_dir = dirname
-						SFTPFilesStore.sftp_usage_count = 0
+						SFTPFilesStore.sftp_usage_count = 1  # gerade einmal verwendet
 					except Exception as e:
-						logger.error(f"Inner SFTP Exception mit neuer Verbindung {e.__class__} occurred {ip}.")
+						logger.error(f"Inner SFTP Exception mit neuer Verbindung {e.__class__.__name__}: {e!r} mit IP {ip}.")
 				else:
 					logger.error(f"Konnte keine sftp-Verbindung öffnen mit {ip}.")
 		except Exception as e:
 			logger.error(f"Outer SFTP Exception {e} occurred mit {ip}.")
+		finally:
+			dur = time.monotonic() - t_start
+			logger.info(f"SFTP exit path={path} duration={dur:.2f}s")
 
 
 
@@ -861,7 +905,7 @@ class PipelineHelper:
 					missing.append(sp)
 			logger.debug("Eintrag: "+json.dumps(eintrag)+", missing: "+json.dumps(missing)+ ", kopfzeile: "+json.dumps(kopfzeile)+", metamatch: "+json.dumps(metamatch))
 			kopfzeile[0]['Sprachen']+=missing
-			logger.info("Setze Kopfzeile auf: "+json.dumps(kopfzeile))
+			logger.debug("Setze Kopfzeile auf: "+json.dumps(kopfzeile))
 			eintrag['Kopfzeile']=kopfzeile
 		
 			gesamttext=""

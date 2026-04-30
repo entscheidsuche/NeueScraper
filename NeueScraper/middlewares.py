@@ -76,6 +76,89 @@ class ProxyAwareRedirectMiddleware(RedirectMiddleware):
 		return self._redirect(redirected, request, spider, response.status)
 
 
+class CookieDiagnoseMiddleware:
+	"""Loggt Antworten, die auf Cookie-Resets, Bot-Challenges oder
+	Redirect-basierte Cookie-Wechsel hindeuten. Ziel: Vor einem 4xx/5xx-Fehler
+	im Log nachvollziehen können, welche Antwort die Cookies geändert hat.
+
+	Erkannte Events (alle als logger.info):
+	  COOKIE-EVENT  – Response hat Set-Cookie-Header (Mid-Session Cookie-Wechsel)
+	  REDIRECT      – 3xx mit Location + Set-Cookie (Imperva-Challenge-typisch)
+	  SHORT-200     – 200-Response unter SUSPICIOUS_BODY_THRESHOLD Bytes
+	                  (typisch für JS-Challenge / Block-Page mit 200)
+	  NON-2XX       – 4xx/5xx mit Cookie-Header der gesendet wurde
+	"""
+
+	SUSPICIOUS_BODY_THRESHOLD = 2000  # bytes; Challenge-Pages sind meist <2 KB
+
+	@classmethod
+	def from_crawler(cls, crawler):
+		return cls()
+
+	def process_response(self, request, response, spider):
+		try:
+			self._log_events(request, response, spider)
+		except Exception as e:
+			# Diagnose-Logging darf den Spider unter keinen Umständen brechen
+			spider.logger.warning(f"CookieDiagnoseMiddleware: Logging fehlgeschlagen: {e!r}")
+		return response
+
+	def _log_events(self, request, response, spider):
+		jar = request.meta.get('cookiejar', '?')
+		lane_idx = request.meta.get('lane_idx', '?')
+		# 1) Set-Cookie-Header der Response
+		set_cookies = response.headers.getlist(b'Set-Cookie')
+		if set_cookies:
+			names = []
+			for c in set_cookies:
+				try:
+					nm = c.split(b'=', 1)[0].decode('latin1', errors='replace')
+					names.append(nm)
+				except Exception:
+					pass
+			# Hat der Request schon Cookies geschickt? Dann ist es ein Mid-Session-Wechsel.
+			req_cookie_hdr = request.headers.get(b'Cookie')
+			marker = 'MID-SESSION' if req_cookie_hdr else 'INITIAL'
+			spider.logger.info(
+				f"COOKIE-EVENT[{marker}] status={response.status} jar={jar} lane={lane_idx} "
+				f"set-cookie-names={names} url={response.url}"
+			)
+
+		# 2) Redirects (3xx)
+		if 300 <= response.status < 400:
+			location_b = response.headers.get(b'Location', b'')
+			location = location_b.decode('utf-8', errors='replace') if location_b else ''
+			spider.logger.info(
+				f"REDIRECT status={response.status} jar={jar} lane={lane_idx} "
+				f"from={response.url} to={location}"
+			)
+
+		# 3) Verdächtig kurze 200-Antworten (Challenge-Page hat oft 200 + winzigen Body)
+		if response.status == 200 and len(response.body) < self.SUSPICIOUS_BODY_THRESHOLD:
+			body_preview = response.text[:400] if hasattr(response, 'text') else ''
+			body_preview = body_preview.replace('\n', ' ').replace('\r', '')
+			spider.logger.info(
+				f"SHORT-200 size={len(response.body)} jar={jar} lane={lane_idx} "
+				f"url={response.url} body={body_preview!r}"
+			)
+
+		# 4) 4xx/5xx mit gesendeten Cookies, damit wir nachvollziehen, was der Server abgewiesen hat
+		if response.status >= 400:
+			req_cookie_hdr = request.headers.get(b'Cookie', b'')
+			req_cookies = req_cookie_hdr.decode('utf-8', errors='replace') if req_cookie_hdr else ''
+			# Nur die Cookie-Namen + ersten 6 Zeichen Wert ausgeben (kompakt)
+			compact = []
+			for kv in req_cookies.split(';'):
+				kv = kv.strip()
+				if '=' in kv:
+					n, v = kv.split('=', 1)
+					compact.append(f"{n}={v[:6]}…")
+			spider.logger.info(
+				f"NON-2XX status={response.status} jar={jar} lane={lane_idx} "
+				f"url={response.url} sent={compact}"
+			)
+
+
 class NeuescraperSpiderMiddleware:
 	# Not all methods need to be defined. If a method is not defined,
 	# scrapy acts as if the spider middleware does not modify the
