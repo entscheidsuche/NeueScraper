@@ -262,9 +262,12 @@ class BasisSpider(scrapy.Spider):
 		htaccess+="Header set Access-Control-Allow-Origin *\n"
 		htaccess+="RewriteEngine On\n"
 		htaccess+="RewriteBase /\n"
-		htaccess+='RewriteRule "^Facetten.json" "/docs/facetten.php" [L]\n'		
-		htaccess+='RewriteRule "^Index/([^/]+)/last$" "/docs/lese_index.php?spider=$1" [L]\n'
-		htaccess+='RewriteRule "^Jobs/([^/]+)/last$" "/docs/lese_job.php?spider=$1" [L]\n'
+		htaccess+='RewriteRule "^Facetten.json" "/docs/facetten.php" [L]\n'
+		# Hinweis: Die Rewrites fuer "^Index/<spider>/last$" und "^Jobs/<spider>/last$"
+		# stehen jetzt in eigenstaendigen, statischen .htaccess-Dateien unter
+		# /docs/Index/.htaccess bzw. /docs/Jobs/.htaccess. Damit sind sie immun gegen
+		# Race-Conditions beim parallelen Neuschreiben dieser Hauptdatei durch
+		# mehrere Spider gleichzeitig.
 		
 		for c in json_kantone:
 			for g in json_kantone[c]['gerichte']:

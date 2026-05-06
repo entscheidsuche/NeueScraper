@@ -1,0 +1,12 @@
+# Statische Rewrite-Regel fuer den Job-Lookup je Spider.
+# Bewusst NICHT vom Scraper ueberschrieben, damit /docs/Jobs/<spider>/last
+# auch dann auflöst, wenn /docs/.htaccess durch parallele Spider-Laeufe
+# gerade leer/halbgeschrieben/inkonsistent ist.
+#
+# Apache wertet diese Datei zusaetzlich zur uebergeordneten /docs/.htaccess aus.
+# RewriteEngine und RewriteBase werden bewusst neu gesetzt, da Rewrites
+# zwischen .htaccess-Ebenen per Default nicht vererbt werden.
+
+RewriteEngine On
+RewriteBase /docs/Jobs/
+RewriteRule "^([^/]+)/last$" "/docs/lese_job.php?spider=$1" [L]

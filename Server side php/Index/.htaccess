@@ -1,0 +1,12 @@
+# Statische Rewrite-Regel fuer den Index-Lookup je Spider.
+# Bewusst NICHT vom Scraper ueberschrieben, damit /docs/Index/<spider>/last
+# auch dann auflöst, wenn /docs/.htaccess durch parallele Spider-Laeufe
+# gerade leer/halbgeschrieben/inkonsistent ist.
+#
+# Apache wertet diese Datei zusaetzlich zur uebergeordneten /docs/.htaccess aus.
+# RewriteEngine und RewriteBase werden bewusst neu gesetzt, da Rewrites
+# zwischen .htaccess-Ebenen per Default nicht vererbt werden.
+
+RewriteEngine On
+RewriteBase /docs/Index/
+RewriteRule "^([^/]+)/last$" "/docs/lese_index.php?spider=$1" [L]
