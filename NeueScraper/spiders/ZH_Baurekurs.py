@@ -68,7 +68,18 @@ class ZH_Baurekurs(BasisSpider):
 				item['Titel']=PH.NC(entscheid.xpath("./h4/text()").get(),warning="kein Titel bei: "+text)
 				item['Leitsatz']=PH.NC(" ".join(entscheid.xpath("./div[@class='search-listing-item-summary']/p/text()").getall()),info="kein Leitsatz in "+text)
 				item['Weiterzug']=PH.NC(entscheid.xpath("./div[@class='search-listing-item-legal']/text()").get(),info="kein Rechtszug in "+text)
-				item['PDFUrls']=[self.HOST+PH.NC(entscheid.xpath("./div[@class='search-listing-item-download']/a/@href").get(),error="keine PDF-URL")]
+				pdf_href=PH.NC(entscheid.xpath("./div[@class='search-listing-item-download']/a/@href").get(),error="keine PDF-URL")
+				item['PDFUrls']=[self.HOST+pdf_href]
+				# Mehrere Leitsatz-Auszüge desselben Sammelentscheids haben
+				# identische Geschäftsnummer + Datum, aber unterschiedliche PDFs
+				# (z.B. BRGE I Nrn. 0052-0053/2013 mit vier separaten Auszügen
+				# _552, _797, _875, _953). Der PDF-Filename ist über alle
+				# Treffer eindeutig und wird daher als Dokument-ID verwendet,
+				# damit die Auszüge in der Pipeline nicht auf denselben Pfad
+				# kollidieren.
+				stem=pdf_href.rsplit('/',1)[-1].rsplit('.',1)[0]
+				if stem:
+					item['forceID']=stem
 				item['Signatur'], item['Gericht'], item['Kammer']=self.detect("","",item['Num'])
 				if self.check_blockliste(item):
 					yield item
