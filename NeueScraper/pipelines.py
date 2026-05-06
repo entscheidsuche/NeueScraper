@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 from urllib.parse import urlparse
 
 from scrapy.pipelines.files import FilesPipeline
+from scrapy.pipelines.files import FileException
 from scrapy.pipelines.files import S3FilesStore
 from scrapy.pipelines.files import FSFilesStore
 from scrapy.pipelines.files import GCSFilesStore
@@ -53,6 +54,37 @@ class MyWriterPipeline:
 
 	def close_spider(self,spider):
 		logger.debug("pipeline close")
+		# Schutz vor Bestands-Reset bei abgebrochenen Vollbestands-Läufen:
+		# Wenn der Spider nicht 'finished' ist (z.B. shutdown / cancelled /
+		# OOM / Worker-Kill), würde die nachfolgende Logik einen
+		# unvollständigen Stand als Vollbestand persistieren und der
+		# Indexierungsservice (https://entscheidsuche.pansoft.de) würde
+		# alles nicht-Aufgeführte als entfernt markieren. Bei einem Update-
+		# Lauf (mit `ab=...`) ist das additiv und unkritisch; bei `neu=neu`
+		# oder ohne `ab` (Vollbestands-Annahme) wäre es destruktiv.
+		finish_reason = None
+		try:
+			finish_reason = spider.crawler.stats.get_value('finish_reason')
+		except Exception:
+			pass
+		if finish_reason and finish_reason != 'finished':
+			if getattr(spider, 'neu', None) == 'neu' or not getattr(spider, 'ab', None):
+				logger.error(
+					f"Spider {spider.name} mit finish_reason={finish_reason!r}, "
+					f"neu={getattr(spider, 'neu', None)!r}, "
+					f"ab={getattr(spider, 'ab', None)!r} → würde einen "
+					f"unvollständigen Stand als Vollbestand persistieren. "
+					f"Job-File, Sitemap und Indexierungsrequest werden "
+					f"übersprungen, um den Bestand nicht zu zerstören. "
+					f"Inhalte (HTML/PDF/JSON) im Store bleiben erhalten."
+				)
+				return
+			logger.warning(
+				f"Spider {spider.name} mit finish_reason={finish_reason!r}, "
+				f"aber ab={getattr(spider, 'ab', None)!r} (Update-Modus) — "
+				f"Job-File wird trotzdem geschrieben (additives Update, "
+				f"kein Bestands-Reset-Risiko)."
+			)
 		datestring=datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
 		pfad_job="Jobs/"+spider.name+"/Job_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
 		pfad_index="Index/"+spider.name+"/Index_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
@@ -75,6 +107,7 @@ class MyWriterPipeline:
 					job_typ="neu"
 					logger.info("Löschlauf")
 				else:
+					gelesen=len(list(filter(lambda x:spider.files_written[x]['status'] in ['update',"anders_wieder_da","neu","identisch"] and not 'quelle' in spider.files_written[x], spider.files_written)))
 					if gelesen==0:
 						logger.error("keine Dokumente aus dem vorherigen Lauf und keine Dokumente gelsen! Keinen Indexierungsrequest.")
 						return
@@ -157,28 +190,129 @@ class MyWriterPipeline:
 		files_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "dateien": spider.files_written, 'signaturen': signaturen, 'gesamt': gesamt }
 		json_jobs=json.dumps(files_log)
 		sitemaps=PipelineHelper.gen_sitemap(spider.files_written)
+		index_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "actions": to_index, 'signaturen': signaturen, 'gesamt': gesamt }
+		json_index=json.dumps(index_log)
+
+		# Indexierung ZUERST versuchen — genau ein Versuch, kein Retry.
+		# Erst bei Erfolg werden Jobs/Sitemap/Index-Files in den Store
+		# geschrieben. Damit bleibt der Bestand konsistent: entweder hat der
+		# Indexer den Stand übernommen und der Job-File spiegelt ihn, oder
+		# es wird gar nichts persistiert und der vorige Stand bleibt
+		# unverändert (-> nächster Lauf macht wieder einen Versuch).
+		#
+		# Klassifizierung der Antwort:
+		#   < 300                       → Erfolg
+		#   504 Gateway Time-out im Body → Erfolg (Indexer hat Anfrage
+		#                                  angenommen und arbeitet
+		#                                  asynchron weiter; bei grossen
+		#                                  Indizes Standard-Verhalten)
+		#   sonstige 4xx/5xx, Timeout    → Fehler, nichts schreiben
+		# Kein Retry — bei grossen Jobs kommt der Timeout fast immer; ein
+		# Retry würde den Indexer zusätzlich stressen.
+		indexing_ok = False
+		try:
+			antwort = requests.post(
+				"https://entscheidsuche.pansoft.de",
+				data=json_jobs,
+				headers={'Content-Type': 'application/json'},
+				timeout=3600,
+				verify=False,
+			)
+			logger.info(f"Indexierungsrequest: Status {antwort.status_code}")
+			if antwort.status_code < 300:
+				indexing_ok = True
+			elif "504 Gateway Time-out" in antwort.text:
+				logger.warning(
+					"Indexierung 504 Gateway Time-out — Indexer hat die "
+					"Anfrage akzeptiert und arbeitet im Hintergrund weiter. "
+					"Werte als Erfolg."
+				)
+				indexing_ok = True
+			else:
+				logger.error(
+					f"Indexierung gescheitert (Status {antwort.status_code}). "
+					f"Body: {antwort.text[:1000]}"
+				)
+		except (requests.Timeout, requests.ConnectionError) as e:
+			logger.error(
+				f"Indexierung mit Netzwerkfehler abgebrochen: "
+				f"{type(e).__name__}: {e}"
+			)
+		except Exception as e:
+			logger.error(
+				f"Indexierung mit unbekanntem Fehler abgebrochen: "
+				f"{type(e).__name__}: {e}"
+			)
+
+		# Schreib-Strategie abhängig von Lauf-Modus und Indexer-Resultat:
+		#
+		# 1) Erfolg (alle Modi):
+		#    Sitemap + Job + Index normal schreiben (Standardpfad).
+		#
+		# 2) Indexer-Fehler bei Update-Lauf (spider.ab gesetzt):
+		#    Sitemap + Job + Index normal schreiben — der Update-Modus ist
+		#    additiv, also keine Bestandsgefahr. Der User kann den Job-File
+		#    bei Bedarf manuell an den Indexer schicken.
+		#
+		# 3) Indexer-Fehler bei Vollbestands-Lauf (neu=neu oder ohne ab):
+		#    Job und Index als 'Failed_Job_*' / 'Failed_Index_*' schreiben,
+		#    damit die Daten zur manuellen Recovery erhalten bleiben.
+		#    KEINE Sitemap schreiben (sonst würde ein unvollständiger
+		#    Bestand publiziert). Failed-Files sortieren alphabetisch
+		#    NACH den regulären Job_*-Files (rsort: 'J' > 'F'), sodass
+		#    der nächste Lauf den letzten erfolgreichen Job als Diff-
+		#    Referenz nimmt.
+		ist_vollbestand = (
+			getattr(spider, 'neu', None) == 'neu'
+			or not getattr(spider, 'ab', None)
+		)
+
+		if not indexing_ok and ist_vollbestand:
+			# Failed-Variante: Job + Index mit 'Failed_'-Prefix, keine Sitemap
+			pfad_job_failed = (
+				"Jobs/"+spider.name+"/Failed_Job_"+datestring+"_"
+				+spider.scrapy_job.replace("/","-")+".json"
+			)
+			pfad_index_failed = (
+				"Index/"+spider.name+"/Failed_Index_"+datestring+"_"
+				+spider.scrapy_job.replace("/","-")+".json"
+			)
+			MyFilesPipeline.common_store.persist_file(
+				pfad_job_failed, BytesIO(json_jobs.encode(encoding='UTF-8')),
+				info=None, ContentType='application/json', LogFlag=False
+			)
+			MyFilesPipeline.common_store.persist_file(
+				pfad_index_failed, BytesIO(json_index.encode(encoding='UTF-8')),
+				info=None, ContentType='application/json', LogFlag=False
+			)
+			logger.error(
+				f"Indexierung beim Vollbestands-Lauf nicht erfolgreich. "
+				f"Job-File als {pfad_job_failed!r} und Index als "
+				f"{pfad_index_failed!r} zur manuellen Recovery geschrieben. "
+				f"Sitemap wurde NICHT aktualisiert (alter Stand bleibt "
+				f"sichtbar). Storage-Inhalt (HTML/PDF/JSON) bleibt erhalten."
+			)
+			return
+
+		if not indexing_ok:
+			# Update-Lauf: Indexer-Fehler nicht destruktiv — normal weiterschreiben
+			logger.warning(
+				"Indexierung beim Update-Lauf fehlgeschlagen. Job-File, "
+				"Sitemap und Index werden trotzdem geschrieben (additiv, "
+				"keine Bestandsgefahr). Manuelle Re-Indexierung der Job-"
+				"Datei kann später folgen."
+			)
+
+		# Sitemap + Job + Index regulär schreiben.
+		# (Reihenfolge: erst Sitemap für die UI, dann Job für Diff-Referenz,
+		# dann Index als Audit-Trail.)
 		zahl=1
 		for sitemap in sitemaps:
 			pfad_sitemap="Sitemaps/"+spider.name+"_"+str(zahl)+".xml"
 			MyFilesPipeline.common_store.persist_file(pfad_sitemap, BytesIO(sitemap.encode(encoding='UTF-8')), info=None, ContentType='text/xml', LogFlag=False)
 			zahl += 1
 		MyFilesPipeline.common_store.persist_file(pfad_job, BytesIO(json_jobs.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
-		index_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "actions": to_index, 'signaturen': signaturen, 'gesamt': gesamt }
-		json_index=json.dumps(index_log)
 		MyFilesPipeline.common_store.persist_file(pfad_index, BytesIO(json_index.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
-		# Nachdem die Pipeline durchgelaufen ist, den Index-Request synchron machen
-		try:
-			antwort=requests.post("https://entscheidsuche.pansoft.de", data=json_jobs, headers= {'Content-Type': 'application/json'}, timeout=3600, verify=False)
-			# logger.info("Indexierungsrequest mit Daten: "+json.dumps(json_jobs))
-			logger.info("Indexierungsrequest mit Antwort: "+str(antwort.status_code))
-			if antwort.status_code >=300:
-				if "504 Gateway Time-out" in antwort.text:
-					logger.warning("Indexierungsfehler, Time-out:" +antwort.text)
-				else:
-					logger.error("Indexierungsfehler: "+antwort.text)
-		except Exception as e:
-			# Später hier zwischen Fehler und Timeout unterscheiden
-			logger.error("Fehler beim Indexieren: " + str(e.__class__))
 
 				
 	def process_item(self, item, spider):
@@ -722,30 +856,39 @@ class PipelineHelper:
 		try:
 			num=item['Num']
 			logger.info('Geschäftsnummer: '+num)
-			if num=="":
-				if 'PFDUrls' in item:
-					num+=item['PDFUrls'][0]
-				if 'HTMLUrls' in item:
-					num+=item['HTMLUrls'][0]
-				if 'Titel' in item:
-					num+=item['Titel']
-				if 'Leitsatz' in item:				
-					num+=item['Leitsatz']
-				if 'Rechtsgebiet' in item:
-					num+=item['Rechtsgebiet']
-				if 'VGericht' in item:
-					num+=item['VGericht']
-				if 'VKammer' in item:
-					num+=item['VKammer']
-				num=hashlib.md5(num.encode("UTF-8")).hexdigest()
-			if (not 'EDatum' in item) or item['EDatum'] is None:
-				if 'PDatum' in item and item['PDatum'] is not None:
-					edatum=item['PDatum']
-				else:
-					edatum='nodate'
+			if 'forceID' in item and item['forceID']:
+				# Der Spider hat eine eindeutige Dokument-ID vorgegeben
+				# (z.B. aus dem PDF-Filename). Wird verwendet, wenn die
+				# Kombination Geschäftsnummer + Datum mehrere unterschiedliche
+				# Dokumente decken kann (mehrere Leitsatz-Auszüge desselben
+				# Sammelentscheids beim ZH_Baurekurs). num/edatum gehen dann
+				# nicht in den Pfad ein.
+				filename=filenamechars.sub('-',item['forceID'])
 			else:
-				edatum=item['EDatum']
-			filename=filenamechars.sub('-',num[:20])+"_"+filenamechars.sub('-',edatum)
+				if num=="":
+					if 'PFDUrls' in item:
+						num+=item['PDFUrls'][0]
+					if 'HTMLUrls' in item:
+						num+=item['HTMLUrls'][0]
+					if 'Titel' in item:
+						num+=item['Titel']
+					if 'Leitsatz' in item:
+						num+=item['Leitsatz']
+					if 'Rechtsgebiet' in item:
+						num+=item['Rechtsgebiet']
+					if 'VGericht' in item:
+						num+=item['VGericht']
+					if 'VKammer' in item:
+						num+=item['VKammer']
+					num=hashlib.md5(num.encode("UTF-8")).hexdigest()
+				if (not 'EDatum' in item) or item['EDatum'] is None:
+					if 'PDatum' in item and item['PDatum'] is not None:
+						edatum=item['PDatum']
+					else:
+						edatum='nodate'
+				else:
+					edatum=item['EDatum']
+				filename=filenamechars.sub('-',num[:20])+"_"+filenamechars.sub('-',edatum)
 			dir = "undefined"
 			if spider:
 				dir=spider.name
@@ -1105,6 +1248,14 @@ class PipelineHelper:
 class MyFilesPipeline(FilesPipeline):
 	common_store=None
 
+	# Unterdrückt die aggregierte ERROR-Zeile
+	# `[scrapy.pipelines.media] [Failure instance: Traceback: ...]` in
+	# MediaPipeline.item_completed. Echte Fehlerinformation bleibt durch
+	# RetryMiddleware (`Gave up retrying ... 500`) und durch die WARNINGs
+	# `File (code: 500)` / `File (unknown-error)` aus FilesPipeline
+	# erhalten — nur die redundante Aggregation entfällt.
+	LOG_FAILED_RESULTS = False
+
 	STORE_SCHEMES = {
 		'': FSFilesStore,
 		'file': FSFilesStore,
@@ -1220,6 +1371,24 @@ class MyFilesPipeline(FilesPipeline):
 		else:
 			logger.debug('item war in file_downloaded bereits gesetzt')
 		path = self.file_path(request, response, info, item=item)
+
+		# Swisslex (BL_Gerichte) liefert für ältere Entscheide über
+		# GetFacsimile mit HTTP 200 einen HTML-Body statt eines PDFs.
+		# Wenn die Antwort nicht mit der PDF-Magic-Bytes-Sequenz beginnt,
+		# behandeln wir den Download als Fehlschlag. Damit bleibt
+		# item['PDFFiles'] leer; in MyWriterPipeline greift dann der
+		# bestehende pdf_da=False-Pfad, und das Item wird ausschliesslich
+		# mit dem in parse_document bereits geschriebenen HTML
+		# weiterverarbeitet.
+		if path[-4:] == '.pdf' and not response.body[:5] == b'%PDF-':
+			ct = response.headers.get(b'Content-Type', b'').decode('latin-1', 'ignore')
+			head = response.body[:80].decode('latin-1', 'ignore').replace('\r', '').replace('\n', ' ')
+			logger.warning(
+				f"{path}: Antwort ist kein PDF "
+				f"(Content-Type={ct!r}, Anfang={head!r}). Wird als Fehlschlag gewertet."
+			)
+			raise FileException('not_a_pdf')
+
 		ContentType='application/pdf' if path[-4:]=='.pdf' else None
 		checksum = hashlib.md5(response.body).hexdigest()
 		buf = BytesIO(response.body)
