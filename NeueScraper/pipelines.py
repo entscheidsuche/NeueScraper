@@ -39,29 +39,6 @@ filenamechars=re.compile("[^-a-zA-Z0-9]")
 filenameparts=re.compile(r'/(?P<stamm>(?P<signatur>[^_]+_[^_]+_[^_]+)[^\.]+)\.(?P<endung>\w+)')
 logger = logging.getLogger(__name__)
 
-INDEX_CHUNK_DOCS = 1000  # Dokumente je Indexierungs-POST (klein genug fuer < Gateway-Timeout)
-
-ELASTIC_COUNT_BASE = os.environ.get("ES_COUNT_BASE", "https://entscheidsuche.pansoft.de:9200")
-ELASTIC_INDEX_PREFIX = os.environ.get("ES_INDEX_PREFIX", "entscheidsuche.v2")
-
-def _es_doc_count(spider_name):
-	"""Dokumentzahl im ES-Index des Spiders (entscheidsuche.v2-<spider>).
-	Reads laufen wie im Feeder ohne Auth; 404/Fehler werden als 0 bzw. None
-	gewertet, damit die Bilanz den Lauf nie gefaehrdet."""
-	index = f"{ELASTIC_INDEX_PREFIX}-{spider_name.lower()}"
-	try:
-		r = requests.get(f"{ELASTIC_COUNT_BASE}/{index}/_count", timeout=30, verify=False)
-		if r.status_code == 404:
-			return 0
-		if r.status_code >= 300:
-			logger.warning(f"ES-Count {index}: Status {r.status_code}")
-			return None
-		return int(r.json().get("count"))
-	except Exception as e:
-		logger.warning(f"ES-Count {index} fehlgeschlagen: {type(e).__name__}: {e}")
-		return None
-
-
 from urllib.parse import urlparse
 
 from scrapy.pipelines.files import FilesPipeline
@@ -74,306 +51,100 @@ from scrapy.pipelines.files import FTPFilesStore
 class MyWriterPipeline:
 	def open_spider(self,spider):
 		logger.debug("pipeline open")
+		# Scrapelog erst im spider_closed-Signal schreiben: dort kommt 'reason' mit.
+		# Im item-pipeline close_spider ist die finish_reason-Statistik noch NICHT
+		# gesetzt (laeuft vor dem Signal).
+		spider.crawler.signals.connect(self.on_spider_closed, signal=scrapy.signals.spider_closed)
 
-	def close_spider(self,spider):
-		logger.debug("pipeline close")
-		# Schutz vor Bestands-Reset bei abgebrochenen Vollbestands-Läufen:
-		# Wenn der Spider nicht 'finished' ist (z.B. shutdown / cancelled /
-		# OOM / Worker-Kill), würde die nachfolgende Logik einen
-		# unvollständigen Stand als Vollbestand persistieren und der
-		# Indexierungsservice (https://entscheidsuche.pansoft.de) würde
-		# alles nicht-Aufgeführte als entfernt markieren. Bei einem Update-
-		# Lauf (mit `ab=...`) ist das additiv und unkritisch; bei `neu=neu`
-		# oder ohne `ab` (Vollbestands-Annahme) wäre es destruktiv.
-		finish_reason = None
-		try:
-			finish_reason = spider.crawler.stats.get_value('finish_reason')
-		except Exception:
-			pass
-		if finish_reason and finish_reason != 'finished':
-			if getattr(spider, 'neu', None) == 'neu' or not getattr(spider, 'ab', None):
-				logger.error(
-					f"Spider {spider.name} mit finish_reason={finish_reason!r}, "
-					f"neu={getattr(spider, 'neu', None)!r}, "
-					f"ab={getattr(spider, 'ab', None)!r} → würde einen "
-					f"unvollständigen Stand als Vollbestand persistieren. "
-					f"Job-File, Sitemap und Indexierungsrequest werden "
-					f"übersprungen, um den Bestand nicht zu zerstören. "
-					f"Inhalte (HTML/PDF/JSON) im Store bleiben erhalten."
-				)
-				return
+	def on_spider_closed(self, spider, reason):
+		logger.debug('pipeline spider_closed')
+		# Scrapelog-Modell: der Scraper schreibt nur, WAS er gelesen hat. Diff,
+		# Tombstones, Index/Jobs/Sitemap macht der Konsolidierer.
+		# Ein NICHT sauber beendeter Lauf wird NICHT verworfen: erfolgreich gescrapte
+		# Entscheide sollen uebernommen werden, er darf aber KEINE Loeschungen
+		# ausloesen. Dazu traegt das Scrapelog das Flag 'vollstaendig' -- nur bei
+		# vollstaendigem Lauf darf der Konsolidierer in-Scope nicht gesehene
+		# Dokumente als entfernt werten (Tombstones).
+		# 'reason' ist der autoritative finish_reason (siehe open_spider).
+		finish_reason = reason
+		vollstaendig = (finish_reason == 'finished')
+		fehler_dokumente = getattr(spider, 'fehler', 0)
+		fehlerfrei = (fehler_dokumente == 0)
+		if not fehlerfrei:
 			logger.warning(
-				f"Spider {spider.name} mit finish_reason={finish_reason!r}, "
-				f"aber ab={getattr(spider, 'ab', None)!r} (Update-Modus) — "
-				f"Job-File wird trotzdem geschrieben (additives Update, "
-				f"kein Bestands-Reset-Risiko)."
+				f'Spider {spider.name}: {fehler_dokumente} Request(s) dauerhaft gescheitert '
+				f'-> Scrapelog fehlerfrei=False (Konsolidierer: keine Loeschungen).'
 			)
-		datestring=datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-		# Lauf-Startzeit aus den Scrapy-Stats (UTC). Wird ins Job-/Index-File
-		# geschrieben, damit der Konsolidierer überlappende Läufe erkennen kann.
+		if not vollstaendig:
+			logger.warning(
+				f'Spider {spider.name}: finish_reason={finish_reason!r} != finished -> '
+				f'Scrapelog als TEILWEISE markiert (nur Upserts, keine Loeschungen).'
+			)
+
 		start_dt = None
 		try:
 			start_dt = spider.crawler.stats.get_value('start_time')
 		except Exception:
 			pass
-		start_str = start_dt.strftime("%Y-%m-%d_%H:%M:%S") if start_dt else None
-		pfad_job="Jobs/"+spider.name+"/Job_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
-		pfad_index="Index/"+spider.name+"/Index_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
-		signaturen={}
-		if spider.ab:
-			job_typ="update"
+		now = datetime.datetime.utcnow()
+		basis_dt = start_dt if start_dt else now
+		run_start = basis_dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+		run_start_fs = basis_dt.strftime('%Y-%m-%dT%H-%M-%SZ')
+		run_end = now.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+		if getattr(spider, 'neu', None) == 'neu':
+			scope = {'typ': 'voll', 'neuaufbau': True}
+		elif getattr(spider, 'ab', None) or getattr(spider, 'bis', None):
+			scope = {'typ': 'bereich', 'ab': getattr(spider, 'ab', None), 'bis': getattr(spider, 'bis', None)}
 		else:
-			vorher=len(list(filter(lambda x:spider.previous_run['dateien'][x]['status'] in ['update',"anders_wieder_da","neu","identisch"], spider.previous_run['dateien']))) if 'dateien' in spider.previous_run else 0
-			if vorher>0:
-				gelesen=len(list(filter(lambda x:spider.files_written[x]['status'] in ['update',"anders_wieder_da","neu","identisch"] and not 'quelle' in spider.files_written[x], spider.files_written)))
-				prozentsatz=gelesen/vorher*100
-				if prozentsatz > 95:
-					job_typ="komplett"
-					logger.info("vorher {} Dateien, nun {} Dateien gelesen {:.2f}%".format(vorher, gelesen, prozentsatz))
-				else:
-					job_typ="unvollständig"
-					logger.error("vorher {} Dateien, nun {} Dateien gelesen {:.2f}%".format(vorher, gelesen, prozentsatz))
-			else:
-				if spider.neu == 'neu':
-					job_typ="neu"
-					logger.info("Löschlauf")
-				else:
-					gelesen=len(list(filter(lambda x:spider.files_written[x]['status'] in ['update',"anders_wieder_da","neu","identisch"] and not 'quelle' in spider.files_written[x], spider.files_written)))
-					if gelesen==0:
-						logger.error("keine Dokumente aus dem vorherigen Lauf und keine Dokumente gelsen! Keinen Indexierungsrequest.")
-						return
-					else:
-						job_typ="komplett"
-						logger.info("keine Dokumente eines vorherigen Laufes gefunden.")
+			scope = {'typ': 'voll'}
 
-		gesamt={'gesamt':0}
-		to_index={}
-		toBeDeleted=[]
-		for f in spider.files_written:
-			# Konsistenz überprüfen, damit einzelne .json ohne .html oder .pdf files nicht übrig bleiben
-			if f[-5:]=='.json':
-				pdf_file=f[:-5]+".pdf"
-				html_file=f[:-5]+".html"
-				if not (pdf_file in spider.files_written or html_file in spider.files_written):
-					#PDF und HTML fehlen und waren noch nie da:
-					logger.error("Zu "+f+" fehlen HTML und PDF und waren noch nie da.")
-					toBeDeleted.append(f)
-#				elif pdf_file in spider.files_written and 'quelle' in spider.files_written[pdf_file]:
-#					# Datei war schon mal da, fehlt aber jetzt oder ist beschädigt
-#					logger.error("Zu "+f+" fehlen HTML und PDF, PDF war aber schon mal da.")
-#					# so tun, als ob das Dokument nicht mehr gefunden worden wäre
-#					spider.files_written[f]['quelle']=spider.files_written[pdf_file]['quelle']
-#				elif html_file in spider.files_written and 'quelle' in spider.files.written[html_file]:
-#					# Datei war schon mal da, fehlt aber jetzt oder ist beschädigt
-#					logger.error("Zu "+f+" fehlen HTML und PDF, HTML war aber schon mal da.")
-#					# so tun, als ob das Dokument nicht mehr gefunden worden wäre
-#					spider.files_written[f]['quelle']=spider.files_written[html_file]['quelle']
-		for f in toBeDeleted:
-			del spider.files_written[f]
+		# Gescrapte Dokumente aus files_written gruppieren (docid = Pfad ohne Endung).
+		# Pro Datei die EIGENE Checksum (die .json-Checksum ist der Inhalts-Hash vor
+		# dem Einfuegen des Checksum-Feldes -> konsistent fuer Aenderungserkennung,
+		# aber kein Byte-Hash der fertigen Datei).
+		gruppen = {}
+		for pfad, meta in spider.files_written.items():
+			if isinstance(meta, dict) and meta.get('status') == 'nicht_mehr_da':
+				continue
+			base, _punkt, _endung = pfad.rpartition('.')
+			if not base:
+				continue
+			gruppen.setdefault(base, {})[pfad] = meta
+		scraped = {}
+		for docid, files in gruppen.items():
+			dateien = {fn: (m.get('checksum') if isinstance(m, dict) else None) for fn, m in files.items()}
+			quelle = next((m for fn, m in files.items() if fn.endswith('.json') and isinstance(m, dict)), None)
+			if quelle is None:
+				quelle = next((m for m in files.values() if isinstance(m, dict)), {})
+			sd = quelle.get('scrapedate')
+			st = quelle.get('scrapetime')
+			scrapedate = (sd + 'T' + st + 'Z') if (sd and st) else sd
+			scraped[docid] = {'scrapedate': scrapedate, 'dateien': dateien}
 
-		for f in spider.files_written:
-			# neu nicht mehr vorhandene Inhalte markieren
-			if job_typ=="komplett" and 'quelle' in spider.files_written[f] and not spider.files_written[f]['status']=="nicht_mehr_da":
-				spider.files_written[f]['status']='nicht_mehr_da'
-				del spider.files_written[f]['quelle']
-				if 'last_change' in spider.files_written[f]:
-					del spider.files_written[f]['last_change']
-			s=filenameparts.search(f)
-			if s is None:
-				logger.error("Konnte Dateinamen "+f+" nicht aufteilen.")
-			else:
-				logger.debug(f"Dateiname: {f} mit Endung {s.group('endung')}")
-				if s.group('endung')=='json':
-					logger.debug(f"Dateiname {f} ist json.")
-					if 'quelle' in spider.files_written[f]:
-						count_group='vorher'
-					else:
-						count_group='aktuell'
-
-					if spider.files_written[f]['status']=='nicht_mehr_da':
-						count_typ='entfernt'
-						if count_group=='aktuell':
-							to_index[f]="delete"
-					elif spider.files_written[f]['status'] in ['update']:
-						count_typ='aktualisiert'
-						if count_group=='aktuell':
-							to_index[f]="update"
-					elif spider.files_written[f]['status'] in ['neu', "anders_wieder_da"]:
-						count_typ='neu'
-						if count_group=='aktuell':
-							to_index[f]="new"
-					else:
-						count_typ='identisch'
-					count_eintrag=count_group+"_"+count_typ
-					if not s.group('signatur') in signaturen:
-						signaturen[s.group('signatur')]={'gesamt':0}
-					if not count_eintrag in signaturen[s.group('signatur')]:
-						signaturen[s.group('signatur')][count_eintrag]=1
-					else:
-						signaturen[s.group('signatur')][count_eintrag]=signaturen[s.group('signatur')][count_eintrag]+1
-					if not count_eintrag in gesamt:
-						gesamt[count_eintrag]=1
-					else:
-						gesamt[count_eintrag]=gesamt[count_eintrag]+1
-					if not count_typ=='entfernt':
-						signaturen[s.group('signatur')]['gesamt']=signaturen[s.group('signatur')]['gesamt']+1
-						gesamt['gesamt']=gesamt['gesamt']+1
-		files_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "start_time": start_str, "time": datestring, "dateien": spider.files_written, 'signaturen': signaturen, 'gesamt': gesamt }
-		json_jobs=json.dumps(files_log)
-		sitemaps=PipelineHelper.gen_sitemap(spider.files_written)
-		index_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "start_time": start_str, "time": datestring, "actions": to_index, 'signaturen': signaturen, 'gesamt': gesamt }
-		json_index=json.dumps(index_log)
-
-		# --- Bestandsbilanz (Vorher) + Lauf-Kennzahlen ins Log ---
-		prev_run = getattr(spider, 'previous_run', {}) or {}
-		prev_dateien = prev_run.get('dateien', {}) if isinstance(prev_run, dict) else {}
-		store_vorher = sum(1 for _fn, _m in prev_dateien.items()
-			if _fn.endswith('.json') and _m.get('status') != 'nicht_mehr_da')
-		es_vorher = _es_doc_count(spider.name)
-		_neu = gesamt.get('aktuell_neu', 0)
-		_akt = gesamt.get('aktuell_aktualisiert', 0)
-		_ident = gesamt.get('aktuell_identisch', 0)
-		_entfernt = gesamt.get('aktuell_entfernt', 0)
-		_gelesen = _neu + _akt + _ident
-		_bekannt = _akt + _ident
-		_erwartet = gesamt.get('gesamt', 0)
-		_es_v = es_vorher if es_vorher is not None else 'n/a'
-		_abw_v = (es_vorher - store_vorher) if es_vorher is not None else 'n/a'
-		logger.info(
-			f"Bestandsbilanz {spider.name} VOR Lauf: Store(JSON)={store_vorher}, "
-			f"ES={_es_v} (Abw. ES-Store={_abw_v})"
+		report = {
+			'spider': spider.name,
+			'vollstaendig': vollstaendig,
+			'finish_reason': finish_reason,
+			'fehlerfrei': fehlerfrei,
+			'fehler_dokumente': fehler_dokumente,
+			'job': getattr(spider, 'scrapy_job', None),
+			'scope': scope,
+			'run_start': run_start,
+			'run_end': run_end,
+			'scraped': scraped,
+		}
+		job_fs = (getattr(spider, 'scrapy_job', None) or 'nojob').replace('/', '-')
+		pfad_scrapelog = 'Scrapelog/' + spider.name + '/Report_' + run_start_fs + '_' + job_fs + '.json'
+		MyFilesPipeline.common_store.persist_file(
+			pfad_scrapelog, BytesIO(json.dumps(report).encode(encoding='UTF-8')),
+			info=None, ContentType='application/json', LogFlag=False
 		)
 		logger.info(
-			f"Bestandsbilanz {spider.name} LAUF: gelesen={_gelesen}, "
-			f"bekannt={_bekannt}, neu={_neu}, entfernt={_entfernt}"
+			f'Scrapelog geschrieben: {pfad_scrapelog} '
+			f'({len(scraped)} Dokumente, scope={scope})'
 		)
-		_erwartet_rechnerisch = store_vorher - _entfernt + _neu
-		if _erwartet != _erwartet_rechnerisch:
-			logger.warning(
-				f"Bestandsbilanz {spider.name}: erwartete Endzahl {_erwartet} != "
-				f"Vorher-Entfernt+Neu {_erwartet_rechnerisch} (Zaehl-Inkonsistenz)."
-			)
 
-		# Indexierung in Dokument-Chunks statt einem Gross-POST.
-		# Grund: der einzelne POST ueber den ganzen Bestand lief regelmaessig
-		# in den Gateway-Timeout (504), frueher faelschlich als Erfolg gewertet
-		# -> ganze Jahrgaenge fehlten. Kleine Chunks liefern echte 201/5xx (App.ts).
-		#
-		# jobtyp je Chunk:
-		#   Chunk 0 : originales job_typ. Nur 'neu' loescht den Index einmal (Drop).
-		#   Chunk >0: 'update' falls job_typ=='neu' (kein erneuter Drop), sonst
-		#             unveraendert -> 'komplett' bleibt durchgaengig 'komplett'.
-		# json + html/pdf eines Dokuments sind benachbart und namensgleich (nur
-		# Endung); Chunk-Grenzen nur an Dokumentgrenzen (Basisname), nie innerhalb.
-		def _index_chunks(dateien, max_docs):
-			chunk, n, basis = {}, 0, None
-			for fn, meta in dateien.items():
-				b = fn.rsplit('.', 1)[0]
-				if b != basis:
-					if n >= max_docs:
-						yield chunk
-						chunk, n = {}, 0
-					basis = b
-					n += 1
-				chunk[fn] = meta
-			if chunk:
-				yield chunk
-
-		chunks = list(_index_chunks(spider.files_written, INDEX_CHUNK_DOCS))
-		indexing_ok = True
-		failed_requests = []   # Requests, die nicht indexiert werden konnten -> Indexing_failed
-		for i, ch in enumerate(chunks):
-			jt = job_typ if i == 0 else ('update' if job_typ == 'neu' else job_typ)
-			body_obj = {
-				"spider": spider.name, "job": spider.scrapy_job,
-				"jobtyp": jt, "time": datestring, "dateien": ch,
-			}
-			body = json.dumps(body_obj)
-			try:
-				antwort = requests.post(
-					"https://entscheidsuche.pansoft.de",
-					data=body,
-					headers={'Content-Type': 'application/json'},
-					timeout=3600,
-					verify=False,
-				)
-				ok = antwort.status_code < 300
-				logger.info(
-					f"Indexierung Chunk {i+1}/{len(chunks)} "
-					f"(jobtyp={jt}, {len(ch)} Dateien): Status {antwort.status_code}"
-				)
-				if not ok:
-					logger.error(f"Chunk {i+1} Body: {antwort.text[:1000]}")
-			except Exception as e:
-				ok = False
-				logger.error(
-					f"Indexierung Chunk {i+1}/{len(chunks)} abgebrochen: "
-					f"{type(e).__name__}: {e}"
-				)
-			if not ok:
-				indexing_ok = False
-				if i == 0 and job_typ == 'neu':
-					# Drop (Chunk 0 eines neu-Laufs) gescheitert: Indexzustand unklar,
-					# Teil-Replay waere destruktiv -> ganzen Lauf als EINEN neu-Request
-					# ablegen, Rest nicht senden.
-					failed_requests = [{
-						"spider": spider.name, "job": spider.scrapy_job,
-						"jobtyp": job_typ, "time": datestring,
-						"dateien": spider.files_written,
-					}]
-					logger.error(
-						f"neu-Drop (Chunk 1/{len(chunks)}) gescheitert -> ganzer Lauf nach "
-						f"Indexing_failed; Abbruch."
-					)
-					break
-				failed_requests.append(body_obj)
-
-		# --- Bestandsbilanz (Nachher) ins Log ---
-		# ES ist eventually consistent (Refresh ~1s); kleine Minus-Abweichung
-		# unmittelbar nach dem letzten Chunk kann daher harmlos sein.
-		es_nachher = _es_doc_count(spider.name)
-		_es_n = es_nachher if es_nachher is not None else 'n/a'
-		_abw_n = (es_nachher - _erwartet) if es_nachher is not None else 'n/a'
-		logger.info(
-			f"Bestandsbilanz {spider.name} NACH Lauf: erwartet={_erwartet}, "
-			f"ES={_es_n} (Abw. ES-erwartet={_abw_n}, indexing_ok={indexing_ok})"
-		)
-		if es_nachher is not None and es_nachher != _erwartet:
-			logger.warning(
-				f"Bestandsbilanz {spider.name}: ES-Dokumentzahl {es_nachher} weicht "
-				f"von erwartet {_erwartet} ab (Differenz {es_nachher - _erwartet})."
-			)
-
-		# Dateien (HTML/PDF/JSON) liegen bereits im Store; Job, Index und Sitemap
-		# spiegeln den gelesenen Stand und werden daher IMMER geschrieben - auch bei
-		# (teilweise) fehlgeschlagener Indexierung.
-		zahl=1
-		for sitemap in sitemaps:
-			pfad_sitemap="Sitemaps/"+spider.name+"_"+str(zahl)+".xml"
-			MyFilesPipeline.common_store.persist_file(pfad_sitemap, BytesIO(sitemap.encode(encoding='UTF-8')), info=None, ContentType='text/xml', LogFlag=False)
-			zahl += 1
-		MyFilesPipeline.common_store.persist_file(pfad_job, BytesIO(json_jobs.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
-		MyFilesPipeline.common_store.persist_file(pfad_index, BytesIO(json_index.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
-
-		# Nicht indexierte Requests fuer den taeglichen Nachhol-Job ablegen. Jede
-		# Datei ist ein vollstaendiger, unveraendert wiederholbarer POST-Body.
-		# 'neu' faellt nur an, wenn der initiale Drop scheiterte (= ganzer Lauf).
-		for nr, fr_body in enumerate(failed_requests, 1):
-			pfad_fail = (
-				"Indexing_failed/"+spider.name+"/Request_"+datestring+"_"
-				+spider.scrapy_job.replace("/","-")+"_"+str(nr).zfill(3)+".json"
-			)
-			MyFilesPipeline.common_store.persist_file(
-				pfad_fail, BytesIO(json.dumps(fr_body).encode(encoding='UTF-8')),
-				info=None, ContentType='application/json', LogFlag=False
-			)
-		if failed_requests:
-			logger.error(
-				f"Indexierung unvollstaendig: {len(failed_requests)} Request(s) nach "
-				f"Indexing_failed/{spider.name}/ geschrieben (Nachhol-Job re-postet sie)."
-			)
-
-				
 	def process_item(self, item, spider):
 		logger.debug("pipeline item")
 		logFlag=True
@@ -900,39 +671,25 @@ class PipelineHelper:
 		if LogFlag and spider:
 			neustatus='neu'
 			last_change=None
-			if spider.previous_run:
-				if path in spider.previous_run['dateien']:
-					oldfile=spider.previous_run['dateien'][path]
-					if 'status' in oldfile and 'checksum' in oldfile:
-						altstatus=oldfile['status']
-						altchecksum=oldfile['checksum']
-						if 'last_change' in oldfile:
-							altlast_change=oldfile['last_change']
-						else:
-							altlast_change=None
-						if altchecksum==checksum:
-							# Alle alten Scrapingdaten werden auf 1.1.2023 gesetzt
-							if 'scrapedate' in oldfile:
-								scrapedate=oldfile['scrapedate']
-								# scrapetime kann fehlen (Items aus älteren Läufen);
-								# in dem Fall bleibt es ungesetzt — keine erfundene
-								# Uhrzeit.
-								scrapetime=oldfile.get('scrapetime')
-							else:
-								scrapedate='2023-01-01'
-								scrapetime=None
-							if altstatus == "nicht_mehr_da":
-								neustatus="identisch_wieder_da"
-							else:
-								neustatus="identisch"
-								last_change=altlast_change if altlast_change else spider.previous_job
-							existiert_bereits=True
-						else:
-							if altstatus =="nicht_mehr_da":
-								neustatus="anders_wieder_da"
-							else:
-								neustatus="update"
+			oldfile=spider.alt_scrape.get(path)
+			if oldfile and oldfile.get('checksum')==checksum:
+				# Unveraendert: Scrapedate/Scrapetime uebernehmen, damit die
+				# Datei (und die json-Checksum) ueber Laeufe hinweg stabil bleibt.
+				if oldfile.get('scrapedate'):
+					scrapedate=oldfile['scrapedate']
+					# scrapetime kann fehlen (Items aus aelteren Laeufen) -> dann
+					# ungesetzt lassen, keine erfundene Uhrzeit.
+					scrapetime=oldfile.get('scrapetime')
+				else:
+					scrapedate='2023-01-01'
+					scrapetime=None
+				neustatus="identisch"
+				existiert_bereits=True
+			elif oldfile:
+				neustatus="update"
 			rec={'checksum': checksum, "status": neustatus, "scrapedate": scrapedate}
+			if scrapetime:
+				rec['scrapetime'] = scrapetime
 			if last_change:
 				rec['last_change']=last_change
 			if scrapetime:
@@ -1051,36 +808,30 @@ class PipelineHelper:
 		scrapedate = now_utc.strftime("%Y-%m-%d")
 		scrapetime = now_utc.strftime("%H:%M:%S")
 		if 'HTMLFiles' in item and item['HTMLFiles']:
-			#Gibt es bereits einen Eintrag für die Datei in der Jobs-Liste?
-			if spider.previous_run:
-				path=item['HTMLFiles'][0]['path']
-				if path in spider.previous_run['dateien']:
-					oldfile=spider.previous_run['dateien'][path]
-					if 'checksum' in oldfile:
-						if item['HTMLFiles'][0]['checksum']==oldfile['checksum']:
-							# Alle alten Scrapingdaten werden auf 1.1.2023 gesetzt
-							if 'scrapedate' in oldfile:
-								scrapedate=oldfile['scrapedate']
-								scrapetime=oldfile.get('scrapetime')
-							else:
-								scrapedate='2023-01-01'
-								scrapetime=None
+			# Scrapedate/Scrapetime aus dem Alt-Dict uebernehmen, wenn die Datei
+			# unveraendert ist -- sonst wandert die json-Checksum bei jedem Lauf.
+			path=item['HTMLFiles'][0]['path']
+			oldfile=spider.alt_scrape.get(path)
+			if oldfile and oldfile.get('checksum')==item['HTMLFiles'][0]['checksum']:
+				if oldfile.get('scrapedate'):
+					scrapedate=oldfile['scrapedate']
+					scrapetime=oldfile.get('scrapetime')
+				else:
+					scrapedate='2023-01-01'
+					scrapetime=None
 			eintrag['HTML']={'Datei': item['HTMLFiles'][0]['path'], 'URL': item['HTMLFiles'][0]['url'], 'Checksum': item['HTMLFiles'][0]['checksum']}
 		if 'PDFFiles' in item and item['PDFFiles']:
-			#Gibt es bereits einen Eintrag für die Datei in der Jobs-Liste?
-			if spider.previous_run:
-				path=item['PDFFiles'][0]['path']
-				if path in spider.previous_run['dateien']:
-					oldfile=spider.previous_run['dateien'][path]
-					if 'checksum' in oldfile:
-						if item['PDFFiles'][0]['checksum']==oldfile['checksum']:
-							# Alle alten Scrapingdaten werden auf 1.1.2023 gesetzt
-							if 'scrapedate' in oldfile:
-								scrapedate=oldfile['scrapedate']
-								scrapetime=oldfile.get('scrapetime')
-							else:
-								scrapedate='2023-01-01'
-								scrapetime=None
+			# Scrapedate/Scrapetime aus dem Alt-Dict uebernehmen, wenn die Datei
+			# unveraendert ist -- sonst wandert die json-Checksum bei jedem Lauf.
+			path=item['PDFFiles'][0]['path']
+			oldfile=spider.alt_scrape.get(path)
+			if oldfile and oldfile.get('checksum')==item['PDFFiles'][0]['checksum']:
+				if oldfile.get('scrapedate'):
+					scrapedate=oldfile['scrapedate']
+					scrapetime=oldfile.get('scrapetime')
+				else:
+					scrapedate='2023-01-01'
+					scrapetime=None
 			if not 'PDFUrls' in item:
 				logger.error(f"Item {item['Num']} hat keine PDFUrls in make_json aber PDFFiles: {json.dumps(item)} in make_json.")
 				eintrag['PDF']={'Datei': item['PDFFiles'][0]['path'], 'URL': item['PDFFiles'][0]['url'], 'Checksum': item['PDFFiles'][0]['checksum']}

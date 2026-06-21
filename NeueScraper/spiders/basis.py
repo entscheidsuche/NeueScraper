@@ -64,11 +64,16 @@ class BasisSpider(scrapy.Spider):
 	BLOCKLISTE='https://entscheidsuche.ch/docs/Blockliste.json'
 	blockliste={}
 	numliste={}
+	fehler = 0  # dauerhaft (nach Retries) gescheiterte Requests -> Fehlerstatus im Scrapelog
 	
 	kammerfallback=None
 	files_written ={}
 	previous_run={}
 	previous_job=None
+	# Schlankes Seiten-Dict NUR fuer die Scrapedate/Scrapetime-Uebernahme:
+	# Pfad -> {checksum, scrapedate, scrapetime}. Wird aus der Jobs-Datei geladen
+	# und in make_json/checkfile konsultiert; fliesst NICHT in den Scrapelog ein.
+	alt_scrape={}
 	ab=None
 	neu=None
 	# Für alle Dokumente, für die wir keine Daten herbekommen können
@@ -409,18 +414,45 @@ class BasisSpider(scrapy.Spider):
 		
 		logger.debug("Gerichtsliste verarbeitet")
 		
-		if self.neu=="neu":
-			logger.debug("Neuer Job, hole nun die Blockliste.")
+		# Scrapelog-Modell: der Konsolidierer haelt den Bestand. Der Scraper liest aus
+		# der Jobs-Datei nur ein schlankes Dict (Pfad -> checksum/scrapedate/scrapetime),
+		# um fuer unveraenderte Dokumente Scrapedate/Scrapetime zu uebernehmen -- sonst
+		# wandert die json-Checksum bei jedem Lauf. KEINE Lösch-Logik im Scraper.
+		if self.neu == "neu":
+			# Neuaufbau: nichts zu uebernehmen, direkt zur Blockliste.
+			logger.debug('Neuaufbau -> direkt zur Blockliste (keine Datums-Uebernahme).')
 			yield scrapy.Request(url=self.BLOCKLISTE, callback=self.parse_blockliste, errback=self.errback_httpbin)
-		
 		else:
-			logger.debug("hole nun die Jobliste.")
-	
-			# Nun einlesen, was an Dateien vom letzten Spidern vorhanden ist
-			#jobs_url=self.JOBS_URL+self.name+"%2FJob_"
-			jobs_url=self.JOBS_URL+self.name+"/last"
-			logger.info("Jobs-URL: "+jobs_url)
-			yield scrapy.Request(url=jobs_url, callback=self.parse_dateiliste, errback=self.errback_httpbin, meta={'handle_httpstatus_list': [404]})
+			alt_url=self.JOBS_URL+self.name+"/last"
+			logger.info("Lade Alt-Scrapedaten: "+alt_url)
+			yield scrapy.Request(url=alt_url, callback=self.parse_altdaten,
+				errback=self.errback_altdaten, meta={'handle_httpstatus_list': [404]})
+
+	def parse_altdaten(self, response):
+		# Schlankes Seiten-Dict NUR fuer die Scrapedate/Scrapetime-Uebernahme.
+		# Pfad -> {checksum, scrapedate, scrapetime}. Konsumiert in make_json/checkfile;
+		# fliesst NICHT in files_written/Scrapelog ein.
+		if getattr(response, "status", 200) == 200:
+			try:
+				alt=json.loads(response.text)
+				for pfad, e in (alt.get("dateien") or {}).items():
+					if isinstance(e, dict) and "checksum" in e:
+						self.alt_scrape[pfad]={
+							"checksum": e["checksum"],
+							"scrapedate": e.get("scrapedate"),
+							"scrapetime": e.get("scrapetime"),
+						}
+				logger.info("Alt-Scrapedaten geladen: "+str(len(self.alt_scrape))+" Eintraege")
+			except Exception as ex:
+				logger.warning("Alt-Scrapedaten nicht lesbar ("+repr(ex)+") -> ohne Uebernahme weiter")
+		else:
+			logger.info("Keine Alt-Jobs-Datei (Status "+str(response.status)+") -> erster Lauf / ohne Uebernahme")
+		yield scrapy.Request(url=self.BLOCKLISTE, callback=self.parse_blockliste, errback=self.errback_httpbin)
+
+	def errback_altdaten(self, failure):
+		# Ein fehlgeschlagener Jobs-Read darf den Lauf NICHT blockieren.
+		logger.warning("Alt-Scrapedaten-Read fehlgeschlagen: "+repr(failure)+" -> ohne Uebernahme weiter")
+		yield scrapy.Request(url=self.BLOCKLISTE, callback=self.parse_blockliste, errback=self.errback_httpbin)
 		
 	def parse_jobliste_S3(self, response):
 		logger.debug("parse_jobliste_S3 response.status "+str(response.status))
@@ -659,6 +691,7 @@ class BasisSpider(scrapy.Spider):
 		# in case you want to do something special for some errors,
 		# you may need the failure's type
 		
+		self.fehler += 1
 		logger.error(repr(failure))
 		if failure.check(HttpError):
 			response = failure.value.response
