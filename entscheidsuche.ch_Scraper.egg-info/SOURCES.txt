@@ -2,6 +2,7 @@ LICENSE
 pyproject.toml
 setup.py
 NeueScraper/__init__.py
+NeueScraper/headless_client.py
 NeueScraper/items.py
 NeueScraper/middlewares.py
 NeueScraper/pipelines.py
@@ -27,6 +28,7 @@ NeueScraper/spiders/CH_BSTG.py
 NeueScraper/spiders/CH_BVGer.py
 NeueScraper/spiders/CH_Bundesrat.py
 NeueScraper/spiders/CH_EDOEB.py
+NeueScraper/spiders/CH_UNIBE.py
 NeueScraper/spiders/CH_VB.py
 NeueScraper/spiders/CH_WEKO.py
 NeueScraper/spiders/FR_Gerichte.py
