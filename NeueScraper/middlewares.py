@@ -7,12 +7,150 @@
 
 from scrapy import signals
 import logging
-from urllib.parse import urljoin
+import uuid
+from urllib.parse import urljoin, urlparse
 from w3lib.url import safe_url_string
 from scrapy.downloadermiddlewares.redirect import RedirectMiddleware, _build_redirect_request
 from scrapy.utils.httpobj import urlparse_cached
 
 logger = logging.getLogger(__name__)
+
+
+class OopsRetryMiddleware:
+	"""Downloader-Middleware: Wiederholt PDF-Downloads, deren Body weder
+	mit '%PDF-' beginnt noch eine PDF-Endemarkierung '%%EOF' enthaelt
+	(auch nicht nach optionalem base64-Dekodieren). Wartet zwischen den
+	Versuchen 5 Sekunden, zieht eine frische Zyte-Smart-Proxy-Session-ID
+	und ein neues Browser-Profil. Maximal MAX_VERSUCHE Wiederholungen.
+
+	Opt-in pro Request via meta['oops_retry']=True. Greift nur, wenn die
+	Ziel-URL auf .pdf endet (Pfad oder Query). Andere Spider/Pipelines
+	werden nicht beeinflusst.
+
+	Aktivierung pro Spider via custom_settings:
+		custom_settings = {
+			'DOWNLOADER_MIDDLEWARES': {
+				'NeueScraper.middlewares.OopsRetryMiddleware': 580,
+			}
+		}
+	"""
+
+	MAX_VERSUCHE = 3
+	BACKOFF_SECONDS = 5
+
+	@classmethod
+	def from_crawler(cls, crawler):
+		return cls(crawler)
+
+	def __init__(self, crawler):
+		self.crawler = crawler
+
+	def _looks_like_pdf_url(self, url):
+		# Tolerant: '.pdf' im Pfad ODER irgendwo im Query (z.B. DownloadPdf-Endpunkte
+		# bei TYPO3 liefern PDFs ueber URLs ohne .pdf-Suffix, das deckt aber der
+		# zusaetzliche Hint per meta['oops_retry']=True ab).
+		try:
+			parsed = urlparse(url)
+		except Exception:
+			return False
+		return parsed.path.lower().endswith('.pdf')
+
+	def _is_valid_pdf(self, body):
+		# Setzt auf PipelineHelper.is_pdf_body auf (inkl. base64-Fallback).
+		try:
+			from NeueScraper.pipelines import PipelineHelper
+			return PipelineHelper.is_pdf_body(body)
+		except Exception as e:
+			logger.warning(f"OopsRetryMiddleware: PDF-Check fehlgeschlagen: {e!r}")
+			return True  # im Zweifel keinen Retry triggern
+
+	def process_response(self, request, response, spider):
+		if not request.meta.get('oops_retry'):
+			return response
+		# Nur PDFs validieren — die meta-Markierung ist Opt-in, aber wir
+		# pruefen nichts anderes als PDFs.
+		body = response.body or b''
+		starts_ok = body[:5] == b'%PDF-'
+		ends_ok = self._is_valid_pdf(body)
+		if starts_ok and ends_ok:
+			return response
+
+		versuch = int(request.meta.get('oops_versuch', 1))
+		if versuch >= self.MAX_VERSUCHE:
+			logger.warning(
+				f"OopsRetry: max. Versuche ({self.MAX_VERSUCHE}) ausgeschoepft fuer {request.url} — "
+				f"Antwort durchreichen, Pipeline behandelt sie regulaer."
+			)
+			return response
+
+		# Frische Session-ID und neues Browser-Profil ziehen (falls Spider Rotation
+		# kennt). Sonst nur Session neu erzeugen.
+		new_session_id = None
+		new_headers = None
+		if hasattr(spider, '_new_session_id'):
+			new_session_id = spider._new_session_id()
+		else:
+			new_session_id = uuid.uuid4().hex
+		new_profile_name = None
+		if hasattr(spider, '_pick_browser_profile'):
+			profile = spider._pick_browser_profile()
+			new_headers = dict(profile['headers'])
+			new_profile_name = profile['browser']
+
+		new_meta = dict(request.meta)
+		new_meta['oops_versuch'] = versuch + 1
+		zyte = dict(new_meta.get('zyte_api') or {})
+		zyte['session'] = {'id': new_session_id}
+		zyte['httpResponseHeaders'] = True
+		new_meta['zyte_api'] = zyte
+		new_meta['session_id'] = new_session_id
+		if new_profile_name:
+			new_meta['browser_profile'] = new_profile_name
+		if new_headers:
+			new_meta['browser_headers'] = new_headers
+
+		# Header neu aufbauen: vorhandene Request-Header (z.B. Authorization)
+		# beibehalten, aber Browser-Headers ueberschreiben.
+		base_headers = {k.decode('latin-1') if isinstance(k, bytes) else k:
+		                v[0].decode('latin-1') if isinstance(v, list) and v and isinstance(v[0], bytes) else v
+		                for k, v in request.headers.items()}
+		if new_headers:
+			base_headers.update(new_headers)
+
+		new_request = request.replace(headers=base_headers, meta=new_meta, dont_filter=True)
+
+		logger.warning(
+			f"OopsRetry Versuch {versuch}/{self.MAX_VERSUCHE} fuer {request.url}: "
+			f"PDF-Body ungueltig (starts_ok={starts_ok}, ends_ok={ends_ok}). "
+			f"Neue Session={new_session_id[:8]} Profil={new_profile_name} — "
+			f"Backoff {self.BACKOFF_SECONDS}s."
+		)
+
+		# Scrapy-idiomatisches Retry: aus process_response ein Deferred
+		# zurueckgeben, das nach BACKOFF_SECONDS mit dem neuen Request
+		# resolved. Scrapy verarbeitet den neuen Request danach im selben
+		# Slot (inkl. FilesPipeline-Callbacks). Damit entfaellt der
+		# 'NO_CALLBACK has been called'-Traceback, der bei IgnoreRequest
+		# zwingend auftrat, weil die FilesPipeline-Media-Requests intern
+		# NO_CALLBACK als Callback haben.
+		try:
+			from twisted.internet import reactor
+			from twisted.internet.defer import Deferred
+			d = Deferred()
+			def _resolve():
+				engine = self.crawler.engine
+				if not getattr(engine, "running", True):
+					logger.info(f"OopsRetry: Spider bereits geschlossen, Retry verworfen ({request.url})")
+					# Spider geschlossen -> Original-Response weitergeben,
+					# damit kein haengender Deferred entsteht.
+					d.callback(response)
+					return
+				d.callback(new_request)
+			reactor.callLater(self.BACKOFF_SECONDS, _resolve)
+			return d
+		except Exception as e:
+			logger.error(f"OopsRetry: Deferred-Setup fehlgeschlagen ({e!r}) — Original-Response durchreichen.")
+			return response
 
 class ProxyAwareRedirectMiddleware(RedirectMiddleware):
 	"""Fängt 3xx ab, loggt die Kette, verpackt Location über spider.proxyUrl(), 

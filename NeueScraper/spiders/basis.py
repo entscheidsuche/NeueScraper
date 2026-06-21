@@ -12,7 +12,10 @@ from lxml import etree
 import copy
 from scrapy.spidermiddlewares.httperror import HttpError
 from scrapy.downloadermiddlewares.cookies import CookiesMiddleware
+from twisted.internet.error import DNSLookupError, TCPTimedOutError, TimeoutError
 import base64
+import random
+import uuid
 from scrapy import signals
 
 from NeueScraper.pipelines import MyFilesPipeline
@@ -669,7 +672,144 @@ class BasisSpider(scrapy.Spider):
 			logger.error("DNS error on %s", failure.request.url)
 		elif failure.check(TimeoutError, TCPTimedOutError):
 			logger.error("Timeout on %s", failure.request.url)
-		
 
-		
+
+	# ------------------------------------------------------------------
+	# Wiederverwendbare Browser-/Session-Rotation für Spider, die Zyte
+	# Smart-Proxy-Sessions kombiniert mit User-Agent-/Header-Rotation
+	# nutzen wollen. Opt-in pro Spider via self._init_rotation(N).
+	# ------------------------------------------------------------------
+
+	# 10 Browser-Profile (Firefox/Chrome/Edge/Safari, verschiedene OS und
+	# Versionen). Bewusst entkoppelt von den 100 BGE-Profilen, damit dieses
+	# Modul ohne Abhaengigkeit zu CH_BGE benutzbar bleibt.
+	BROWSER_PROFILES = [
+		{'browser': 'firefox-141-macOS', 'headers': {
+			'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.0; rv:141.0) Gecko/20100101 Firefox/141.0',
+			'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+			'Accept-Language': 'de-CH,de;q=0.9,en;q=0.7,fr;q=0.6',
+			'Accept-Encoding': 'gzip, deflate, br, zstd',
+			'DNT': '1', 'Connection': 'keep-alive', 'Upgrade-Insecure-Requests': '1',
+		}},
+		{'browser': 'firefox-140-win', 'headers': {
+			'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0',
+			'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+			'Accept-Language': 'de,en-US;q=0.7,en;q=0.3',
+			'Accept-Encoding': 'gzip, deflate, br, zstd',
+			'DNT': '1', 'Connection': 'keep-alive', 'Upgrade-Insecure-Requests': '1',
+		}},
+		{'browser': 'firefox-138-linux', 'headers': {
+			'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:138.0) Gecko/20100101 Firefox/138.0',
+			'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+			'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.7,en;q=0.5',
+			'Accept-Encoding': 'gzip, deflate, br, zstd',
+			'DNT': '1', 'Connection': 'keep-alive', 'Upgrade-Insecure-Requests': '1',
+		}},
+		{'browser': 'chrome-129-macOS', 'headers': {
+			'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+			'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+			'Accept-Language': 'de-CH,de;q=0.9,en;q=0.7',
+			'Accept-Encoding': 'gzip, deflate, br, zstd',
+			'Connection': 'keep-alive', 'Upgrade-Insecure-Requests': '1',
+			'sec-ch-ua': '"Chromium";v="129", "Not.A/Brand";v="24", "Google Chrome";v="129"',
+			'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"macOS"',
+		}},
+		{'browser': 'chrome-128-win', 'headers': {
+			'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+			'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+			'Accept-Language': 'de,en-US;q=0.7,en;q=0.3',
+			'Accept-Encoding': 'gzip, deflate, br, zstd',
+			'Connection': 'keep-alive', 'Upgrade-Insecure-Requests': '1',
+			'sec-ch-ua': '"Chromium";v="128", "Not.A/Brand";v="24", "Google Chrome";v="128"',
+			'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"Windows"',
+		}},
+		{'browser': 'chrome-127-linux', 'headers': {
+			'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
+			'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+			'Accept-Language': 'en-US,en;q=0.9,de;q=0.7',
+			'Accept-Encoding': 'gzip, deflate, br, zstd',
+			'Connection': 'keep-alive', 'Upgrade-Insecure-Requests': '1',
+			'sec-ch-ua': '"Chromium";v="127", "Not.A/Brand";v="24", "Google Chrome";v="127"',
+			'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"Linux"',
+		}},
+		{'browser': 'edge-128-win', 'headers': {
+			'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 Edg/128.0.0.0',
+			'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+			'Accept-Language': 'de-CH,de;q=0.9,en;q=0.7',
+			'Accept-Encoding': 'gzip, deflate, br, zstd',
+			'Connection': 'keep-alive', 'Upgrade-Insecure-Requests': '1',
+			'sec-ch-ua': '"Chromium";v="128", "Not.A/Brand";v="24", "Microsoft Edge";v="128"',
+			'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"Windows"',
+		}},
+		{'browser': 'edge-127-macOS', 'headers': {
+			'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36 Edg/127.0.0.0',
+			'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+			'Accept-Language': 'fr-CH,fr;q=0.9,de;q=0.7',
+			'Accept-Encoding': 'gzip, deflate, br, zstd',
+			'Connection': 'keep-alive', 'Upgrade-Insecure-Requests': '1',
+			'sec-ch-ua': '"Chromium";v="127", "Not.A/Brand";v="24", "Microsoft Edge";v="127"',
+			'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"macOS"',
+		}},
+		{'browser': 'safari-17.5-macOS14', 'headers': {
+			'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+			'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+			'Accept-Language': 'de-CH,de;q=0.9,en;q=0.7,fr;q=0.6,it;q=0.5',
+			'Accept-Encoding': 'gzip, deflate, br',
+			'Connection': 'keep-alive', 'Upgrade-Insecure-Requests': '1',
+		}},
+		{'browser': 'safari-16.6-macOS13', 'headers': {
+			'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15',
+			'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+			'Accept-Language': 'it-CH,it;q=0.9,de;q=0.7,fr;q=0.5,en;q=0.4',
+			'Accept-Encoding': 'gzip, deflate, br',
+			'Connection': 'keep-alive', 'Upgrade-Insecure-Requests': '1',
+		}},
+	]
+
+	def _init_rotation(self, pool_size=10):
+		"""Initialisiert N Zyte-Smart-Proxy-Sessions. Aufzurufen im __init__
+		eines Spiders, der Browser-/IP-Rotation moechte. Sticky-Session-IDs
+		bleiben fuer die Spider-Lebensdauer stabil; bei Retry kann via
+		_new_session_id() eine frische Session gezogen werden."""
+		self._session_pool = [uuid.uuid4().hex for _ in range(pool_size)]
+		logger.info(f"Rotation initialisiert: {pool_size} Sessions im Pool")
+
+	def _pick_browser_profile(self):
+		"""Liefert ein zufaellig gewaehltes Browser-Profil (dict mit 'browser'
+		und 'headers')."""
+		return random.choice(self.BROWSER_PROFILES)
+
+	def _pick_session_id(self):
+		"""Liefert eine Session-ID aus dem Pool (random). Falls _init_rotation
+		nicht aufgerufen wurde, wird transparent eine Einmal-Session erzeugt."""
+		pool = getattr(self, "_session_pool", None)
+		if not pool:
+			return uuid.uuid4().hex
+		return random.choice(pool)
+
+	def _new_session_id(self):
+		"""Neue, frische Session-ID — fuer Retries, wenn die alte IP geblockt
+		scheint. Wird nicht automatisch in den Pool aufgenommen."""
+		return uuid.uuid4().hex
+
+	def apply_rotation(self, meta=None, headers=None, session_id=None, browser_profile=None):
+		"""Schreibt 'zyte_api.session.id', 'browser_profile' und
+		'browser_headers' in meta und mergt die Profil-Header in headers.
+		Wenn session_id / browser_profile uebergeben sind, werden sie genutzt,
+		sonst zufaellig gezogen. Gibt das aktualisierte (headers, meta) zurueck."""
+		meta = dict(meta) if meta else {}
+		if browser_profile is None:
+			browser_profile = self._pick_browser_profile()
+		if session_id is None:
+			session_id = self._pick_session_id()
+		profile_headers = dict(browser_profile['headers'])
+		merged_headers = dict(headers) if headers else {}
+		# Profile-Headers haben Vorrang vor evtl. mitgegebenen Header-Defaults
+		merged_headers.update(profile_headers)
+		meta['zyte_api'] = {'session': {'id': session_id}, 'httpResponseHeaders': True}
+		meta['browser_profile'] = browser_profile['browser']
+		meta['browser_headers'] = merged_headers
+		meta['session_id'] = session_id
+		return merged_headers, meta
+
 	

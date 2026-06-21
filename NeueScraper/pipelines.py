@@ -39,6 +39,29 @@ filenamechars=re.compile("[^-a-zA-Z0-9]")
 filenameparts=re.compile(r'/(?P<stamm>(?P<signatur>[^_]+_[^_]+_[^_]+)[^\.]+)\.(?P<endung>\w+)')
 logger = logging.getLogger(__name__)
 
+INDEX_CHUNK_DOCS = 1000  # Dokumente je Indexierungs-POST (klein genug fuer < Gateway-Timeout)
+
+ELASTIC_COUNT_BASE = os.environ.get("ES_COUNT_BASE", "https://entscheidsuche.pansoft.de:9200")
+ELASTIC_INDEX_PREFIX = os.environ.get("ES_INDEX_PREFIX", "entscheidsuche.v2")
+
+def _es_doc_count(spider_name):
+	"""Dokumentzahl im ES-Index des Spiders (entscheidsuche.v2-<spider>).
+	Reads laufen wie im Feeder ohne Auth; 404/Fehler werden als 0 bzw. None
+	gewertet, damit die Bilanz den Lauf nie gefaehrdet."""
+	index = f"{ELASTIC_INDEX_PREFIX}-{spider_name.lower()}"
+	try:
+		r = requests.get(f"{ELASTIC_COUNT_BASE}/{index}/_count", timeout=30, verify=False)
+		if r.status_code == 404:
+			return 0
+		if r.status_code >= 300:
+			logger.warning(f"ES-Count {index}: Status {r.status_code}")
+			return None
+		return int(r.json().get("count"))
+	except Exception as e:
+		logger.warning(f"ES-Count {index} fehlgeschlagen: {type(e).__name__}: {e}")
+		return None
+
+
 from urllib.parse import urlparse
 
 from scrapy.pipelines.files import FilesPipeline
@@ -86,6 +109,14 @@ class MyWriterPipeline:
 				f"kein Bestands-Reset-Risiko)."
 			)
 		datestring=datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+		# Lauf-Startzeit aus den Scrapy-Stats (UTC). Wird ins Job-/Index-File
+		# geschrieben, damit der Konsolidierer überlappende Läufe erkennen kann.
+		start_dt = None
+		try:
+			start_dt = spider.crawler.stats.get_value('start_time')
+		except Exception:
+			pass
+		start_str = start_dt.strftime("%Y-%m-%d_%H:%M:%S") if start_dt else None
 		pfad_job="Jobs/"+spider.name+"/Job_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
 		pfad_index="Index/"+spider.name+"/Index_"+datestring+"_"+spider.scrapy_job.replace("/","-")+".json"
 		signaturen={}
@@ -187,125 +218,135 @@ class MyWriterPipeline:
 					if not count_typ=='entfernt':
 						signaturen[s.group('signatur')]['gesamt']=signaturen[s.group('signatur')]['gesamt']+1
 						gesamt['gesamt']=gesamt['gesamt']+1
-		files_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "dateien": spider.files_written, 'signaturen': signaturen, 'gesamt': gesamt }
+		files_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "start_time": start_str, "time": datestring, "dateien": spider.files_written, 'signaturen': signaturen, 'gesamt': gesamt }
 		json_jobs=json.dumps(files_log)
 		sitemaps=PipelineHelper.gen_sitemap(spider.files_written)
-		index_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "time": datestring, "actions": to_index, 'signaturen': signaturen, 'gesamt': gesamt }
+		index_log={"spider": spider.name, "job": spider.scrapy_job, "jobtyp": job_typ, "start_time": start_str, "time": datestring, "actions": to_index, 'signaturen': signaturen, 'gesamt': gesamt }
 		json_index=json.dumps(index_log)
 
-		# Indexierung ZUERST versuchen — genau ein Versuch, kein Retry.
-		# Erst bei Erfolg werden Jobs/Sitemap/Index-Files in den Store
-		# geschrieben. Damit bleibt der Bestand konsistent: entweder hat der
-		# Indexer den Stand übernommen und der Job-File spiegelt ihn, oder
-		# es wird gar nichts persistiert und der vorige Stand bleibt
-		# unverändert (-> nächster Lauf macht wieder einen Versuch).
-		#
-		# Klassifizierung der Antwort:
-		#   < 300                       → Erfolg
-		#   504 Gateway Time-out im Body → Erfolg (Indexer hat Anfrage
-		#                                  angenommen und arbeitet
-		#                                  asynchron weiter; bei grossen
-		#                                  Indizes Standard-Verhalten)
-		#   sonstige 4xx/5xx, Timeout    → Fehler, nichts schreiben
-		# Kein Retry — bei grossen Jobs kommt der Timeout fast immer; ein
-		# Retry würde den Indexer zusätzlich stressen.
-		indexing_ok = False
-		try:
-			antwort = requests.post(
-				"https://entscheidsuche.pansoft.de",
-				data=json_jobs,
-				headers={'Content-Type': 'application/json'},
-				timeout=3600,
-				verify=False,
-			)
-			logger.info(f"Indexierungsrequest: Status {antwort.status_code}")
-			if antwort.status_code < 300:
-				indexing_ok = True
-			elif "504 Gateway Time-out" in antwort.text:
-				logger.warning(
-					"Indexierung 504 Gateway Time-out — Indexer hat die "
-					"Anfrage akzeptiert und arbeitet im Hintergrund weiter. "
-					"Werte als Erfolg."
-				)
-				indexing_ok = True
-			else:
-				logger.error(
-					f"Indexierung gescheitert (Status {antwort.status_code}). "
-					f"Body: {antwort.text[:1000]}"
-				)
-		except (requests.Timeout, requests.ConnectionError) as e:
-			logger.error(
-				f"Indexierung mit Netzwerkfehler abgebrochen: "
-				f"{type(e).__name__}: {e}"
-			)
-		except Exception as e:
-			logger.error(
-				f"Indexierung mit unbekanntem Fehler abgebrochen: "
-				f"{type(e).__name__}: {e}"
-			)
-
-		# Schreib-Strategie abhängig von Lauf-Modus und Indexer-Resultat:
-		#
-		# 1) Erfolg (alle Modi):
-		#    Sitemap + Job + Index normal schreiben (Standardpfad).
-		#
-		# 2) Indexer-Fehler bei Update-Lauf (spider.ab gesetzt):
-		#    Sitemap + Job + Index normal schreiben — der Update-Modus ist
-		#    additiv, also keine Bestandsgefahr. Der User kann den Job-File
-		#    bei Bedarf manuell an den Indexer schicken.
-		#
-		# 3) Indexer-Fehler bei Vollbestands-Lauf (neu=neu oder ohne ab):
-		#    Job und Index als 'Failed_Job_*' / 'Failed_Index_*' schreiben,
-		#    damit die Daten zur manuellen Recovery erhalten bleiben.
-		#    KEINE Sitemap schreiben (sonst würde ein unvollständiger
-		#    Bestand publiziert). Failed-Files sortieren alphabetisch
-		#    NACH den regulären Job_*-Files (rsort: 'J' > 'F'), sodass
-		#    der nächste Lauf den letzten erfolgreichen Job als Diff-
-		#    Referenz nimmt.
-		ist_vollbestand = (
-			getattr(spider, 'neu', None) == 'neu'
-			or not getattr(spider, 'ab', None)
+		# --- Bestandsbilanz (Vorher) + Lauf-Kennzahlen ins Log ---
+		prev_run = getattr(spider, 'previous_run', {}) or {}
+		prev_dateien = prev_run.get('dateien', {}) if isinstance(prev_run, dict) else {}
+		store_vorher = sum(1 for _fn, _m in prev_dateien.items()
+			if _fn.endswith('.json') and _m.get('status') != 'nicht_mehr_da')
+		es_vorher = _es_doc_count(spider.name)
+		_neu = gesamt.get('aktuell_neu', 0)
+		_akt = gesamt.get('aktuell_aktualisiert', 0)
+		_ident = gesamt.get('aktuell_identisch', 0)
+		_entfernt = gesamt.get('aktuell_entfernt', 0)
+		_gelesen = _neu + _akt + _ident
+		_bekannt = _akt + _ident
+		_erwartet = gesamt.get('gesamt', 0)
+		_es_v = es_vorher if es_vorher is not None else 'n/a'
+		_abw_v = (es_vorher - store_vorher) if es_vorher is not None else 'n/a'
+		logger.info(
+			f"Bestandsbilanz {spider.name} VOR Lauf: Store(JSON)={store_vorher}, "
+			f"ES={_es_v} (Abw. ES-Store={_abw_v})"
 		)
-
-		if not indexing_ok and ist_vollbestand:
-			# Failed-Variante: Job + Index mit 'Failed_'-Prefix, keine Sitemap
-			pfad_job_failed = (
-				"Jobs/"+spider.name+"/Failed_Job_"+datestring+"_"
-				+spider.scrapy_job.replace("/","-")+".json"
-			)
-			pfad_index_failed = (
-				"Index/"+spider.name+"/Failed_Index_"+datestring+"_"
-				+spider.scrapy_job.replace("/","-")+".json"
-			)
-			MyFilesPipeline.common_store.persist_file(
-				pfad_job_failed, BytesIO(json_jobs.encode(encoding='UTF-8')),
-				info=None, ContentType='application/json', LogFlag=False
-			)
-			MyFilesPipeline.common_store.persist_file(
-				pfad_index_failed, BytesIO(json_index.encode(encoding='UTF-8')),
-				info=None, ContentType='application/json', LogFlag=False
-			)
-			logger.error(
-				f"Indexierung beim Vollbestands-Lauf nicht erfolgreich. "
-				f"Job-File als {pfad_job_failed!r} und Index als "
-				f"{pfad_index_failed!r} zur manuellen Recovery geschrieben. "
-				f"Sitemap wurde NICHT aktualisiert (alter Stand bleibt "
-				f"sichtbar). Storage-Inhalt (HTML/PDF/JSON) bleibt erhalten."
-			)
-			return
-
-		if not indexing_ok:
-			# Update-Lauf: Indexer-Fehler nicht destruktiv — normal weiterschreiben
+		logger.info(
+			f"Bestandsbilanz {spider.name} LAUF: gelesen={_gelesen}, "
+			f"bekannt={_bekannt}, neu={_neu}, entfernt={_entfernt}"
+		)
+		_erwartet_rechnerisch = store_vorher - _entfernt + _neu
+		if _erwartet != _erwartet_rechnerisch:
 			logger.warning(
-				"Indexierung beim Update-Lauf fehlgeschlagen. Job-File, "
-				"Sitemap und Index werden trotzdem geschrieben (additiv, "
-				"keine Bestandsgefahr). Manuelle Re-Indexierung der Job-"
-				"Datei kann später folgen."
+				f"Bestandsbilanz {spider.name}: erwartete Endzahl {_erwartet} != "
+				f"Vorher-Entfernt+Neu {_erwartet_rechnerisch} (Zaehl-Inkonsistenz)."
 			)
 
-		# Sitemap + Job + Index regulär schreiben.
-		# (Reihenfolge: erst Sitemap für die UI, dann Job für Diff-Referenz,
-		# dann Index als Audit-Trail.)
+		# Indexierung in Dokument-Chunks statt einem Gross-POST.
+		# Grund: der einzelne POST ueber den ganzen Bestand lief regelmaessig
+		# in den Gateway-Timeout (504), frueher faelschlich als Erfolg gewertet
+		# -> ganze Jahrgaenge fehlten. Kleine Chunks liefern echte 201/5xx (App.ts).
+		#
+		# jobtyp je Chunk:
+		#   Chunk 0 : originales job_typ. Nur 'neu' loescht den Index einmal (Drop).
+		#   Chunk >0: 'update' falls job_typ=='neu' (kein erneuter Drop), sonst
+		#             unveraendert -> 'komplett' bleibt durchgaengig 'komplett'.
+		# json + html/pdf eines Dokuments sind benachbart und namensgleich (nur
+		# Endung); Chunk-Grenzen nur an Dokumentgrenzen (Basisname), nie innerhalb.
+		def _index_chunks(dateien, max_docs):
+			chunk, n, basis = {}, 0, None
+			for fn, meta in dateien.items():
+				b = fn.rsplit('.', 1)[0]
+				if b != basis:
+					if n >= max_docs:
+						yield chunk
+						chunk, n = {}, 0
+					basis = b
+					n += 1
+				chunk[fn] = meta
+			if chunk:
+				yield chunk
+
+		chunks = list(_index_chunks(spider.files_written, INDEX_CHUNK_DOCS))
+		indexing_ok = True
+		failed_requests = []   # Requests, die nicht indexiert werden konnten -> Indexing_failed
+		for i, ch in enumerate(chunks):
+			jt = job_typ if i == 0 else ('update' if job_typ == 'neu' else job_typ)
+			body_obj = {
+				"spider": spider.name, "job": spider.scrapy_job,
+				"jobtyp": jt, "time": datestring, "dateien": ch,
+			}
+			body = json.dumps(body_obj)
+			try:
+				antwort = requests.post(
+					"https://entscheidsuche.pansoft.de",
+					data=body,
+					headers={'Content-Type': 'application/json'},
+					timeout=3600,
+					verify=False,
+				)
+				ok = antwort.status_code < 300
+				logger.info(
+					f"Indexierung Chunk {i+1}/{len(chunks)} "
+					f"(jobtyp={jt}, {len(ch)} Dateien): Status {antwort.status_code}"
+				)
+				if not ok:
+					logger.error(f"Chunk {i+1} Body: {antwort.text[:1000]}")
+			except Exception as e:
+				ok = False
+				logger.error(
+					f"Indexierung Chunk {i+1}/{len(chunks)} abgebrochen: "
+					f"{type(e).__name__}: {e}"
+				)
+			if not ok:
+				indexing_ok = False
+				if i == 0 and job_typ == 'neu':
+					# Drop (Chunk 0 eines neu-Laufs) gescheitert: Indexzustand unklar,
+					# Teil-Replay waere destruktiv -> ganzen Lauf als EINEN neu-Request
+					# ablegen, Rest nicht senden.
+					failed_requests = [{
+						"spider": spider.name, "job": spider.scrapy_job,
+						"jobtyp": job_typ, "time": datestring,
+						"dateien": spider.files_written,
+					}]
+					logger.error(
+						f"neu-Drop (Chunk 1/{len(chunks)}) gescheitert -> ganzer Lauf nach "
+						f"Indexing_failed; Abbruch."
+					)
+					break
+				failed_requests.append(body_obj)
+
+		# --- Bestandsbilanz (Nachher) ins Log ---
+		# ES ist eventually consistent (Refresh ~1s); kleine Minus-Abweichung
+		# unmittelbar nach dem letzten Chunk kann daher harmlos sein.
+		es_nachher = _es_doc_count(spider.name)
+		_es_n = es_nachher if es_nachher is not None else 'n/a'
+		_abw_n = (es_nachher - _erwartet) if es_nachher is not None else 'n/a'
+		logger.info(
+			f"Bestandsbilanz {spider.name} NACH Lauf: erwartet={_erwartet}, "
+			f"ES={_es_n} (Abw. ES-erwartet={_abw_n}, indexing_ok={indexing_ok})"
+		)
+		if es_nachher is not None and es_nachher != _erwartet:
+			logger.warning(
+				f"Bestandsbilanz {spider.name}: ES-Dokumentzahl {es_nachher} weicht "
+				f"von erwartet {_erwartet} ab (Differenz {es_nachher - _erwartet})."
+			)
+
+		# Dateien (HTML/PDF/JSON) liegen bereits im Store; Job, Index und Sitemap
+		# spiegeln den gelesenen Stand und werden daher IMMER geschrieben - auch bei
+		# (teilweise) fehlgeschlagener Indexierung.
 		zahl=1
 		for sitemap in sitemaps:
 			pfad_sitemap="Sitemaps/"+spider.name+"_"+str(zahl)+".xml"
@@ -313,6 +354,24 @@ class MyWriterPipeline:
 			zahl += 1
 		MyFilesPipeline.common_store.persist_file(pfad_job, BytesIO(json_jobs.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
 		MyFilesPipeline.common_store.persist_file(pfad_index, BytesIO(json_index.encode(encoding='UTF-8')), info=None, ContentType='application/json', LogFlag=False)
+
+		# Nicht indexierte Requests fuer den taeglichen Nachhol-Job ablegen. Jede
+		# Datei ist ein vollstaendiger, unveraendert wiederholbarer POST-Body.
+		# 'neu' faellt nur an, wenn der initiale Drop scheiterte (= ganzer Lauf).
+		for nr, fr_body in enumerate(failed_requests, 1):
+			pfad_fail = (
+				"Indexing_failed/"+spider.name+"/Request_"+datestring+"_"
+				+spider.scrapy_job.replace("/","-")+"_"+str(nr).zfill(3)+".json"
+			)
+			MyFilesPipeline.common_store.persist_file(
+				pfad_fail, BytesIO(json.dumps(fr_body).encode(encoding='UTF-8')),
+				info=None, ContentType='application/json', LogFlag=False
+			)
+		if failed_requests:
+			logger.error(
+				f"Indexierung unvollstaendig: {len(failed_requests)} Request(s) nach "
+				f"Indexing_failed/{spider.name}/ geschrieben (Nachhol-Job re-postet sie)."
+			)
 
 				
 	def process_item(self, item, spider):
@@ -763,6 +822,27 @@ class PipelineHelper:
 		item['HTMLFiles']=[{'url': item['HTMLUrls'][0], 'path': html_pfad, 'checksum': checksum}]
 
 	@staticmethod
+	def is_pdf_body(body):
+		"""Prueft, ob ein Bytes-Body ein valides PDF darstellt. Akzeptiert
+		auch base64-kodierte PDFs (analog zur Logik in checkfile()).
+		Kriterium: '%%EOF' muss in den letzten 1024 Bytes des (ggf.
+		dekodierten) Bodys vorkommen. Wird von Retry-/Validierungs-
+		Middlewares (OopsRetryMiddleware) genutzt, um abgebrochene
+		oder falsch ausgelieferte PDFs zu erkennen."""
+		if not body:
+			return False
+		# Direkter Check: PDF endet typischerweise auf '%%EOF' + optional CR/LF
+		if b'%%EOF' in body[-1024:]:
+			return True
+		# Fallback: vielleicht base64-kodiert geliefert
+		buf = BytesIO(body)
+		ergebnis, neubuf = PipelineHelper.b64_decode(buf)
+		if not ergebnis:
+			return False
+		decoded = neubuf.getvalue()
+		return b'%%EOF' in decoded[-1024:]
+
+	@staticmethod
 	def b64_decode(buf):
 		"""Base64/Base64URL-decode `ba` in place. True on success, False on failure."""
 
@@ -794,7 +874,9 @@ class PipelineHelper:
 
 	@staticmethod
 	def checkfile(spider, path, buf, checksum,LogFlag):
-		scrapedate = datetime.datetime.now().strftime("%Y-%m-%d")
+		now_utc = datetime.datetime.utcnow()
+		scrapedate = now_utc.strftime("%Y-%m-%d")
+		scrapetime = now_utc.strftime("%H:%M:%S")
 		buf.seek(0)
 		neubuf=buf
 		if path[-4:]=='.pdf':
@@ -832,8 +914,13 @@ class PipelineHelper:
 							# Alle alten Scrapingdaten werden auf 1.1.2023 gesetzt
 							if 'scrapedate' in oldfile:
 								scrapedate=oldfile['scrapedate']
+								# scrapetime kann fehlen (Items aus älteren Läufen);
+								# in dem Fall bleibt es ungesetzt — keine erfundene
+								# Uhrzeit.
+								scrapetime=oldfile.get('scrapetime')
 							else:
 								scrapedate='2023-01-01'
+								scrapetime=None
 							if altstatus == "nicht_mehr_da":
 								neustatus="identisch_wieder_da"
 							else:
@@ -845,10 +932,12 @@ class PipelineHelper:
 								neustatus="anders_wieder_da"
 							else:
 								neustatus="update"
+			rec={'checksum': checksum, "status": neustatus, "scrapedate": scrapedate}
 			if last_change:
-				spider.files_written[path]={'checksum': checksum, "status": neustatus, "last_change": last_change, "scrapedate": scrapedate}
-			else:
-				spider.files_written[path]={'checksum': checksum, "status": neustatus, "scrapedate": scrapedate}
+				rec['last_change']=last_change
+			if scrapetime:
+				rec['scrapetime']=scrapetime
+			spider.files_written[path]=rec
 		return existiert_bereits, neubuf
 
 	@staticmethod
@@ -958,7 +1047,9 @@ class PipelineHelper:
 		if len(eintrag['Datum'])==4:
 			eintrag['Datum']+="-01-01"
 
-		scrapedate = datetime.datetime.now().strftime("%Y-%m-%d")	
+		now_utc = datetime.datetime.utcnow()
+		scrapedate = now_utc.strftime("%Y-%m-%d")
+		scrapetime = now_utc.strftime("%H:%M:%S")
 		if 'HTMLFiles' in item and item['HTMLFiles']:
 			#Gibt es bereits einen Eintrag für die Datei in der Jobs-Liste?
 			if spider.previous_run:
@@ -970,8 +1061,10 @@ class PipelineHelper:
 							# Alle alten Scrapingdaten werden auf 1.1.2023 gesetzt
 							if 'scrapedate' in oldfile:
 								scrapedate=oldfile['scrapedate']
+								scrapetime=oldfile.get('scrapetime')
 							else:
 								scrapedate='2023-01-01'
+								scrapetime=None
 			eintrag['HTML']={'Datei': item['HTMLFiles'][0]['path'], 'URL': item['HTMLFiles'][0]['url'], 'Checksum': item['HTMLFiles'][0]['checksum']}
 		if 'PDFFiles' in item and item['PDFFiles']:
 			#Gibt es bereits einen Eintrag für die Datei in der Jobs-Liste?
@@ -984,14 +1077,18 @@ class PipelineHelper:
 							# Alle alten Scrapingdaten werden auf 1.1.2023 gesetzt
 							if 'scrapedate' in oldfile:
 								scrapedate=oldfile['scrapedate']
+								scrapetime=oldfile.get('scrapetime')
 							else:
 								scrapedate='2023-01-01'
+								scrapetime=None
 			if not 'PDFUrls' in item:
 				logger.error(f"Item {item['Num']} hat keine PDFUrls in make_json aber PDFFiles: {json.dumps(item)} in make_json.")
 				eintrag['PDF']={'Datei': item['PDFFiles'][0]['path'], 'URL': item['PDFFiles'][0]['url'], 'Checksum': item['PDFFiles'][0]['checksum']}
 			else:
 				eintrag['PDF']={'Datei': item['PDFFiles'][0]['path'], 'URL': item['PDFUrls'][0], 'Checksum': item['PDFFiles'][0]['checksum']}
 		eintrag['Scrapedate']=scrapedate
+		if scrapetime:
+			eintrag['Scrapetime']=scrapetime
 		if 'Nums' in item:
 			eintrag['Num']=item['Nums']+zweitnum		
 		elif 'Num3' in item:
@@ -1248,14 +1345,6 @@ class PipelineHelper:
 class MyFilesPipeline(FilesPipeline):
 	common_store=None
 
-	# Unterdrückt die aggregierte ERROR-Zeile
-	# `[scrapy.pipelines.media] [Failure instance: Traceback: ...]` in
-	# MediaPipeline.item_completed. Echte Fehlerinformation bleibt durch
-	# RetryMiddleware (`Gave up retrying ... 500`) und durch die WARNINGs
-	# `File (code: 500)` / `File (unknown-error)` aus FilesPipeline
-	# erhalten — nur die redundante Aggregation entfällt.
-	LOG_FAILED_RESULTS = False
-
 	STORE_SCHEMES = {
 		'': FSFilesStore,
 		'file': FSFilesStore,
@@ -1359,9 +1448,36 @@ class MyFilesPipeline(FilesPipeline):
 			jar_id=item['CookieJar']
 			meta['cookiejar']=jar_id
 			logger.info(f"CookieJar für PDF: {jar_id}")
-			
+
+		# Zyte-Smart-Proxy-Session pro Item durchreichen, wenn vom Spider
+		# gesetzt (Rotation ueber BasisSpider.apply_rotation).
+		if "ZyteSession" in item and item["ZyteSession"]:
+			zyte = dict(meta.get("zyte_api") or {})
+			zyte["session"] = {"id": item["ZyteSession"]}
+			zyte["httpResponseHeaders"] = True
+			meta["zyte_api"] = zyte
+
+		# Opt-in fuer OopsRetryMiddleware (Retry bei kaputten PDF-Antworten).
+		if item.get("OopsRetry"):
+			meta["oops_retry"] = True
+
 		requests=[scrapy.Request(url=u, headers=headers, method=method, body=body, meta=meta, dont_filter=True) for u in urls]
 		return requests
+
+
+	def _log_exception(self, result):
+		# MediaPipeline._log_exception loggt jede Exception per
+		# logger.exception() als ERROR mit Traceback. Bei FileException
+		# ist das redundant: die zugehörigen WARNINGs werden bereits in
+		# FilesPipeline.media_failed/media_downloaded erzeugt
+		# (`File (code: 500)`, `File (error)`, `File (unknown-error)`).
+		# Echte 500er-Fehler bleiben über die RetryMiddleware
+		# (`Gave up retrying ... 500 Internal Server Error`) als ERROR
+		# sichtbar. Andere Exceptions (z.B. Bugs in file_downloaded)
+		# werden weiterhin vollständig geloggt.
+		if isinstance(result.value, FileException):
+			return result
+		return super()._log_exception(result)
 
 
 	def file_downloaded(self, response, request, info=None, item=None):
