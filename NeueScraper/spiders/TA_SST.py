@@ -53,7 +53,7 @@ class TA_SST(BasisSpider):
 		logger.info("parse_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_trefferliste Rohergebnis: "+antwort[:30000])
 
-		urteile=response.xpath("//a[@class='file pdf']")
+		urteile=response.xpath("//a[contains(concat(' ', normalize-space(@class), ' '), ' file ')][contains(translate(@href,'PDF','pdf'),'.pdf')]")
 		if len(urteile)==0:
 			logger.warning("Keine Entscheide gefunden.")
 		else:
