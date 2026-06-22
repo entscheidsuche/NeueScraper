@@ -34,7 +34,7 @@ class TA_SST(BasisSpider):
 		'Cache-Control': 'no-cache'
 	}
 	
-	reMeta=re.compile(r'(?P<az>[A-Z]+ 20[0-9][0-9][^ ]+) - [^0-9]+(?P<datum>.+)')
+	reMeta=re.compile(r'(?P<az>[A-Z]+ 20[0-9][0-9][^ ]+)\s*[-–—]\s*[^0-9]+(?P<datum>.+)')
 
 	
 	def request_generator(self):
@@ -64,6 +64,9 @@ class TA_SST(BasisSpider):
 				
 				metastring=entscheid.xpath("string(.)").get()
 				meta=self.reMeta.search(metastring)
+				if meta is None:
+					logger.warning("Metastring nicht parsebar, übersprungen: "+str(metastring))
+					continue
 
 				logger.info("Gefunden: "+url+" mit "+metastring)
 				logger.info("AZ: "+meta.group('az')+", Datum: "+meta.group('datum'))
