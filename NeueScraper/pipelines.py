@@ -113,7 +113,14 @@ class MyWriterPipeline:
 			gruppen.setdefault(base, {})[pfad] = meta
 		scraped = {}
 		for docid, files in gruppen.items():
-			dateien = {fn: (m.get('checksum') if isinstance(m, dict) else None) for fn, m in files.items()}
+			# Pro Datei Checksum UND Status (neu/geaendert/identisch), den checkfile
+			# aus alt_scrape ermittelt hat. Der Konsolidierer macht daraus die vollen
+			# Zustaende (nicht_mehr_da, *_wieder_da) anhand der Baseline.
+			dateien = {
+				fn: ({'checksum': m.get('checksum'), 'status': m.get('status')}
+				     if isinstance(m, dict) else {'checksum': None, 'status': None})
+				for fn, m in files.items()
+			}
 			quelle = next((m for fn, m in files.items() if fn.endswith('.json') and isinstance(m, dict)), None)
 			if quelle is None:
 				quelle = next((m for m in files.values() if isinstance(m, dict)), {})
@@ -672,7 +679,13 @@ class PipelineHelper:
 			neustatus='neu'
 			last_change=None
 			oldfile=spider.alt_scrape.get(path)
-			if oldfile and oldfile.get('checksum')==checksum:
+			if oldfile and oldfile.get('status')=='kaputt':
+				# Der Konsolidierer hat diese Datei als auf dem Server fehlend markiert
+				# (Feeder-404). Re-Upload ERZWINGEN: nie 'identisch', frisches Scrapedatum
+				# (oben gesetzt), damit der Konsolidierer eine Index-Op erzeugt.
+				neustatus="geaendert"
+				# existiert_bereits bleibt False -> persist_file schreibt die Datei.
+			elif oldfile and oldfile.get('checksum')==checksum:
 				# Unveraendert: Scrapedate/Scrapetime uebernehmen, damit die
 				# Datei (und die json-Checksum) ueber Laeufe hinweg stabil bleibt.
 				if oldfile.get('scrapedate'):
@@ -686,7 +699,7 @@ class PipelineHelper:
 				neustatus="identisch"
 				existiert_bereits=True
 			elif oldfile:
-				neustatus="update"
+				neustatus="geaendert"
 			rec={'checksum': checksum, "status": neustatus, "scrapedate": scrapedate}
 			if scrapetime:
 				rec['scrapetime'] = scrapetime

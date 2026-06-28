@@ -192,10 +192,13 @@ class ProxyAwareRedirectMiddleware(RedirectMiddleware):
 			"set_cookie": [v.decode("latin1") for v in response.headers.getlist(b"Set-Cookie")],
 		})
 
-		# Location über DEINEN bestehenden Wrapper führen (kein Doppel-Wrap, 
+		# Location über DEINEN bestehenden Wrapper führen (kein Doppel-Wrap,
 		# da deine proxyUrl() das bereits verhindert)
+		# line_proxy: lief der Request über eine bestimmte CH_BGE-Linie, wird der
+		# Redirect über DENSELBEN Proxy zurückgewrappt. Ohne line_proxy (None)
+		# bleibt es der bisherige Default-Proxy → weblaw u.a. unverändert.
 		if "ProxyUrls" in item and item["ProxyUrls"]:
-			redirected_url = spider.getProxyUrl(redirected_url)
+			redirected_url = spider.getProxyUrl(redirected_url, request.meta.get('line_proxy'))
 
 		# Folge-Request wie Upstream bauen (GET bei 302/303 etc.)
 		if response.status in (301, 307, 308) or request.method == "HEAD":

@@ -115,11 +115,21 @@ class BasisSpider(scrapy.Spider):
 		# lese erst einmal die Spiderdaten und danach werden die Spider in der request_gen geladen.
 		yield scrapy.Request(url=self.CSV_URL, callback=self.parse_gerichtsliste, errback=self.errback_httpbin)
 
-	def getProxyUrl(self,url):
+	def getProxyUrl(self,url,proxy=None):
+		"""Verpackt eine Ziel-URL für den scraping_proxy (base64url im stub).
+
+		``proxy`` ist optional und rückwärtskompatibel:
+		  - None  → bisheriges Verhalten, entscheidsuche-Default-Proxy
+		            (self.PROXY + SCRAPINGPROXY-Key). Für CH_BGer und alle
+		            anderen Spider unverändert.
+		  - str   → vollständige Proxy-Basis bis einschließlich '...&stub='
+		            (z.B. 'https://proxy.erbguth.net/request.php?scrapekey=KEY&stub=').
+		            Damit kann CH_BGE pro Linie einen eigenen Proxy wählen.
+		"""
 		logger.info(f"getProxyUrl aufgerufen mit {url}")
 		encoded = base64.urlsafe_b64encode(url.encode()).rstrip(b'=').decode()
-		proxyUrl=self.PROXY.format(self.crawler.settings.get('SCRAPINGPROXY'))+encoded
-		return proxyUrl
+		base = proxy if proxy is not None else self.PROXY.format(self.crawler.settings.get('SCRAPINGPROXY'))
+		return base + encoded
 
 	def parse_gerichtsliste(self, response):
 		logger.debug("parse_gerichtsliste response.status "+str(response.status))
@@ -441,6 +451,10 @@ class BasisSpider(scrapy.Spider):
 							"checksum": e["checksum"],
 							"scrapedate": e.get("scrapedate"),
 							"scrapetime": e.get("scrapetime"),
+							# 'kaputt' = der Konsolidierer hat festgestellt, dass diese Datei
+							# auf dem Server fehlt (Feeder-404). checkfile erzwingt damit den
+							# Re-Upload (kein Skip trotz gleicher Checksum).
+							"status": e.get("status"),
 						}
 				logger.info("Alt-Scrapedaten geladen: "+str(len(self.alt_scrape))+" Eintraege")
 			except Exception as ex:

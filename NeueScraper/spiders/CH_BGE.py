@@ -6,6 +6,7 @@ import logging
 import json
 import base64
 from scrapy.http.cookies import CookieJar
+from scrapy.http import HtmlResponse
 import datetime
 from NeueScraper.spiders.basis import BasisSpider
 from NeueScraper.pipelines import PipelineHelper as PH
@@ -15,6 +16,67 @@ import uuid
 import random
 
 logger = logging.getLogger(__name__)
+
+
+class CH_BGE_ProxyMiddleware:
+	"""CH_BGE-lokale Downloader-Middleware für das Proxy-Linien-Routing.
+
+	Wirkt NUR auf Requests mit meta['line_proxy']; alle anderen Requests und
+	alle anderen Spider bleiben unberührt. Solange der Spider keine Linien
+	setzt, ist die Middleware vollständig dormant (no-op).
+
+	process_request:
+	  - schreibt die Ziel-URL auf den Proxy der Linie um (getProxyUrl),
+	  - setzt den Cookie-Header aus dem Linien-Jar (manuelles Cookie-Handling,
+	    weil Scrapys CookiesMiddleware die .bger.ch-Cookies auf einer
+	    proxy.host-Antwort cross-domain verwerfen würde),
+	  - merkt sich die echte URL in meta['ch_real_url'].
+	process_response:
+	  - erntet Set-Cookie aus der Proxy-Antwort in den Linien-Jar,
+	  - setzt response.url auf die echte bger-URL zurück, damit urljoin /
+	    Parsing / Item-URLs (HTMLUrls → JSON) unverändert funktionieren.
+	"""
+
+	def process_request(self, request, spider):
+		line_proxy = request.meta.get('line_proxy')
+		if not line_proxy or request.meta.get('ch_proxified'):
+			return None
+		real_url = request.url
+		new_url = spider.getProxyUrl(real_url, line_proxy)
+		meta = dict(request.meta)
+		meta['ch_real_url'] = real_url
+		meta['ch_proxified'] = True
+		meta['dont_merge_cookies'] = True
+		new_req = request.replace(url=new_url, meta=meta, dont_filter=True)
+		ch_line = request.meta.get('ch_line')
+		store = getattr(spider, 'line_cookies', {}).get(ch_line) if ch_line is not None else None
+		if store:
+			cookie_header = '; '.join(f'{k}={v}' for k, v in store.items())
+			if cookie_header:
+				new_req.headers[b'Cookie'] = cookie_header.encode('latin1')
+		return new_req
+
+	def process_response(self, request, response, spider):
+		real_url = request.meta.get('ch_real_url')
+		if not real_url:
+			return response
+		ch_line = request.meta.get('ch_line')
+		store = getattr(spider, 'line_cookies', {}).get(ch_line) if ch_line is not None else None
+		if store is not None:
+			for raw in response.headers.getlist(b'Set-Cookie'):
+				try:
+					first = raw.decode('latin1').split(';', 1)[0].strip()
+					if '=' in first:
+						name, value = first.split('=', 1)
+						store[name.strip()] = value.strip()
+				except Exception:
+					pass
+		# response.url auf die echte bger-URL zurücksetzen UND als HtmlResponse
+		# erzwingen: über den Proxy kommt manchmal ein Content-Type, den Scrapy
+		# nicht als Text klassifiziert → sonst scheitert response.xpath() mit
+		# NotSupported. CH_BGE holt über den Proxy ausschließlich bger-HTML.
+		return response.replace(url=real_url, cls=HtmlResponse)
+
 
 class CH_BGE(BasisSpider):
 	name = 'CH_BGE'
@@ -233,18 +295,37 @@ class CH_BGE(BasisSpider):
 
 	BROWSER_PROFILES = _build_browser_profiles()
 	del _build_browser_profiles
-	# Lane-Architektur: N parallele "Lanes" mit eigener Zyte-Session, eigenem
-	# Cookie-Jar, eigenem Browser-Profil und eigenem Scrapy download_slot.
-	# Die Per-IP-Drossel (search.bger.ch: max. 1 Request pro 2s pro IP) wird
-	# über DOWNLOAD_DELAY=2 + slot-basierte Concurrency=1 enforced.
-	# Gesamtdurchsatz = LANE_COUNT × 0.5 req/s.
-	LANE_COUNT = 30
+	# Linien-Architektur (Stufe 1): genau N_LINES feste "Linien" (= Proxies).
+	# Jede Linie hat einen festen Proxy, eine feste Browser-Signatur, einen
+	# eigenen manuellen Cookie-Jar (self.line_cookies[idx], von der
+	# CH_BGE_ProxyMiddleware gepflegt) und einen eigenen download_slot.
+	# Per-IP-Drossel (max. 1 Request / 2s / IP) über DOWNLOAD_DELAY=2 +
+	# slot-basierte Concurrency=1. Gesamtdurchsatz = N_LINES × 0.5 req/s.
+	N_LINES = 3
+	LANE_COUNT = N_LINES   # Kompatibilität: lane_idx == line_idx (0..N_LINES-1)
+
+	# Eine Proxy-Basis pro Linie (bis einschließlich '...&stub='); {key} wird
+	# zur Laufzeit aus dem SCRAPINGPROXY-Setting gefüllt.
+	LINE_PROXY_TEMPLATES = [
+		'https://entscheidsuche.ch/scraping_proxy/request.php?scrapekey={key}&stub=',
+		'https://proxy.erbguth.net/request.php?scrapekey={key}&stub=',
+		'https://gemlabs.ch/proxy/request.php?scrapekey={key}&stub=',
+	]
+	# Feste Browser-Signatur pro Linie: je ein stabiler Index in BROWSER_PROFILES
+	# (Firefox / Chrome / Safari), damit jede Linie konsistent „dieselbe Person"
+	# bleibt (kein Profil-Wechsel pro Versuch).
+	LINE_PROFILE_IDX = [0, 50, 92]
+
+	# Headless-Solver bleibt im Code, wird aber in Stufe 1 NICHT verwendet
+	# (über die Proxy-Linien soll gar keine Imperva-Challenge anfallen).
+	HEADLESS_ENABLED = False
+
 	custom_settings = {
 		"COOKIES_ENABLED": True,
 		"COOKIES_DEBUG": True,
-		"DOWNLOAD_DELAY": .1,                       # 1 Request alle 2s pro Lane-Slot
+		"DOWNLOAD_DELAY": 2,                        # 1 Request alle 2s pro Linien-Slot
 		"RANDOMIZE_DOWNLOAD_DELAY": False,         # exakt 2s, kein Über-/Unterschreiten
-		"CONCURRENT_REQUESTS_PER_DOMAIN": 30,       # nicht pro Lane, sondern gesamt
+		"CONCURRENT_REQUESTS_PER_DOMAIN": 1,        # pro Linien-Slot genau 1 gleichzeitig
 		"CONCURRENT_REQUESTS": 100,                # genug Platz für alle Lanes parallel
 		"AUTOTHROTTLE_ENABLED": False,             # wir steuern explizit per Slot
 		"ZYTE_API_MAX_REQUESTS": 100,
@@ -261,6 +342,10 @@ class CH_BGE(BasisSpider):
 		# Diagnose-Middleware aktivieren: loggt Set-Cookie/Redirect/Short-200/Non-2xx,
 		# damit wir Cookie-Resets und Bot-Challenges vor den eigentlichen Fehlern sehen.
 		"DOWNLOADER_MIDDLEWARES": {
+			# Proxy-Linien-Routing: läuft früh (process_request zuerst, da
+			# kleinste Zahl) und setzt response.url zuletzt zurück. Dormant,
+			# solange kein Request meta['line_proxy'] trägt.
+			"NeueScraper.spiders.CH_BGE.CH_BGE_ProxyMiddleware": 585,
 			"scrapy.downloadermiddlewares.redirect.RedirectMiddleware": 600,
 			"NeueScraper.middlewares.ProxyAwareRedirectMiddleware": 601,
 			"NeueScraper.middlewares.CookieDiagnoseMiddleware": 850,
@@ -288,6 +373,22 @@ class CH_BGE(BasisSpider):
 	def _pick_browser_profile(self):
 		"""Liefert ein zufällig gewähltes Browser-Profil aus BROWSER_PROFILES."""
 		return random.choice(self.BROWSER_PROFILES)
+
+	# --- Linien-Helfer (Stufe 1) -------------------------------------------
+	def _line_proxy(self, line_idx):
+		"""Vollständige Proxy-Basis der Linie (bis '...&stub='), Key eingesetzt."""
+		key = self.crawler.settings.get('SCRAPINGPROXY')
+		return self.LINE_PROXY_TEMPLATES[line_idx % self.N_LINES].format(key=key)
+
+	def _line_profile(self, line_idx):
+		"""Feste Browser-Signatur der Linie (stabil, kein Zufall)."""
+		return self.BROWSER_PROFILES[self.LINE_PROFILE_IDX[line_idx % self.N_LINES]]
+
+	def _line_jar(self, line_idx):
+		"""Stabile Jar-ID der Linie. Der echte Cookie-Store ist
+		self.line_cookies[line_idx] (von der CH_BGE_ProxyMiddleware gepflegt);
+		die Jar-ID dient nur als Meta-Schlüssel/Logging."""
+		return f"line_{line_idx}"
 
 	def _safe_response_text(self, response):
 		"""Robuste Variante von response.text: fällt bei Responses ohne
@@ -322,14 +423,18 @@ class CH_BGE(BasisSpider):
 		download_slot=lane_id (konstant für 2s-Drossel pro IP).
 		cookiejar=jar_id (an session_id gebunden, wechselt mit der IP).
 		session_id und browser_profile werden bei jedem Versuch frisch gezogen."""
-		lane_id = self._lane_id(lane_idx)
-		session_id = self._new_session_id()
-		jar_id = self._jar_for_session(session_id)
-		profile = self._pick_browser_profile()
+		line_idx = lane_idx % self.N_LINES
+		lane_id = self._lane_id(line_idx)
+		jar_id = self._line_jar(line_idx)
+		line_proxy = self._line_proxy(line_idx)
+		profile = self._line_profile(line_idx)
 		headers = dict(profile['headers'])
+		# Frischer Warm-up dieser Linie: alten Cookie-Store leeren, damit der
+		# INITIAL eine saubere Imperva-Session etabliert.
+		self.line_cookies[line_idx] = {}
 		logger.info(
-			f"Lane {lane_idx} Initial-Request Versuch={versuch} slot={lane_id} "
-			f"jar={jar_id} session={session_id} profil={profile['browser']} groups={len(lane_groups)}"
+			f"Linie {line_idx} Initial-Request Versuch={versuch} slot={lane_id} "
+			f"jar={jar_id} profil={profile['browser']} groups={len(lane_groups)}"
 		)
 		return scrapy.Request(
 			url=self.HOST + self.INITIAL_URL,
@@ -339,13 +444,14 @@ class CH_BGE(BasisSpider):
 			dont_filter=True,
 			meta={
 				'cookiejar': jar_id,
-				'lane_idx': lane_idx,
+				'lane_idx': line_idx,
 				'lane_id': lane_id,
 				'jar_id': jar_id,
 				'lane_groups': lane_groups,
 				'versuch': versuch,
-				'session_id': session_id,
-				'zyte_api': {'session': {'id': session_id}, 'httpResponseHeaders': True},
+				# Proxy-Linien-Routing (CH_BGE_ProxyMiddleware):
+				'ch_line': line_idx,
+				'line_proxy': line_proxy,
 				'handle_httpstatus_list': [502],
 				'browser_profile': profile['browser'],
 				'browser_headers': headers,
@@ -409,7 +515,7 @@ class CH_BGE(BasisSpider):
 		lane_id = lane_meta['lane_id']
 		lane_idx = lane_meta['lane_idx']
 		jar_id = lane_meta['jar_id']
-		session_id = lane_meta['session_id']
+		line_proxy = lane_meta['line_proxy']
 		profile_name = lane_meta['browser_profile']
 		headers = lane_meta['browser_headers']
 
@@ -420,8 +526,9 @@ class CH_BGE(BasisSpider):
 			'jar_id': jar_id,
 			'group': group,
 			'versuch': versuch,
-			'session_id': session_id,
-			'zyte_api': {'session': {'id': session_id}, 'httpResponseHeaders': True},
+			# Proxy-Linien-Routing (CH_BGE_ProxyMiddleware):
+			'ch_line': lane_idx,
+			'line_proxy': line_proxy,
 			'handle_httpstatus_list': [502],
 			'browser_profile': profile_name,
 			'browser_headers': headers,
@@ -437,8 +544,8 @@ class CH_BGE(BasisSpider):
 			url = self.HOST + self.EGMR_URL
 			callback = self.parse_EGMR_trefferliste
 		logger.info(
-			f"Trefferliste Lane {lane_idx} Gruppe {group} Versuch={versuch} "
-			f"jar={jar_id} session={session_id} profil={profile_name}"
+			f"Trefferliste Linie {lane_idx} Gruppe {group} Versuch={versuch} "
+			f"jar={jar_id} profil={profile_name}"
 		)
 		return scrapy.Request(
 			url=url, headers=headers,
@@ -447,22 +554,30 @@ class CH_BGE(BasisSpider):
 		)
 
 	def _retry_trefferliste(self, response, grund):
-		"""Trefferliste scheiterte → kompletter Neustart für nur diese eine Gruppe:
-		neue Zyte-Session, neuer Jar, frischer INITIAL-Request, danach diese
-		eine Trefferliste. Damit bleiben Cookies und IP atomar gepaart."""
+		"""Trefferliste scheiterte → erneuter Trefferlisten-Request auf DERSELBEN
+		Linie, unter Wiederverwendung der bereits warmen Linien-Cookies. (Stufe 1:
+		kein erneutes INITIAL/Warm-up, das würde die Linien-Cookies leeren und
+		parallel laufende Gruppen derselben Linie stören. Linien-/IP-Rotation und
+		Cooldown kommen in Stufe 2.)"""
 		group = response.meta['group']
 		lane_idx = response.meta['lane_idx']
 		versuch = response.meta.get('versuch', 1)
 		if versuch >= self.MAX_VERSUCHE:
-			logger.error(f"Trefferliste Lane {lane_idx} Gruppe {group} nach {versuch} Versuchen verworfen ({grund}).")
+			logger.error(f"Trefferliste Linie {lane_idx} Gruppe {group} nach {versuch} Versuchen verworfen ({grund}).")
 			return None
 		logger.warning(
-			f"Trefferliste Lane {lane_idx} Gruppe {group} Versuch {versuch} fehlgeschlagen ({grund}); "
-			f"starte Versuch {versuch+1} mit frischer Session+Jar (über INITIAL)."
+			f"Trefferliste Linie {lane_idx} Gruppe {group} Versuch {versuch} fehlgeschlagen ({grund}); "
+			f"starte Versuch {versuch+1} auf derselben Linie (warme Cookies)."
 		)
-		# Frischer Initial-Request, der NUR diese eine Gruppe als lane_groups hat.
-		# parse_cookie wird daraufhin nur eine einzige Trefferliste yielden.
-		return self._build_lane_initial_request(lane_idx, [group], versuch + 1)
+		lane_meta = {
+			'lane_idx': lane_idx,
+			'lane_id': response.meta.get('lane_id', self._lane_id(lane_idx)),
+			'jar_id': response.meta.get('jar_id', self._line_jar(lane_idx)),
+			'line_proxy': response.meta.get('line_proxy', self._line_proxy(lane_idx)),
+			'browser_profile': response.meta.get('browser_profile'),
+			'browser_headers': response.meta.get('browser_headers') or self.HEADER,
+		}
+		return self._build_trefferliste_request(group, lane_meta, versuch + 1)
 
 	def errback_trefferliste(self, failure):
 		"""Errback für Trefferlisten-Requests."""
@@ -495,7 +610,7 @@ class CH_BGE(BasisSpider):
 		lane_groups = response.meta['lane_groups']
 		versuch = response.meta['versuch']
 		jar_id = response.meta['jar_id']
-		session_id = response.meta['session_id']
+		line_proxy = response.meta['line_proxy']
 
 		if response.status == 502:
 			retry = self._retry_lane_initial(lane_idx, lane_groups, versuch, "502 auf Initial")
@@ -503,10 +618,11 @@ class CH_BGE(BasisSpider):
 				yield retry
 			return
 
-		# Imperva-Challenge erkennen → Subsystem-Loop
-		if self.headless.is_enabled() and self.headless.is_imperva_challenge(response):
+		# Imperva-Challenge erkennen → Subsystem-Loop (in Stufe 1 deaktiviert;
+		# über die Proxy-Linien soll keine Challenge anfallen).
+		if self.HEADLESS_ENABLED and self.headless.is_enabled() and self.headless.is_imperva_challenge(response):
 			logger.warning(
-				f"parse_cookie Lane={lane_idx}: Imperva-Challenge erkannt "
+				f"parse_cookie Linie={lane_idx}: Imperva-Challenge erkannt "
 				f"(status={response.status} len={len(self._safe_response_text(response) or '')}), "
 				f"delegiere an Subsystem"
 			)
@@ -521,29 +637,22 @@ class CH_BGE(BasisSpider):
 
 		antwort = self._safe_response_text(response)
 		logger.info(
-			f"parse_cookie Lane={lane_idx} jar={jar_id} session={session_id} "
+			f"parse_cookie Linie={lane_idx} jar={jar_id} "
 			f"status={response.status} len={len(antwort)} groups={len(lane_groups)} URL={response.url}"
 		)
 		logger.debug("parse_cookie Rohergebnis: " + antwort[:30000])
-		try:
-			cm = next(mw for mw in self.crawler.engine.downloader.middleware.middlewares
-			          if isinstance(mw, CookiesMiddleware))
-			cookies = json.dumps(
-				[{"name": c.name, "value": c.value, "domain": c.domain, "path": c.path,
-				  "expires": c.expires, "secure": c.secure, "discard": c.discard,
-				  "rest": getattr(c, "_rest", {})} for c in cm.jars[jar_id]],
-				ensure_ascii=False)
-			logger.info(f"Cookies(Lane {lane_idx}, jar={jar_id}): {cookies}")
-		except Exception as e:
-			logger.warning(f"Cookies konnten nicht geloggt werden: {e!r}")
+		# Cookies kommen jetzt aus dem manuellen Linien-Store (von der
+		# CH_BGE_ProxyMiddleware aus Set-Cookie befüllt), nicht aus der
+		# Scrapy-CookiesMiddleware (die sie über den Proxy cross-domain verwirft).
+		logger.info(f"Cookies(Linie {lane_idx}): {json.dumps(self.line_cookies.get(lane_idx, {}), ensure_ascii=False)}")
 
-		# Lane-Meta zusammenstellen: jar_id und session_id sind atomar gepaart;
-		# alle Folge-Requests dieser Lane benutzen genau dieses Paar.
+		# Linien-Meta zusammenstellen: alle Folge-Requests dieser Linie laufen
+		# über denselben Proxy (line_proxy) und denselben Cookie-Store (ch_line).
 		lane_meta = {
 			'lane_idx': lane_idx,
 			'lane_id': lane_id,
 			'jar_id': jar_id,
-			'session_id': session_id,
+			'line_proxy': line_proxy,
 			'browser_profile': response.meta.get('browser_profile'),
 			'browser_headers': response.meta.get('browser_headers') or self.HEADER,
 		}
@@ -557,6 +666,11 @@ class CH_BGE(BasisSpider):
 		super().__init__()
 		self.neu=neu
 		self.ab=ab
+		# Manueller Cookie-Store pro Linie (name->value). Wird von der
+		# CH_BGE_ProxyMiddleware aus Set-Cookie gefüllt und als Cookie-Header
+		# wieder mitgeschickt, weil Scrapys CookiesMiddleware die .bger.ch-
+		# Cookies über den Proxy (cross-domain) verwerfen würde.
+		self.line_cookies = {i: {} for i in range(self.N_LINES)}
 
 	def parse_trefferliste(self, response):
 		logger.info("parse_trefferliste response.status "+str(response.status)+" URL: "+response.url)
@@ -567,7 +681,7 @@ class CH_BGE(BasisSpider):
 			return
 
 		# Imperva-Challenge erkennen → Subsystem-Loop
-		if self.headless.is_enabled() and self.headless.is_imperva_challenge(response):
+		if self.HEADLESS_ENABLED and self.headless.is_enabled() and self.headless.is_imperva_challenge(response):
 			logger.warning(
 				f"parse_trefferliste Lane={response.meta.get('lane_idx')}: "
 				f"Imperva-Challenge erkannt (status={response.status} "
@@ -588,9 +702,10 @@ class CH_BGE(BasisSpider):
 		jahr=response.meta['Jahr']
 		volume=response.meta['Volume']
 		jar_id=response.meta['jar_id']
-		session_id=response.meta.get('session_id')
+		line_proxy=response.meta.get('line_proxy')
+		ch_line=response.meta.get('ch_line')
 		lane_id=response.meta.get('lane_id', jar_id)
-		logger.info(f"parse_trefferliste Lane={response.meta.get('lane_idx')} jar={jar_id}")
+		logger.info(f"parse_trefferliste Linie={response.meta.get('lane_idx')} jar={jar_id}")
 
 		# Browser-Profil der Lane weiterverwenden
 		browser_headers = dict(response.meta.get('browser_headers') or self.HEADER)
@@ -603,21 +718,20 @@ class CH_BGE(BasisSpider):
 			logger.info("Liste von {} Urteilen".format(len(urteile))+" für "+str(jahr)+" Volume "+volume)
 
 			def _sub_meta(extra):
-				# Sub-Requests laufen mit demselben (jar_id, session_id)-Paar wie
-				# die Trefferliste — Cookie ↔ IP bleibt atomar gekoppelt.
-				# download_slot=lane_id für die 2s-Drossel pro IP.
+				# Sub-Requests laufen über denselben Proxy (line_proxy) und
+				# Cookie-Store (ch_line) wie die Trefferliste — Cookie ↔ IP
+				# bleibt gekoppelt. download_slot=lane_id für die 2s-Drossel.
 				m = {
 					'cookiejar': jar_id,
 					'jar_id': jar_id,
+					'ch_line': ch_line,
+					'line_proxy': line_proxy,
 					'browser_profile': browser_profile,
 					'browser_headers': browser_headers,
 					'download_slot': lane_id,
 					'lane_id': lane_id,
 					'lane_idx': response.meta.get('lane_idx'),
 				}
-				if session_id:
-					m['session_id'] = session_id
-					m['zyte_api'] = {'session': {'id': session_id}, 'httpResponseHeaders': True}
 				m.update(extra)
 				return m
 
@@ -654,9 +768,10 @@ class CH_BGE(BasisSpider):
 		logger.info("parse_EGMR_trefferliste Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.debug("parse_EGMR_trefferliste Rohergebnis: "+antwort[:30000])
 		jar_id=response.meta['jar_id']
-		session_id=response.meta.get('session_id')
+		line_proxy=response.meta.get('line_proxy')
+		ch_line=response.meta.get('ch_line')
 		lane_id=response.meta.get('lane_id', jar_id)
-		logger.info(f"parse_EGMR_trefferliste Lane={response.meta.get('lane_idx')} jar={jar_id}")
+		logger.info(f"parse_EGMR_trefferliste Linie={response.meta.get('lane_idx')} jar={jar_id}")
 
 		# Browser-Profil der Lane weiterverwenden
 		browser_headers = dict(response.meta.get('browser_headers') or self.HEADER)
@@ -669,19 +784,19 @@ class CH_BGE(BasisSpider):
 			logger.info("Liste von {} EGMR-Urteilen.".format(len(urteile)))
 
 			def _sub_meta(extra):
-				# Sub-Requests in derselben (jar, session)-Bindung; download_slot=lane_id für 2s-Drossel.
+				# Sub-Requests über denselben Proxy/Cookie-Store wie die
+				# Trefferliste; download_slot=lane_id für 2s-Drossel.
 				m = {
 					'cookiejar': jar_id,
 					'jar_id': jar_id,
+					'ch_line': ch_line,
+					'line_proxy': line_proxy,
 					'browser_profile': browser_profile,
 					'browser_headers': browser_headers,
 					'download_slot': lane_id,
 					'lane_id': lane_id,
 					'lane_idx': response.meta.get('lane_idx'),
 				}
-				if session_id:
-					m['session_id'] = session_id
-					m['zyte_api'] = {'session': {'id': session_id}, 'httpResponseHeaders': True}
 				m.update(extra)
 				return m
 
@@ -717,7 +832,7 @@ class CH_BGE(BasisSpider):
 		logger.info("parse_regeste response.status "+str(response.status)+": "+response.url)
 
 		# Imperva-Challenge erkennen → Subsystem-Loop
-		if self.headless.is_enabled() and self.headless.is_imperva_challenge(response):
+		if self.HEADLESS_ENABLED and self.headless.is_enabled() and self.headless.is_imperva_challenge(response):
 			logger.warning(
 				f"parse_regeste: Imperva-Challenge erkannt "
 				f"(status={response.status} len={len(self._safe_response_text(response) or '')}), "
@@ -837,7 +952,7 @@ class CH_BGE(BasisSpider):
 		logger.info("parse_document response.status "+str(response.status))
 
 		# Imperva-Challenge erkennen → Subsystem-Loop
-		if self.headless.is_enabled() and self.headless.is_imperva_challenge(response):
+		if self.HEADLESS_ENABLED and self.headless.is_enabled() and self.headless.is_imperva_challenge(response):
 			logger.warning(
 				f"parse_document: Imperva-Challenge erkannt "
 				f"(status={response.status} len={len(self._safe_response_text(response) or '')}), "
