@@ -116,8 +116,8 @@ class VD_FindInfoSpider(BasisSpider):
 			item['Num']=PH.NC(entscheid['decisionHit']['affaireHit']['numero'],error=f"keine Geschäftsnummer in {json.dumps(entscheid)}")
 			if entscheid['decisionHit']['resume']:
 				item['Leitsatz']=PH.NC(entscheid['décisionHit']['resume'],warning=f"Fehler beim Abstract in {json.dumps(entscheid)}")
-			item['EDATUM']=PH.NC(entscheid['decisionHit']['dateDecision'],warning=f"kein Entscheiddatum in {json.dumps(entscheid)}")
-			item['PDATUM']=PH.NC(entscheid['decisionHit']['datePublication'],warning=f"kein Publikationsdatum in {json.dumps(entscheid)}")
+			item['EDatum']=PH.NC(self.norm_datum(entscheid['decisionHit']['dateDecision']),warning=f"kein Entscheiddatum in {json.dumps(entscheid)}")
+			item['PDatum']=PH.NC(self.norm_datum(entscheid['decisionHit']['datePublication']),warning=f"kein Publikationsdatum in {json.dumps(entscheid)}")
 			item['Titel']=PH.NC(entscheid['decisionHit']['natureAffaire'],warning=f"kein Titel in {json.dumps(entscheid)}")
 			item['PDFUrls']=[self.HOST+self.PDF_URL+item['DocID']]
 			kurz=PH.NC(entscheid['decisionHit']['affaireHit']['autoriteDirectrice'],warning=f"keine Kammer erkannt in {json.dumps(entscheid)}")
