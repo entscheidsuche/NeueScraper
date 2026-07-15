@@ -24,7 +24,7 @@ class NE_Omni(BasisSpider):
 		'DOWNLOAD_DELAY': 1
 	}
 	ERSATZ_SUCH_URL='/ne_helper/suche.php'
-	ERSATZ_HOST='https://entscheidsuche.ch'
+	ERSATZ_HOST='https://alt.entscheidsuche.ch'
 	ERSATZ_GET_HTML='/ne_helper/get_html.php'
 	SUCH_URL='/scripts/omnisapi.dll'
 	HOST ="https://jurisprudence.ne.ch"
