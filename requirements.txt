@@ -3,5 +3,6 @@ pysftp==0.2.9             # Drop-in-Ersatz für veraltetes pysftp
 paramiko>=2.12,<3         # zieht cryptography <42 automatisch
 cryptography>=41,<42        # kompatibel zu Paramiko 2.x
 pycryptodomex>=3.20,<4
+pdfminer.six>=20221105    # CH_UNIBE: Urteilsdatum aus der PDF-Textebene (rein Python)
 
 
