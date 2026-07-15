@@ -16,6 +16,8 @@ class CH_BVGer(BasisSpider):
 	name = 'CH_BVGer'
 	MINIMUM_PAGE_LEN = 148
 	START_JAHR = 2007
+	PARALLEL_JAHRE = 5		# Anzahl gleichzeitig gescrapter Jahrgänge (Fenster)
+	PAGE_PRIORITY = 10		# Folgeseiten bevorzugen, damit keine Session in der Queue verhungert (Session-Timeout!)
 
 	START_URL='https://www.bvger.ch/bvger/de/home/rechtsprechung/entscheiddatenbank-bvger.html'
 	SUCH_URL='https://jurispub.admin.ch/publiws/block/send-receive-updates;jsessionid='
@@ -62,14 +64,21 @@ class CH_BVGer(BasisSpider):
 		for j in jahre:
 			ab_string="01.01."+str(j)
 			bis_string="31.12."+str(j)
-			req=scrapy.Request(url=self.JSESSION_URL+"&"+str(j), callback=self.parse_suchform, errback=self.errback_httpbin, meta={'ab':ab_string, 'bis':bis_string})
-			req.meta['dont_cache']=True	
+			req=scrapy.Request(url=self.JSESSION_URL+"&"+str(j), callback=self.parse_suchform, errback=self.errback_bvger, meta={'ab':ab_string, 'bis':bis_string})
+			req.meta['dont_cache']=True
 			self.requeststack.append(req)
-		request=self.get_next_request()
-		return [request]
-		
-		
-	# Um Blockaden auszuweichen, verschiedene Jahre hintereinander scrapen
+		# Fenster von PARALLEL_JAHRE Jahrgängen gleichzeitig starten,
+		# weitere rücken nach, sobald ein Jahrgang fertig ist oder abbricht
+		requests=[]
+		while len(requests)<self.parallel_jahre:
+			request=self.get_next_request()
+			if not request:
+				break
+			requests.append(request)
+		return requests
+
+
+	# Um Blockaden auszuweichen, nur PARALLEL_JAHRE Jahrgänge gleichzeitig scrapen
 	def get_next_request(self):
 		request=None
 		if len(self.requeststack)>0:
@@ -77,16 +86,26 @@ class CH_BVGer(BasisSpider):
 			del self.requeststack[0]
 		return request
 		
-	def __init__(self,ab=None,bis=None,neu=None):
+	def __init__(self,ab=None,bis=None,neu=None,parallel=None):
 		super().__init__()
 		self.ab = ab
 		self.bis = bis
 		self.neu = neu
+		self.parallel_jahre = int(parallel) if parallel else self.PARALLEL_JAHRE
 		self.request_gen = self.request_generator(ab, bis)
+
+	def errback_bvger(self, failure):
+		"""Wie errback_httpbin, lässt aber den nächsten Jahrgang nachrücken,
+		damit das Fenster paralleler Jahrgänge nicht schrumpft."""
+		self.errback_httpbin(failure)
+		request=self.get_next_request()
+		if request:
+			yield request
 
 	def parse_suchform(self,response):
 		ab=response.meta['ab']
 		bis=response.meta['bis']
+		gestartet=False
 		logger.info("Suchanfrage_von_bis "+ab+"-"+bis+" Rohergebnis: "+str(len(response.body))+" Zeichen")
 		logger.info("Body: "+response.text)
 		if response.status == 200 and len(response.body) > self.MINIMUM_PAGE_LEN:
@@ -112,11 +131,17 @@ class CH_BVGer(BasisSpider):
 							jSession=ergebnis.group(0)
 							logger.info("JsessionId: "+ jSession)
 						
-			if iceSession and jSession:  
+			if iceSession and jSession:
 				req_body='ice.submit.partial=true&ice.event.target=form%3AcalFrom&ice.event.captured=form%3AcalFrom&ice.event.type=onblur&form%3A_idform%3AcalTosp=&form%3A_idform%3AcalFromsp=&form%3A_idcl=&form%3Aform%3Atree_idtn=&form%3Aform%3Atree_idta=&form%3AcalTo='+bis+'&form%3AcalFrom='+ab+'&form%3AsearchQuery=&javax.faces.RenderKitId=&javax.faces.ViewState=1&icefacesCssUpdates=&form=&ice.session='+iceSession+'&ice.view=1&ice.focus=&rand=0.'+str(random.randint(1000000000000000,9999999999999999))
-				req=scrapy.Request(url=self.SUCH_URL+jSession, method='POST', headers=self.HEADERS, body=req_body, callback=self.intermediate_trefferliste, errback=self.errback_httpbin, meta={'ab':ab, 'bis':bis, 'jSession':jSession, 'iceSession':iceSession})
-			yield(req)
-					
+				req=scrapy.Request(url=self.SUCH_URL+jSession, method='POST', headers=self.HEADERS, body=req_body, callback=self.intermediate_trefferliste, errback=self.errback_bvger, priority=self.PAGE_PRIORITY, meta={'ab':ab, 'bis':bis, 'jSession':jSession, 'iceSession':iceSession})
+				yield(req)
+				gestartet=True
+		if not gestartet:
+			logger.error("Keine Session für "+ab+"-"+bis+" erhalten, Jahrgang wird übersprungen")
+			request=self.get_next_request()
+			if request:
+				yield request
+
 	def intermediate_trefferliste(self,response):
 		logger.debug("Intermediate Trefferliste Rohergebnis "+str(len(response.body))+" Zeichen")
 		antwort=response.text
@@ -127,7 +152,7 @@ class CH_BVGer(BasisSpider):
 		bis=response.meta['bis']
 		
 		req_body='ice.submit.partial=true&ice.event.target=form%3AsearchSubmitButton&ice.event.captured=form%3AsearchSubmitButton&ice.event.type=onclick&ice.event.alt=false&ice.event.ctrl=false&ice.event.shift=false&ice.event.meta=false&ice.event.x=72&ice.event.y=252&ice.event.left=false&ice.event.right=false&form%3A_idform%3AcalTosp=&form%3A_idform%3AcalFromsp=&form%3A_idcl=&form%3Aform%3Atree_idtn=&form%3Aform%3Atree_idta=&form%3AcalTo='+bis+'&form%3AcalFrom='+ab+'&form%3AsearchQuery=&javax.faces.RenderKitId=&javax.faces.ViewState=1&icefacesCssUpdates=&form=&form%3AsearchSubmitButton=suchen&ice.session='+iceSession+'&ice.view=1&ice.focus=form%3AsearchSubmitButton&rand=0.'+str(random.randint(1000000000000000,9999999999999999))
-		req=scrapy.Request(url=self.SUCH_URL+jSession, method='POST', headers=self.HEADERS, body=req_body, callback=self.trefferliste, errback=self.errback_httpbin, meta=response.meta)
+		req=scrapy.Request(url=self.SUCH_URL+jSession, method='POST', headers=self.HEADERS, body=req_body, callback=self.trefferliste, errback=self.errback_bvger, priority=self.PAGE_PRIORITY, meta=response.meta)
 		yield(req)
 
 
@@ -136,7 +161,8 @@ class CH_BVGer(BasisSpider):
 		antwort=response.text
 		logger.debug("Body: "+antwort)
 		#Antwort HTML kommt als CDATA daher kein XPATH hier
-		
+
+		jahrgang_fertig=False
 		trefferzahl=self.reTrefferzahl.search(antwort)
 		if trefferzahl:
 			logger.info(trefferzahl[1]+" Treffer, Treffer "+trefferzahl[2]+"-"+trefferzahl[3]+", Seite "+trefferzahl[4]+" von "+trefferzahl[5])
@@ -179,18 +205,26 @@ class CH_BVGer(BasisSpider):
 				
 					body='ice.submit.partial=true&ice.event.target=form%3Aj_id67&ice.event.captured=form%3Aj_id63next&ice.event.type=onclick&ice.event.alt=false&ice.event.ctrl=false&ice.event.shift=false&ice.event.meta=false&ice.event.x=171&ice.event.y=502&ice.event.left=false&ice.event.right=false&form%3A_idcl=&form%3Aj_id63next&form%3Aj_id63=next&javax.faces.RenderKitId=&javax.faces.ViewState=1&icefacesCssUpdates=&form=form&ice.session='+iceSession+'&ice.view=1&ice.focus=form%3Aj_id63next&rand=0.'+str(random.randint(1000000000000000,9999999999999999))
 					logger.debug('body: '+body)
-					req=scrapy.Request(url=self.SUCH_URL+jSession, method='POST', headers=self.HEADERS, body=body.encode('ascii'), callback=self.trefferliste, errback=self.errback_httpbin, meta=response.meta)
+					req=scrapy.Request(url=self.SUCH_URL+jSession, method='POST', headers=self.HEADERS, body=body.encode('ascii'), callback=self.trefferliste, errback=self.errback_bvger, priority=self.PAGE_PRIORITY, meta=response.meta)
 					yield(req)
 				else:
-					logger.debug("Fertig!")	
+					logger.debug("Fertig!")
+					jahrgang_fertig=True
 			else:
 				logger.error("kein Treffer gematched")
+				jahrgang_fertig=True
 		else:
 			if 'style="color: red;">Kein Suchtreffer!</span>' in antwort:
 				logger.info("Suche ergab keine Treffer.")
 			else:
 				logger.error("Konnte keine Trefferzahl erkennen: "+antwort)
-		request=self.get_next_request()
-		if request:
-			yield request
+			jahrgang_fertig=True
+		# Erst wenn ein Jahrgang fertig ist (oder abbricht), rückt der nächste nach.
+		# Vorher wurde hier nach JEDER Seite ein neuer Jahrgang gestartet, so dass
+		# alle Jahrgänge parallel liefen und einzelne Paginierungs-Requests in der
+		# Scheduler-Queue länger als das Server-Session-Timeout hingen (<session-expired/>).
+		if jahrgang_fertig:
+			request=self.get_next_request()
+			if request:
+				yield request
 
