@@ -24,7 +24,7 @@ class ZG_Obergericht(TribunaSpider):
 			  }
 
 	MINIMUM_PAGE_LEN = 100
-	DOWNLOAD_URL = 'https://entscheidsuche.ch/zg_helper/download.php?pfad=/tribunavtplus/ServletDownload/'
+	DOWNLOAD_URL = 'https://alt.entscheidsuche.ch/zg_helper/download.php?pfad=/tribunavtplus/ServletDownload/'
 	PDF_PATTERN = "{}{}?path={}&pathIsEncrypted=1&dossiernummer={}"
 	ENCRYPTED = True
 
