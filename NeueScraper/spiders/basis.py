@@ -276,11 +276,13 @@ class BasisSpider(scrapy.Spider):
 		item= { 'Facetten': json_content}
 		yield(item)
 
-		htaccess="Options +Indexes\n"
-		htaccess+="Header set Access-Control-Allow-Origin *\n"
-		htaccess+="RewriteEngine On\n"
-		htaccess+="RewriteBase /\n"
-		htaccess+='RewriteRule "^Facetten.json" "/docs/facetten.php" [L]\n'
+		htaccess="""
+		Options +Indexes
+		Header set Access-Control-Allow-Origin *
+		RewriteEngine On
+		RewriteBase /
+		RewriteRule "^Facetten.json" "/docs/facetten.php" [L]
+		"""
 		# Hinweis: Die Rewrites fuer "^Index/<spider>/last$" und "^Jobs/<spider>/last$"
 		# stehen jetzt in eigenstaendigen, statischen .htaccess-Dateien unter
 		# /docs/Index/.htaccess bzw. /docs/Jobs/.htaccess. Damit sind sie immun gegen
