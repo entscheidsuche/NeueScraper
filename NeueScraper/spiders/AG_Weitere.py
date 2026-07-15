@@ -20,6 +20,11 @@ class AG_Weitere(BasisSpider):
 	
 	reMeta=re.compile(r"(?P<Typ>[^ ]+) de(?:s|r)\s+(?P<Gericht>.+)\s+vom\s+(?P<Datum>\d+\.\s+(?:"+"|".join(BasisSpider.MONATEde)+")\s+\d\d\d\d)")
 	reMetaTable=re.compile(r"(?P<Titel>^[^\(]+)\s+\((?P<K1>[^\(]+)\)\s+\((?P<K2>[^\(]+)\)")
+	# Ein echtes AGVE-Aktenzeichen (z.B. "AGVE 2001 S. 563 Nr. 122") ist eindeutig -> ID
+	# wie bisher. Alles andere (z.B. Paragraphen-Titel "§ 10 GBAG; Zusammenrechnung...")
+	# ist NICHT eindeutig: mehrere verschiedene Entscheide tragen denselben Titel + dasselbe
+	# Datum -> Dokument-ID-Kollision. Dann den stabilen, eindeutigen PDF-Dateinamen nehmen.
+	reAktenzeichen=re.compile(r"AGVE\s+\d+\s+S\.\s+\d+\s+Nr\.\s+\d+")
 	
 	def __init__(self, ab=None, neu=None):
 		self.neu=neu
@@ -69,6 +74,17 @@ class AG_Weitere(BasisSpider):
 						item['Num']=""
 						item['Titel']=meta
 					item['Signatur'], item['Gericht'], item['Kammer']=self.detect(item['VGericht'], "", item['Num'])
+
+					# Dokument-ID eindeutig halten: nur ein echtes AGVE-Aktenzeichen ist
+					# eindeutig. Sonst den stabilen, eindeutigen PDF-Dateinamen (ohne Endung)
+					# als forceID verwenden -> umgeht die num-Kuerzung und die num+Datum-
+					# Bildung (wie bei ZH_Baurekurs). Damit kollidieren z.B. zwei "§ 10 GBAG"-
+					# Urteile vom selben Datum nicht mehr; die Quelle unterscheidet sie ja
+					# bereits ueber den Dateinamen (…-1.pdf / …-2.pdf).
+					if not self.reAktenzeichen.search(item['Num'] or ""):
+						stem=item['PDFUrls'][0].rsplit('/',1)[-1].rsplit('.',1)[0]
+						if stem:
+							item['forceID']=stem
 
 					yield item
 		else:
