@@ -740,13 +740,17 @@ class PipelineHelper:
 					if 'VKammer' in item:
 						num+=item['VKammer']
 					num=hashlib.md5(num.encode("UTF-8")).hexdigest()
-				if (not 'EDatum' in item) or item['EDatum'] is None:
-					if 'PDatum' in item and item['PDatum'] is not None:
-						edatum=item['PDatum']
-					else:
-						edatum='nodate'
-				else:
+				# "nodate" (Sentinel aus norm_datum, basis.py) und "" bedeuten "kein
+				# Datum" und muessen wie fehlend behandelt werden, sonst greift der
+				# PDatum-Fallback nie. Reihenfolge analog zur Datums-Aufloesung fuer
+				# Suche/Anzeige; SDatum und Jahresgrenze bewusst nicht (die ID kennt
+				# nur EDatum -> PDatum -> nodate).
+				if 'EDatum' in item and item['EDatum'] and item['EDatum']!="nodate":
 					edatum=item['EDatum']
+				elif 'PDatum' in item and item['PDatum'] and item['PDatum']!="nodate":
+					edatum=item['PDatum']
+				else:
+					edatum='nodate'
 				filename=filenamechars.sub('-',num[:20])+"_"+filenamechars.sub('-',edatum)
 			dir = "undefined"
 			if spider:
@@ -1268,6 +1272,38 @@ class MyFilesPipeline(FilesPipeline):
 				f"(Content-Type={ct!r}, Anfang={head!r}). Wird als Fehlschlag gewertet."
 			)
 			raise FileException('not_a_pdf')
+
+		# CH_UNIBE (historische BGE): Urteilsdatum aus der ersten PDF-Seite
+		# nachziehen, wenn der Spider das Flag gesetzt hat. Das PDF liegt hier
+		# bereits vor (kein Zweitabruf). forceID = Fundstelle -> der oben
+		# berechnete 'path' haengt NICHT von EDatum ab, daher keine Pfad-Korrektur.
+		# Das korrigierte EDatum landet ueber MyWriterPipeline (Prio 100) in der
+		# JSON/XML-Ausgabe. Fehler hier duerfen den PDF-Download nicht kippen.
+		if item.get('PDFDatumPruefen') and response.body[:5] == b'%PDF-' \
+				and info is not None and getattr(info, 'spider', None) is not None:
+			try:
+				from NeueScraper.spiders.CH_UNIBE import datum_aus_text
+				from pdfminer.high_level import extract_text
+				text = extract_text(BytesIO(response.body), maxpages=1) or ''
+				mband = re.match(r'BGE (\d+)', item.get('Num', ''))
+				if mband:
+					item['EDatum'] = datum_aus_text(
+						text, int(mband.group(1)), info.spider
+					)
+				# Sprache aus dem Text bestimmen (Stopwort-Heuristik de/fr/it wie
+				# in write_html). Nur setzen, wenn es einen klaren Treffer gibt;
+				# sonst bleibt sie leer -> Feeder faellt auf Tika zurueck. Damit
+				# bekommen PDF-Scans eine autoritative Sprache statt Tika-Fehltreffer.
+				if text and not item.get('Sprache'):
+					treffer = {k: len(r.findall(text)) for k, r in PipelineHelper.REGS.items()}
+					best = max(treffer, key=treffer.get)
+					if treffer[best] > 0:
+						item['Sprache'] = best
+			except Exception as e:
+				logger.warning(
+					"PDF-Datum nachziehen fehlgeschlagen für %s: %s"
+					% (item.get('Num'), e)
+				)
 
 		ContentType='application/pdf' if path[-4:]=='.pdf' else None
 		checksum = hashlib.md5(response.body).hexdigest()
