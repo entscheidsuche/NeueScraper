@@ -29,6 +29,7 @@ class SH_OG(BasisSpider):
 	reData=re.compile(r'window\.CONTENT_DATA\s*=\s*(?P<data>\{.*?\})\s*;')
 	reTag=re.compile(r'<[^>]+>')
 	reDocData=re.compile(r'var\s+wrapper\s+=\s+\$\(\'\#(?P<id>[0-9]+)_(?P<gid>(?:[0-9a-f-]+|null))\'\);\s+try\s+\{\s+var\s+kacheldata\s*=\s*JSON\.parse\("(?P<data>(?:\\.|[^"\\])*)"\);', re.DOTALL | re.MULTILINE | re.VERBOSE)
+	reFileMeta=re.compile(r"let\s+fileMeta\s*=\s*JSON\.parse\('(?P<data>(?:\\.|[^'\\])*)'\)")
 	reNumPre=re.compile(r'^Nr\.\s+')
 	
 	
@@ -153,10 +154,12 @@ class SH_OG(BasisSpider):
 						if "Leitsatz" in item and "Titel" in item:
 							item["html"]=response.meta["titel"]+leitsatz
 							item["HTMLUrls"]=[response.url]
+							item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("","",item["Num"])
+							logger.warning("Kein PDF für "+item["Num"]+", verwende HTML-Fallback (Titel+Leitsatz)")
+							logger.info(f"parse_doc Item: {json.dumps(item)}")
+							yield item
 						else:
-							logger.error("kein PDF und kein HTML text für Dokument "+item["Num"]+" gefunden.")
-
-						logger.error("kann keinen Weg zum PDF finden für "+item["Num"]+" in "+json.dumps(entry))
+							logger.error("kein PDF und kein HTML text für Dokument "+item["Num"]+" gefunden in "+json.dumps(entry))
 				else:
 					item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("","",item["Num"])
 					logger.info(f"parse_doc Item: {json.dumps(item)}")
@@ -168,20 +171,18 @@ class SH_OG(BasisSpider):
 		antwort=response.text
 		logger.info("parse_doc_pdf "+typ+" Rohergebnis "+str(len(antwort))+" Zeichen")
 		logger.info("parse_doc_pdf "+typ+" Rohergebnis: "+antwort[:30000])
-		content_ids=response.meta["content_ids"]
 		item=response.meta['item']
-		script=response.xpath("//script[not(@*)][1]/text()")
-		if script:
-			scripttext=script.get()
-			datamatch=self.reData.search(scripttext)
-			if datamatch:
-				data=datamatch.group("data")
-				logger.info(f"parse_doc data: {data}")
-				filemeta=json.loads(data)
-				url=self.HOST+PH.NC(filemeta["url"],error="keine Informationen zur ULR in PDF/filemeta für "+item["Num"]+" in "+data)
-				item["PDFUrls"]=[url]
-				item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("","",item["Num"])
-				logger.info(f"parse_doc Item: {json.dumps(item)}")
-				yield item
+		m=self.reFileMeta.search(antwort)
+		if m:
+			json_literal=m.group('data')
+			json_clean=json_literal.replace('\\"','"').replace("\\'","'").replace('\\\\','\\')
+			filemeta=json.loads(json_clean)
+			url=self.HOST+PH.NC(filemeta["url"],error="keine Informationen zur URL in fileMeta für "+item["Num"]+" in "+json_clean)
+			item["PDFUrls"]=[url]
+			item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("","",item["Num"])
+			logger.info(f"parse_doc_pdf Item: {json.dumps(item)}")
+			yield item
+		else:
+			logger.error("kein fileMeta in parse_doc_pdf für "+item["Num"]+" gefunden, url "+response.url)
 
 
