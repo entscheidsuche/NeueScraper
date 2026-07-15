@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class XX_Upload(BasisSpider):
 	name = 'XX_Upload'
 	
-	HOST='https://entscheidsuche.ch'
+	HOST='https://prod.entscheidsuche.ch'
 	URL='/docs/lese_upload.php'
 	PDF='/docs/view_upload.php'
 	
