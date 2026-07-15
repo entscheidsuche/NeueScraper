@@ -307,7 +307,7 @@ class CH_BGE(BasisSpider):
 	# Eine Proxy-Basis pro Linie (bis einschließlich '...&stub='); {key} wird
 	# zur Laufzeit aus dem SCRAPINGPROXY-Setting gefüllt.
 	LINE_PROXY_TEMPLATES = [
-		'https://entscheidsuche.ch/scraping_proxy/request.php?scrapekey={key}&stub=',
+		'https://alt.entscheidsuche.ch/scraping_proxy/request.php?scrapekey={key}&stub=',
 		'https://proxy.erbguth.net/request.php?scrapekey={key}&stub=',
 		'https://gemlabs.ch/proxy/request.php?scrapekey={key}&stub=',
 	]
