@@ -9,9 +9,10 @@ from NeueScraper.pipelines import PipelineHelper as PH
 logger = logging.getLogger(__name__)
 
 # ENTWURF (Claude, 2026-07-07) — vor Produktivbetrieb:
-#  1. Gerichtsliste/CSV braucht neue Signatur CH_MKG_001
-#     (Militärkassationsgericht, de/fr/it: Tribunal militaire de cassation /
-#     Tribunale militare di cassazione).
+#  1. Gerichtsliste (Excel) braucht Zeilen für den Spider CH_MKG.
+#     Das MKG kennt keine Kammern; das Matching läuft über detect() aus der
+#     Basis (Num-Muster "MKGE ..." bzw. Kammerfallback). Signaturen, Nummern
+#     und Labels definiert allein die Gerichtsliste.
 #  2. Entscheiddatum steht NICHT in der Trefferliste, nur im PDF-Rubrum.
 #     Die Items tragen daher nur PDatum (Upload-Datum der Seite); die Dateien
 #     landen als _nodate. Falls unerwünscht: Nachlauf, der das Datum aus dem
@@ -94,8 +95,7 @@ class CH_MKG(BasisSpider):
 				pdatum = self.norm_datum(up.group('Datum'), warning=f"Kein Publikationsdatum in {text[:80]}")
 				if pdatum and pdatum != "nodate":
 					item['PDatum'] = pdatum
-			item['Signatur'] = 'CH_MKG_001'
-			item['Gericht'], item['Kammer'] = self.detect_by_signatur(item['Signatur'])
+			item['Signatur'], item['Gericht'], item['Kammer'] = self.detect("", "", item['Num'])
 			logger.info("Item gelesen: " + json.dumps(item))
 			if self.check_blockliste(item):
 				yield item

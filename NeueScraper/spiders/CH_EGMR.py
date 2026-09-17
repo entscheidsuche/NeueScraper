@@ -11,44 +11,44 @@ logger = logging.getLogger(__name__)
 
 # ENTWURF (Claude, 2026-07-07) — EGMR-Rechtsprechung in Sachen Schweiz aus HUDOC.
 #
-# Quelle: offizielles HUDOC-Query-API (JSON), getestet 07/2026:
-#   respondent:"CHE" (alle Typen)                -> 3'148 Dokumente
-#   Volltext-HTML:  /app/conversion/docx/html/body?library=ECHR&id=<itemid>
-#   Volltext-PDF:   /app/conversion/docx/pdf?library=ECHR&id=<itemid>&filename=...
+# Quelle: offizielles HUDOC-Query-API (JSON) + Conversion-Endpoint für die
+# Volltexte. Getestet 07/2026: respondent:"CHE", Urteile+Entscheide
+# = 1'403 Records für ~1'027 Fälle.
 #
-# Vor Produktivbetrieb:
-#  1. Gerichtsliste (Excel/CSV) braucht neue Zeilen; das Kammer-Matching läuft
-#     über die vkammer-Marker, die dieser Spider an detect() übergibt.
-#     Marker -> empfohlene Signatur/Kammer-Label (de/fr):
-#       #EGMR_GK#          CH_EGMR_001  Grosse Kammer / Grande Chambre
-#       #EGMR_SEC1#        CH_EGMR_002  I. Sektion / Première section
-#       #EGMR_SEC2#        CH_EGMR_003  II. Sektion / Deuxième section
-#       #EGMR_SEC3#        CH_EGMR_004  III. Sektion / Troisième section
-#       #EGMR_SEC4#        CH_EGMR_005  IV. Sektion / Quatrième section
-#       #EGMR_SEC5#        CH_EGMR_006  V. Sektion / Cinquième section
-#       #EGMR_KOMITEE#     CH_EGMR_007  Komitee / Comité
-#       #EGMR_ALTKAMMER#   CH_EGMR_008  Kammer (altes Gericht, vor 1998) / Chambre
-#       #EGMR_PLENUM#      CH_EGMR_009  Plenum (altes Gericht) / Cour plénière
-#       #EGMR_KOMMISSION#  CH_EGMR_010  Kommission (EKMR) / Commission
-#     Urteil vs. Zulässigkeitsentscheid steckt im Feld 'Entscheidart'.
-#     Grundlage: originatingbody-Codes, empirisch über alle 1'403 CHE-Dokumente
-#     erhoben und am Volltextkopf verifiziert (07/2026):
-#       8=GK | 4,5,6,7,23=Sektion I,II,III,IV,V | 25,26,27,29=Komitees
-#       9=Court(Chamber) alt | 15=Court(Plenary) alt
-#       1,2,3,17,21,leer=Kommission
-#  2. Sprachfassungen: FRE und ENG werden BEIDE als eigenständige Dokumente
-#     übernommen (kein Dedup — der Textumfang der Fassungen differiert).
-#     Pfadkollisionen verhindert forceID (enthält Sprachsuffix); die
-#     Fassungen verlinken sich gegenseitig über die gemeinsamen Nummern.
-#  3. Verlinkung (numliste-Mechanik wie BGer<->BGE):
-#       Num  = "YYYYMMDD_appno" mit '_' statt '/' — EXAKT das Num[0]-Format
-#              von CH_BGE_012 (BGer-EGMR-Regesten). Dadurch verlinken sich
-#              HUDOC-Volltext und BGer-Regeste automatisch.
-#       Num2 = Fallname (docname) — entspricht Num[1] von CH_BGE_012.
-#       Num3 = Requête-Nummer pur ("24404/05") — verbindet die beiden
-#              Sprachfassungen untereinander und dient der Zitatsuche.
-#  4. doctype-Filter: HFJUD/HEJUD (Urteile) + HFDEC/HEDEC (Entscheide).
-#     Communicated Cases, Legal Summaries, Resolutionen etc. bleiben draussen.
+# Sprachmodell (Vorgabe Jörn, 07/2026):
+#  - HUDOC führt pro Sprachfassung einen eigenen Record (eigene itemid).
+#    Bei URTEILEN existieren stets FRE- UND ENG-Record; hat eine Fassung
+#    keinen Volltext, ist ihr Record ein Metadaten-Platzhalter und im
+#    Feld isplaceholder="True" markiert (Conversion antwortet dort 204).
+#    Bei ENTSCHEIDEN gibt es Records nur mit Volltext. Empirie CHE:
+#    230 Fälle mit zwei echten Volltexten, Rest einsprachig.
+#  - Ablageregel (ein Dokument pro Fall, keine Doppelablage):
+#      a) französischer Volltext vorhanden        -> französisch ablegen
+#      b) nur englischer Volltext vorhanden       -> englisch ablegen
+#    Metadaten (Titel, Leitsatz) wenn immer möglich aus dem französischen
+#    Record (auch wenn er nur Platzhalter ist). Gibt es nur eine
+#    Metadaten-Fassung, gilt sie für alle Oberflächensprachen.
+#  - Der Sprachfilter der Oberfläche kennt aktuell kein Englisch; die
+#    en-Dokumente laufen dort mit, bis der Filter erweitert ist.
+#  - PDFs werden NICHT übernommen: Es sind serverseitige Konvertate aus
+#    dem Word-Original (kein eigenständiges Original-PDF).
+#
+# Kammer-Matching über detect() aus der Basis (inkl. Kammerfallback).
+# Der Spider enthält KEIN Mapping: Er reicht den originatingbody-Code der
+# Quelle unverändert als vkammer-Marker "#EGMR_<code>#" durch (leerer Code
+# als 0). Die Zuordnung Code -> Kammer/Signatur/Label erfolgt ausschliesslich
+# in der Gerichtsliste (Excel); neue Codes laufen bis zur Excel-Ergänzung in
+# den Kammerfallback — ohne Python-Änderung.
+# Zur Doku fürs Excel — im CHE-Bestand aktuell vorhandene Codes, empirisch
+# erhoben und am Volltextkopf verifiziert (Stand 07/2026):
+#   8=Grosse Kammer | 4,5,6,7,23=Sektion I,II,III,IV,V
+#   25,26,27,29=Komitees | 9=Court(Chamber) alt | 15=Court(Plenary) alt
+#   1,2,3,17,21 und leer(=0)=Kommission
+#
+# Verlinkung: Num = Requête-Nummer pur ("24404/05") — Anker für die
+# ES-seitige Verknüpfung mit den BGer-Zusammenfassungen (EGMR via
+# Bundesgericht) und für die Zitatsuche. Num2 = Fallname.
+# Urteil vs. Zulässigkeitsentscheid steht im Feld 'Entscheidart'.
 
 
 class CH_EGMR(BasisSpider):
@@ -58,31 +58,14 @@ class CH_EGMR(BasisSpider):
 	QUERY_BASIS = ('contentsitename:ECHR AND (respondent:"CHE") AND '
 		'(doctype:"HFJUD" OR doctype:"HEJUD" OR doctype:"HFDEC" OR doctype:"HEDEC")')
 	SELECT = ('itemid,appno,docname,doctype,importance,originatingbody,'
-		'judgementdate,decisiondate,languageisocode,conclusion')
+		'judgementdate,decisiondate,languageisocode,conclusion,isplaceholder')
 	SUCH_URL = '/app/query/results?query={query}&select={select}&sort={sort}&start={start}&length={length}'
 	HTML_URL = '/app/conversion/docx/html/body?library=ECHR&id={itemid}'
-	PDF_URL = '/app/conversion/docx/pdf?library=ECHR&id={itemid}&filename={filename}'
 	TREFFER_PRO_SEITE = 500
-	# Beide Sprachfassungen werden vollständig gescrapt (eigene Dokumente).
-	SPRACHEN = ['FRE', 'ENG']
 	SPRACHCODE = {'FRE': 'fr', 'ENG': 'en'}
 
 	# HUDOC-Datumsformat: "29/07/2010 00:00:00"
 	reDatum = re.compile(r'^(?P<Tag>\d{1,2})/(?P<Monat>\d{1,2})/(?P<Jahr>(?:19|20)\d\d)')
-
-	# originatingbody-Code -> Kammer-Marker fürs Gerichtsliste-Matching.
-	# Empirisch erhoben über den gesamten CHE-Bestand, siehe Kopfkommentar.
-	ORIGINATINGBODY_MARKER = {
-		'8': 'GK',
-		'4': 'SEC1', '5': 'SEC2', '6': 'SEC3', '7': 'SEC4', '23': 'SEC5',
-		'25': 'KOMITEE', '26': 'KOMITEE', '27': 'KOMITEE', '29': 'KOMITEE',
-		'9': 'ALTKAMMER',
-		'15': 'PLENUM',
-		'1': 'KOMMISSION', '2': 'KOMMISSION', '3': 'KOMMISSION',
-		'17': 'KOMMISSION', '21': 'KOMMISSION',
-		# leerer Code kommt bei 13 alten Kommissions-Dokumenten vor (verifiziert)
-		'': 'KOMMISSION',
-	}
 
 	custom_settings = {
 		'DOWNLOAD_DELAY': 1.0,
@@ -95,11 +78,14 @@ class CH_EGMR(BasisSpider):
 		super().__init__()
 		self.ab = ab		# optional YYYY-MM-DD: nur Dokumente ab diesem (Urteils-)Datum
 		self.neu = neu
-		self.request_gen = [self.mache_request(sprache_index=0, start=0)]
+		# (Requête-Nr., Datum, Klasse) -> {'fr': cols, 'en': cols}
+		self.faelle = {}
+		self.request_gen = [self.mache_request(start=0)]
 
-	def mache_request(self, sprache_index, start):
-		sprache = self.SPRACHEN[sprache_index]
-		query = self.QUERY_BASIS + ' AND (languageisocode:"' + sprache + '")'
+	def mache_request(self, start):
+		# EIN Durchlauf über beide Sprachen: languageisocode kommt als Spalte
+		# mit, die Auswahl der Fassung passiert nach der Gruppierung.
+		query = self.QUERY_BASIS
 		if self.ab:
 			# kpdate = massgebliches Datum (Urteil bzw. Entscheid) im HUDOC-Index
 			query += ' AND (kpdate>="' + self.ab + 'T00:00:00.0Z")'
@@ -109,94 +95,126 @@ class CH_EGMR(BasisSpider):
 			sort=quote('itemid Ascending', safe=''),
 			start=start,
 			length=self.TREFFER_PRO_SEITE)
-		logger.info(f"HUDOC-Request Sprache={sprache} start={start}: {url}")
+		logger.info(f"HUDOC-Request start={start}: {url}")
 		return scrapy.Request(url=url, callback=self.parse_trefferliste, errback=self.errback_httpbin,
-			meta={'sprache_index': sprache_index, 'start': start}, dont_filter=True)
+			meta={'start': start}, dont_filter=True)
 
 	def parse_trefferliste(self, response):
 		logger.info("parse_trefferliste response.status " + str(response.status))
 		logger.info("parse_trefferliste Rohergebnis " + str(len(response.body)) + " Zeichen")
-		logger.info("parse_trefferliste Rohergebnis: " + response.text[:5000])
 
-		sprache_index = response.meta['sprache_index']
 		start = response.meta['start']
 		resultdict = json.loads(response.text)
 		treffer = resultdict.get('resultcount', 0)
 		entscheide = resultdict.get('results') or []
-		logger.info(f"Sprache {self.SPRACHEN[sprache_index]}: insgesamt {treffer} Treffer, "
-			f"start={start}, auf dieser Seite {len(entscheide)}")
+		logger.info(f"Insgesamt {treffer} Records, start={start}, auf dieser Seite {len(entscheide)}")
 		if treffer == 0:
 			logger.warning("kein Treffer")
 
 		for entscheid in entscheide:
 			cols = entscheid.get('columns') or {}
-			item = {}
-			itemid = PH.NC(cols.get('itemid'), error=f"keine itemid in {json.dumps(cols)}")
-			if not itemid:
+			if not cols.get('itemid'):
+				PH.NC(None, error=f"keine itemid in {json.dumps(cols)}")
 				continue
-			item['DocID'] = itemid
-
-			# Requête-Nummer(n): "24404/05" bzw. "123/06;456/07" -> erste massgeblich
+			sprache = self.SPRACHCODE.get(cols.get('languageisocode'))
+			if not sprache:
+				logger.warning(f"Unerwartete Sprache {cols.get('languageisocode')!r} "
+					f"bei {cols.get('itemid')} — Record übersprungen.")
+				continue
 			appno = (cols.get('appno') or '').split(';')[0].strip()
-			appno = PH.NC(appno or None, error=f"keine Requête-Nummer in {json.dumps(cols)}")
 			if not appno:
+				PH.NC(None, error=f"keine Requête-Nummer in {json.dumps(cols)}")
 				continue
-
-			item['Titel'] = PH.NC(cols.get('docname'), warning=f"kein Titel in {json.dumps(cols)}")
-
 			doctype = cols.get('doctype') or ''
 			klasse = 'JUD' if doctype.endswith('JUD') else 'DEC'
 			datum_roh = cols.get('judgementdate') or cols.get('decisiondate') or ''
-			edatum = None
 			d = self.reDatum.match(datum_roh)
+			edatum = None
 			if d:
 				edatum = "{}-{:0>2}-{:0>2}".format(d.group('Jahr'), d.group('Monat'), d.group('Tag'))
-				item['EDatum'] = edatum
 			else:
 				logger.warning(f"kein Datum in {json.dumps(cols)}")
+			key = (appno, edatum, klasse)
+			self.faelle.setdefault(key, {})[sprache] = cols
 
-			sprache = self.SPRACHCODE[self.SPRACHEN[sprache_index]]
-			item['Sprache'] = sprache
-
-			# Verlinkung (siehe Kopfkommentar): Num im CH_BGE_012-Format,
-			# Num2 = Fallname, Num3 = Requête-Nummer pur.
-			datum_kompakt = edatum.replace('-', '') if edatum else 'nodate'
-			item['Num'] = datum_kompakt + '_' + appno.replace('/', '_')
-			if item['Titel']:
-				item['Num2'] = item['Titel']
-			item['Num3'] = appno
-
-			# Pfad: Sprachsuffix in der forceID, damit FRE- und ENG-Fassung
-			# nicht kollidieren (Num+EDatum wären identisch).
-			item['forceID'] = (datum_kompakt + '-' + appno.replace('/', '-')
-				+ '-' + sprache + '_' + (edatum or 'nodate'))
-
-			if cols.get('conclusion'):
-				item['Leitsatz'] = cols['conclusion']
-			item['HTMLUrls'] = [self.HOST + self.HTML_URL.format(itemid=itemid)]
-			item['PDFUrls'] = [self.HOST + self.PDF_URL.format(itemid=itemid,
-				filename=quote(appno.replace('/', '-') + '-' + sprache + '.pdf'))]
-
-			# Spruchkörper: originatingbody-Code -> Marker -> Matching über die
-			# Gerichtsliste (Excel-Sheet), analog VD_Omni ('#CDAP#' etc.).
-			ob = str(cols.get('originatingbody') or '').strip()
-			marker = self.ORIGINATINGBODY_MARKER.get(ob)
-			if marker is None:
-				logger.warning(f"Unbekannter originatingbody-Code {ob!r} bei {itemid} "
-					f"({item['Titel']}) — Kammerfallback greift.")
-				marker = 'UNBEKANNT'
-			item['Entscheidart'] = 'Urteil' if klasse == 'JUD' else 'Entscheid'
-			item['Signatur'], item['Gericht'], item['Kammer'] = self.detect(
-				"", "#EGMR_" + marker + "#", item['Num'])
-			logger.info("Item gelesen: " + json.dumps(item))
-			if self.check_blockliste(item):
-				yield item
-
-		# Pagination: erst alle Seiten der aktuellen Sprache, dann nächste Sprache.
 		naechster_start = start + self.TREFFER_PRO_SEITE
 		if naechster_start < treffer:
-			yield self.mache_request(sprache_index, naechster_start)
-		elif sprache_index + 1 < len(self.SPRACHEN):
-			yield self.mache_request(sprache_index + 1, 0)
+			yield self.mache_request(naechster_start)
 		else:
-			logger.info("Alle Sprachen abgearbeitet.")
+			logger.info(f"Records gesammelt: {len(self.faelle)} Fälle, beginne Dokumentabruf.")
+			for request in self.verarbeite_faelle():
+				yield request
+
+	def hat_volltext(self, cols):
+		return cols is not None and cols.get('isplaceholder') != 'True'
+
+	def verarbeite_faelle(self):
+		for (appno, edatum, klasse), records in self.faelle.items():
+			fr = records.get('fr')
+			en = records.get('en')
+			meta_rec = fr if fr else en		# Metadaten wenn möglich französisch
+
+			# Ablageregel: a) fr-Volltext -> fr; b) sonst en-Volltext -> en
+			if self.hat_volltext(fr):
+				sprache, dok = 'fr', fr
+			elif self.hat_volltext(en):
+				sprache, dok = 'en', en
+			else:
+				logger.error(f"Kein Volltext in keiner Sprachfassung für {appno} "
+					f"({meta_rec.get('docname')}) — Fall wird verworfen.")
+				continue
+			# Weitere vorhandene Volltext-Fassungen (wie die HUDOC-Oberfläche
+			# sie anzeigt) — werden als Vermerk mit Deeplink ins Dokument
+			# übernommen. Nach der Ablageregel betrifft das nur den Fall
+			# fr abgelegt + en vorhanden.
+			weitere = []
+			if sprache == 'fr' and self.hat_volltext(en):
+				weitere.append(('Version anglaise', en['itemid']))
+
+			item = {}
+			item['Num'] = appno
+			if edatum:
+				item['EDatum'] = edatum
+			item['Titel'] = PH.NC(meta_rec.get('docname'),
+				warning=f"kein Titel für {appno} in {json.dumps(meta_rec)}")
+			if item['Titel']:
+				item['Num2'] = item['Titel']
+			if meta_rec.get('conclusion'):
+				item['Leitsatz'] = meta_rec['conclusion']
+			item['Entscheidart'] = 'Urteil' if klasse == 'JUD' else 'Entscheid'
+			item['Sprache'] = sprache
+
+			ob = str(meta_rec.get('originatingbody') or '').strip() or '0'
+			item['Signatur'], item['Gericht'], item['Kammer'] = self.detect(
+				"", "#EGMR_" + ob + "#", item['Num'])
+			if not self.check_blockliste(item):
+				continue
+
+			url = self.HOST + self.HTML_URL.format(itemid=dok['itemid'])
+			yield scrapy.Request(url=url, callback=self.parse_document,
+				errback=self.errback_httpbin, dont_filter=True,
+				meta={'item': item, 'weitere': weitere, 'handle_httpstatus_list': [204]})
+
+	def parse_document(self, response):
+		item = response.meta['item']
+		antwort = response.text if response.body else ''
+		logger.info(f"parse_document status {response.status}, {len(antwort)} Zeichen "
+			f"für {item['Num']} ({item['Sprache']})")
+		if response.status == 204 or not antwort.strip():
+			# Sollte dank isplaceholder-Auswertung nicht vorkommen —
+			# Sicherheitsnetz, falls die Quelle inkonsistent ist.
+			logger.error(f"Unerwartet kein Volltext für {item['Num']} "
+				f"({item.get('Titel')}, {response.url}) — Fall wird verworfen.")
+			return
+		# Vermerk auf weitere Sprachfassungen (mit HUDOC-Deeplink) anhängen,
+		# analog zur Anzeige in der HUDOC-Oberfläche.
+		weitere = response.meta.get('weitere') or []
+		if weitere:
+			vermerke = " &middot; ".join(
+				f'{label}: <a href="{self.HOST}/eng?i={itemid}">HUDOC {itemid}</a>'
+				for label, itemid in weitere)
+			antwort += ('\n<hr/><p class="sprachfassungen"><i>Autre version '
+				'linguistique disponible &mdash; ' + vermerke + '</i></p>\n')
+		item['HTMLUrls'] = [response.url]
+		PH.write_html(antwort, item, self)
+		yield item

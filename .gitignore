@@ -1,29 +1,17 @@
+# Python-Build-Artefakte (werden bei jedem Build/Install neu generiert)
+*.egg-info/
 /build/
-project.egg-info/SOURCES.txt
-project.egg-info/SOURCES.txt
+__pycache__/
+*.pyc
+
+# Betriebssystem
 .DS_Store
-Description/~$Spiderliste.xlsx
-NeueScraper/__pycache__/__init__.cpython-39.pyc
-NeueScraper/__pycache__/pipelines.cpython-39.pyc
-NeueScraper/__pycache__/settings.cpython-39.pyc
-NeueScraper/spiders/__pycache__/__init__.cpython-39.pyc
-NeueScraper/spiders/__pycache__/AG_Gerichte.cpython-39.pyc
-NeueScraper/spiders/__pycache__/basis.cpython-39.pyc
-NeueScraper/spiders/__pycache__/weblaw.cpython-39.pyc
-*.pyc
-*.pyc
-NeueScraper/__pycache__/settings.cpython-37.pyc
-NeueScraper/__pycache__/__init__.cpython-37.pyc
-NeueScraper/__pycache__/settings.cpython-37.pyc
-project.egg-info/entry_points.txt
-project.egg-info/entry_points.txt
-project.egg-info/PKG-INFO
-project.egg-info/SOURCES.txt
+
+# Office-Sperrdateien
+Description/~$*
+
+# Lokale Experimente
 NeueScraper/spiders/test.py
-project.egg-info/SOURCES.txt
-project.egg-info/SOURCES.txt
 NeueScraper/spiders/SH_OG.py.alt
 NeueScraper/spiders/SH_OG.py.alt2
 NeueScraper/spiders/SH_OG.py.try
-entscheidsuche.ch_Scraper.egg-info/SOURCES.txt
-entscheidsuche.ch_Scraper.egg-info/SOURCES.txt
