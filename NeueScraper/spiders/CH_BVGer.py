@@ -137,6 +137,7 @@ class CH_BVGer(BasisSpider):
 				yield(req)
 				gestartet=True
 		if not gestartet:
+			self.fehler += 1
 			logger.error("Keine Session für "+ab+"-"+bis+" erhalten, Jahrgang wird übersprungen")
 			request=self.get_next_request()
 			if request:
@@ -170,6 +171,10 @@ class CH_BVGer(BasisSpider):
 			seiten=int(trefferzahl[5].replace(',',''))
 
 			treffer=[m.groupdict() for m in self.reTreffer.finditer(antwort)]
+			erwartet = int(trefferzahl[3].replace(",", "")) - int(trefferzahl[2].replace(",", "")) + 1
+			if treffer and len(treffer) != erwartet:
+				self.fehler += 1
+				logger.error("Unvollständige Trefferseite: %s von %s erkannt", len(treffer), erwartet)
 			if treffer:
 				logger.debug(str(len(treffer))+" Treffer auf der Trefferliste")
 				for item in treffer:
@@ -211,12 +216,14 @@ class CH_BVGer(BasisSpider):
 					logger.debug("Fertig!")
 					jahrgang_fertig=True
 			else:
+				self.fehler += 1
 				logger.error("kein Treffer gematched")
 				jahrgang_fertig=True
 		else:
 			if 'style="color: red;">Kein Suchtreffer!</span>' in antwort:
 				logger.info("Suche ergab keine Treffer.")
 			else:
+				self.fehler += 1
 				logger.error("Konnte keine Trefferzahl erkennen: "+antwort)
 			jahrgang_fertig=True
 		# Erst wenn ein Jahrgang fertig ist (oder abbricht), rückt der nächste nach.
