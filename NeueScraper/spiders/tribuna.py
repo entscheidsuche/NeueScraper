@@ -2,6 +2,7 @@
 import scrapy
 import re
 import logging
+from urllib.parse import quote
 from NeueScraper.spiders.basis import BasisSpider
 from NeueScraper.pipelines import PipelineHelper as PH
 import time
@@ -27,7 +28,7 @@ class TribunaSpider(BasisSpider):
 	reDecode=re.compile(r'\\x([0-9A-Fa-f]{2})')
 
 	rePfad=re.compile(r'[A-Z]:(?:\\.+)+\.pdf')
-	rePfad2=re.compile(r'[0-9a-f]{128,192}')
+	rePfad2=re.compile(r'[0-9a-f]{128,192}|(?:[0-9a-zA-Z+/=]|\\x[0-9a-fA-F]{2}){100,200}')
 	page_nr=0
 	trefferzahl=0
 	ENCRYPTED=False
@@ -252,6 +253,8 @@ class TribunaSpider(BasisSpider):
 								
 					if self.ENCRYPTED:
 						if neuePfadsyntax:
+							if "\\x" in pfad:
+								pfad = self.reDecode.sub(lambda m: chr(int(m.group(1), 16)), pfad)
 							pfad=numstr+"_"+pfad+"|dossiernummer|"+numstr
 						elif self.ASCII_ENCRYPTED:
 							ascii_pfad=''
@@ -298,7 +301,8 @@ class TribunaSpider(BasisSpider):
 			else:
 				code=self.reDecrypt2.search(response.text)
 				if code:
-					href=self.PDF_PATTERN.format(self.DOWNLOAD_URL,code.group("p1")+code.group("p2"),code.group("p2"),code.group("p4"))
+					p2 = self.reDecode.sub(lambda m: chr(int(m.group(1), 16)), code.group("p2"))
+					href=self.PDF_PATTERN.format(self.DOWNLOAD_URL,code.group("p1")+p2,quote(p2),code.group("p4"))
 					logger.info("V2 PDF-URL: "+href)
 					item['PDFUrls']=[href]
 					if html_request:
