@@ -86,14 +86,27 @@ class AG_Baugesetzgebung(BasisSpider):
 		if entries:
 			for entry in entries:
 				logger.info("Verarbeite Entscheid "+json.dumps(entry))
-				item={}
-				item['PDFUrls']=[self.HOST+PH.NC(entry['targetUrls'][0]['url'], error="Url für PDF des Entscheids nicht gefunden in "+json.dumps(entry))]
-				item['EDatum']=PH.NC(self.norm_datum(entry['documentDatetime']), warning="kein Datum gefunden in "+json.dumps(entry))
-				item['Num']=PH.NC(entry['title'], warning="kein title als Num-Ersatz gefunden in "+json.dumps(entry))
-				item['noNumDisplay']=True
-				item['Leitsatz']=PH.NC(entry['teaser'], warning="kein Teaser als Leitsatz gefunden in "+json.dumps(entry))
-				item['VGericht']=''
-				item['Signatur'], item['Gericht'], item['Kammer']=self.detect(item['VGericht'], "", item['Num'])
+				# Einzelne fehlerhafte Einträge (z.B. ohne targetUrls) überspringen statt
+				# per Exception die ganze Trefferliste abzubrechen — sonst gehen auch alle
+				# NACHFOLGENDEN Einträge verloren und der Scrapelog bliebe fehlerfrei.
+				try:
+					targeturls=entry.get('targetUrls')
+					if not targeturls or not targeturls[0].get('url'):
+						self.fehler += 1
+						logger.error("Url für PDF des Entscheids nicht gefunden, Eintrag übersprungen: "+json.dumps(entry))
+						continue
+					item={}
+					item['PDFUrls']=[self.HOST+targeturls[0]['url']]
+					item['EDatum']=PH.NC(self.norm_datum(entry['documentDatetime']), warning="kein Datum gefunden in "+json.dumps(entry))
+					item['Num']=PH.NC(entry['title'], warning="kein title als Num-Ersatz gefunden in "+json.dumps(entry))
+					item['noNumDisplay']=True
+					item['Leitsatz']=PH.NC(entry['teaser'], warning="kein Teaser als Leitsatz gefunden in "+json.dumps(entry))
+					item['VGericht']=''
+					item['Signatur'], item['Gericht'], item['Kammer']=self.detect(item['VGericht'], "", item['Num'])
+				except Exception as e:
+					self.fehler += 1
+					logger.error("Eintrag nicht verarbeitbar ("+type(e).__name__+": "+str(e)+"), übersprungen: "+json.dumps(entry))
+					continue
 				logger.info("Item: "+json.dumps(item))
 				yield item
 		else:
