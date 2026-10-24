@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import scrapy
 import logging
+import datetime
 from io import StringIO
 import csv
 import json
@@ -637,7 +638,13 @@ class BasisSpider(scrapy.Spider):
 				logger.info("Datumsmatch für "+datum)
 				jahr=dat.group('Jahr')
 				if len(jahr)==2:
-					jahr="20"+jahr
+					# Jahrhundert-Pivot statt pauschal "20xx": Entscheide liegen nie in
+					# der Zukunft, also gehoert z.B. "79" zu 1979, nicht 2079 (betraf
+					# die alten EGMR-Daten in CH_BGE_012).
+					if 2000+int(jahr) > datetime.date.today().year:
+						jahr="19"+jahr
+					else:
+						jahr="20"+jahr
 				neudat="{}-{:0>2}-{:0>2}".format(jahr,dat.group('Monat'),dat.group('Tag'))
 				logger.debug("Konvertiere "+datum+" in "+neudat)
 			else:
