@@ -828,7 +828,7 @@ class PipelineHelper:
 				filename=filenamechars.sub('-',item['forceID'])
 			else:
 				if num=="":
-					if 'PFDUrls' in item:
+					if 'PDFUrls' in item:
 						num+=item['PDFUrls'][0]
 					if 'HTMLUrls' in item:
 						num+=item['HTMLUrls'][0]
