@@ -32,6 +32,8 @@ class GR_Gerichte(TribunaSpider):
 	DOWNLOAD_URL = 'https://entscheidsuche.gr.ch/tribunavtplus/ServletDownload/'
 	PDF_PATTERN = "{}{}?path={}&pathIsEncrypted=1&dossiernummer={}"
 	ENCRYPTED = True
+	HOLE_AUCH_HTML = True
+	HTML_REQUEST = '7|0|15|https://entscheidsuche.gr.ch/tribunavtplus/|CAC80118FB77794F1FDFC1B51371CC63|tribunavtplus.client.zugriff.LoadTableService|getDocumentDetails|java.lang.String/2004016611|java.util.List|[B/3308590456|java.lang.Boolean/476441737|Z|OG|{}||java.util.ArrayList/4159755760|0|de|1|2|3|4|10|5|5|5|6|5|7|8|9|5|5|10|11|12|13|0|14|7|128|48|53|102|55|100|51|101|101|49|56|49|54|99|53|97|53|56|99|49|51|54|100|100|102|49|50|51|98|49|101|55|97|57|97|101|57|97|100|56|97|53|102|102|55|50|98|54|57|97|100|57|102|51|101|53|49|99|52|56|52|48|99|51|52|55|54|52|100|101|57|53|97|56|55|50|97|97|48|54|98|99|56|56|51|50|49|52|51|97|50|56|53|52|57|53|101|98|99|100|99|102|99|53|48|99|97|57|97|53|52|56|57|56|53|102|99|51|54|101|54|101|102|50|101|49|101|49|54|8|0|0|12|15|'
 	DECRYPT_PAGE_URL = "https://entscheidsuche.gr.ch/tribunavtplus/loadTable"
 #	DECRYPT_START ='7|0|7|https://entscheidsuche.gr.ch/tribunavtplus/|C419D19919BD2D5CFB1CA8A5E0CD9913|tribunavtplus.client.zugriff.DecryptService|encrypt|java.lang.String/2004016611|'
 	DECRYPT_START ='7|0|11|https://entscheidsuche.gr.ch/tribunavtplus/|CAC80118FB77794F1FDFC1B51371CC63|tribunavtplus.client.zugriff.LoadTableService|urlEncodingTribuna|java.util.Map|java.util.HashMap/1797211028|java.lang.String/2004016611|partURL|'
