@@ -211,18 +211,23 @@ function lese_json_file(string $path): ?array {
 
 /**
  * Liest ein Job-File OHNE den `dateien`-Block — dieser kann bei großen
- * Spidern 10+ MB groß sein. Da `pipelines.py` immer in der Reihenfolge
- *   spider, job, jobtyp, time, dateien, signaturen, gesamt
- * schreibt, reicht es, den Kopf der Datei (für die Metadaten) und den
- * Schwanz (für signaturen+gesamt) zu lesen und beides zu einem gültigen
- * Mini-JSON zusammenzusetzen, das `dateien` einfach weglässt.
+ * Spidern 10+ MB groß sein. Unterstützt beide Schreibreihenfolgen von
+ * `pipelines.py`:
  *
- * Vorteil: pro File werden statt 16 MB nur ~250 KB von der Platte gelesen
- * und an json_decode übergeben.
+ *   neu (ab 26.10.2026):  spider, job, jobtyp, start_time, time,
+ *                         signaturen, gesamt, dateien, lastjob
+ *       → alles Benötigte steht VOR `dateien`; es wird nur der Dateianfang
+ *         gelesen (in der Regel ein einziger 64-KB-Block).
+ *   alt (bis 25.10.2026): spider, job, jobtyp, [start_time,] time,
+ *                         dateien, signaturen, gesamt[, lastjob]
+ *       → Metadaten aus dem Kopf, signaturen+gesamt aus dem Schwanz.
+ *
+ * In beiden Fällen entsteht ein gültiges Mini-JSON ohne `dateien`.
  */
 function lese_job_file_kompakt(string $pfad): ?array {
-    $kopf_max = 1024;        // 1 KB für Top-Level-Metadaten reicht weit aus
-    $tail_max = 256 * 1024;  // 256 KB Schwanz für signaturen+gesamt
+    $kopf_block = 64 * 1024;    // Leseschritt für den Dateianfang
+    $kopf_max   = 1024 * 1024;  // Obergrenze für die Suche nach "dateien"
+    $tail_max   = 256 * 1024;   // Schwanz für signaturen+gesamt (altes Format)
 
     $fp = @fopen($pfad, 'rb');
     if ($fp === false) return null;
@@ -232,37 +237,64 @@ function lese_job_file_kompakt(string $pfad): ?array {
     if ($size === 0) { fclose($fp); return null; }
 
     // Kleine Files komplett lesen (Failed_Job_*, leere Läufe etc.)
-    if ($size < $kopf_max + $tail_max) {
-        rewind($fp);
+    if ($size <= $kopf_block) {
         $body = (string)stream_get_contents($fp);
         fclose($fp);
         $data = json_decode($body, true);
         return is_array($data) ? $data : null;
     }
 
-    // Kopf
-    rewind($fp);
-    $kopf = (string)fread($fp, $kopf_max);
-    // Schwanz
-    fseek($fp, -$tail_max, SEEK_END);
-    $tail = (string)fread($fp, $tail_max);
-    fclose($fp);
-
-    // Vor dem "dateien"-Schlüssel im Kopf abschneiden — alles davor sind die
-    // Metadaten {"spider": "...", "job": "...", "jobtyp": "...", "time": "..."
-    $dateien_pos = strpos($kopf, '"dateien"');
-    if ($dateien_pos === false) return null;
+    // Dateianfang blockweise lesen, bis der "dateien"-Schlüssel auftaucht
+    $kopf = '';
+    $dateien_pos = false;
+    while (strlen($kopf) < $kopf_max && !feof($fp)) {
+        $block = fread($fp, $kopf_block);
+        if ($block === false || $block === '') break;
+        $kopf .= $block;
+        $dateien_pos = strpos($kopf, '"dateien"');
+        if ($dateien_pos !== false) break;
+    }
+    if ($dateien_pos === false) {
+        // Kein "dateien"-Block in Reichweite: wenn die Datei damit schon
+        // vollständig gelesen ist, normal dekodieren, sonst aufgeben.
+        fclose($fp);
+        if (strlen($kopf) >= $size) {
+            $data = json_decode($kopf, true);
+            return is_array($data) ? $data : null;
+        }
+        log_info("Job-File nicht lesbar (kein \"dateien\" in den ersten $kopf_max Bytes): $pfad");
+        return null;
+    }
+    // Alles vor "dateien": {"spider": ..., "time": ...[, "signaturen": ..., "gesamt": ...]
     $kopf_teil = rtrim(substr($kopf, 0, $dateien_pos), ", \t\r\n");
 
-    // Im Schwanz den letzten "signaturen"-Schlüssel suchen — von dort bis
-    // Dateiende ist das, was wir behalten wollen.
-    $sig_pos = strrpos($tail, '"signaturen"');
-    if ($sig_pos === false) return null;
-    $tail_teil = substr($tail, $sig_pos);
+    // Neues Format: signaturen+gesamt stehen bereits vor "dateien"
+    if (strpos($kopf_teil, '"signaturen"') !== false) {
+        fclose($fp);
+        $data = json_decode($kopf_teil . '}', true);
+        if (!is_array($data)) {
+            log_info("Job-File nicht lesbar (Kopf kein gültiges JSON): $pfad");
+            return null;
+        }
+        return $data;
+    }
 
-    $json = $kopf_teil . ',' . $tail_teil;
-    $data = json_decode($json, true);
-    return is_array($data) ? $data : null;
+    // Altes Format: signaturen+gesamt stehen hinter "dateien" am Dateiende
+    $tail_len = min($tail_max, $size);
+    fseek($fp, -$tail_len, SEEK_END);
+    $tail = (string)fread($fp, $tail_len);
+    fclose($fp);
+    $sig_pos = strrpos($tail, '"signaturen"');
+    if ($sig_pos === false) {
+        log_info("Job-File nicht lesbar (kein \"signaturen\" in Kopf oder Schwanz): $pfad");
+        return null;
+    }
+    $data = json_decode($kopf_teil . ',' . substr($tail, $sig_pos), true);
+    if (!is_array($data)) {
+        log_info("Job-File nicht lesbar (Kopf+Schwanz kein gültiges JSON): $pfad");
+        return null;
+    }
+    return $data;
 }
 
 function neueste_jobsdatei_zeit(string $jobs_dir, string $spider): ?string {
