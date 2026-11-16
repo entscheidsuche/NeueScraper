@@ -87,6 +87,23 @@ class VD_FindInfoSpider(BasisSpider):
 		super().__init__()
 		self.ab=ab
 		self.neu=neu
+		# Zuordnung UUID -> Geschäftsnummer aus den bis September 2026 gescrapten
+		# Daten. Erst hier laden (nicht beim Modulimport), weil Scrapy alle
+		# Spider-Module bei jedem Lauf importiert und die Tabelle 3 MB gross ist.
+		from NeueScraper.datasets.VD_FindInfo_Table import GESCHAEFTSNUMMERN
+		self.geschaeftsnummern=GESCHAEFTSNUMMERN
+		logger.info(f"Geschäftsnummern-Tabelle geladen: {len(self.geschaeftsnummern)} Einträge")
+
+	@staticmethod
+	def zitier_num(kammer, datum, nummer):
+		# Zitierform des Kantonsgerichts und Titel auf prestations.vd.ch:
+		# "<Kammer> <Entscheiddatum>/<Entscheidnummer>", z.B. "CACI 12 juin 2014/317".
+		# Die Entscheidnummer allein ist nicht eindeutig; fehlt sie, bleibt
+		# "<Kammer> <Entscheiddatum>" (wie auf der Website des Kantons).
+		num=" ".join((kammer+" "+datum).split())
+		if nummer:
+			num+="/"+" ".join(nummer.split())
+		return num
 
 
 
@@ -113,15 +130,29 @@ class VD_FindInfoSpider(BasisSpider):
 			item={}
 			logger.info("Verarbeite Entscheid: "+json.dumps(entscheid))
 			item['DocID']=PH.NC(entscheid['decisionHit']['id'],error=f"keine DocID in {json.dumps(entscheid)}")
-			item['Num']=PH.NC(entscheid['decisionHit']['affaireHit']['numero'],error=f"keine Geschäftsnummer in {json.dumps(entscheid)}")
+			# Die UUID des Kantons ist der einzige eindeutige und stabile Schlüssel
+			# -> als Dokument-ID verwenden (Pfad: VD_FindInfo/<Signatur>_<UUID>).
+			item['forceID']=item['DocID']
+			# Num = Zitierform aus Kammer, Entscheiddatum und Entscheidnummer.
+			kurz=PH.NC(entscheid['decisionHit']['affaireHit']['autoriteDirectrice'],warning=f"keine Kammer erkannt in {json.dumps(entscheid)}")
+			item['Num']=self.zitier_num(kurz, PH.NC(entscheid['decisionHit']['dateDecision']), PH.NC(entscheid['decisionHit']['numero'],info=f"keine Entscheidnummer in {json.dumps(entscheid)}"))
+			# Num2 = Geschäftsnummer. Die Schnittstelle liefert sie seit September 2026
+			# nicht mehr (affaireHit.numero ist null) und in den ab 2026 publizierten
+			# PDFs ist sie geschwärzt. Falls der Kanton sie wieder liefert, hat sie
+			# Vorrang, sonst kommt sie aus der Tabelle der früher gescrapten Nummern.
+			geschaeftsnummer=PH.NC(entscheid['decisionHit']['affaireHit']['numero'])
+			if not geschaeftsnummer:
+				geschaeftsnummer=self.geschaeftsnummern.get(item['DocID'],"")
+			if geschaeftsnummer:
+				item['Num2']=geschaeftsnummer
 			if entscheid['decisionHit']['resume']:
 				item['Leitsatz']=PH.NC(entscheid['decisionHit']['resume'],warning=f"Fehler beim Abstract in {json.dumps(entscheid)}")
 			item['EDatum']=PH.NC(self.norm_datum(entscheid['decisionHit']['dateDecision']),warning=f"kein Entscheiddatum in {json.dumps(entscheid)}")
 			item['PDatum']=PH.NC(self.norm_datum(entscheid['decisionHit']['datePublication']),warning=f"kein Publikationsdatum in {json.dumps(entscheid)}")
 			item['Titel']=PH.NC(entscheid['decisionHit']['natureAffaire'],warning=f"kein Titel in {json.dumps(entscheid)}")
 			item['PDFUrls']=[self.HOST+self.PDF_URL+item['DocID']]
-			kurz=PH.NC(entscheid['decisionHit']['affaireHit']['autoriteDirectrice'],warning=f"keine Kammer erkannt in {json.dumps(entscheid)}")
-			item['Signatur'], item['Gericht'], item['Kammer']=self.detect("","#"+kurz+"#",item['Num'])
+			# detect bekommt wie bisher die Geschäftsnummer (nicht die neue Num).
+			item['Signatur'], item['Gericht'], item['Kammer']=self.detect("","#"+kurz+"#",geschaeftsnummer)
 			yield(item)
 		seite=response.meta['page']
 		if (seite+1)*self.TREFFER_PRO_SEITE<treffer:
