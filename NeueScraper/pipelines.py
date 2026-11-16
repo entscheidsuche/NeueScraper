@@ -141,6 +141,9 @@ class MyWriterPipeline:
 			'run_end': run_end,
 			'scraped': scraped,
 		}
+		if getattr(spider, 'datumskorrekturen', None):
+			# Unplausible Entscheiddaten (siehe PipelineHelper.pruefe_edatum)
+			report['datumskorrekturen'] = spider.datumskorrekturen
 		job_fs = (getattr(spider, 'scrapy_job', None) or 'nojob').replace('/', '-')
 		pfad_scrapelog = 'Scrapelog/' + spider.name + '/Report_' + run_start_fs + '_' + job_fs + '.json'
 		MyFilesPipeline.common_store.persist_file(
@@ -540,6 +543,105 @@ class NeuescraperPipeline:
 
 class PipelineHelper:
 
+	# Plausibilitaetspruefung Entscheiddatum (EDatum)
+	# Quellen liefern gelegentlich Tippfehler im Jahr (z.B. SZ_Verwaltungsgericht
+	# "0206-04-21" fuer 2026-04-21). Ein solches Datum landet sonst in Dokument-ID,
+	# Anzeige und Zeitachse. Gilt das Jahr als unplausibel (vor DATUM_MIN_JAHR oder
+	# nach dem laufenden Jahr), wird versucht, es eindeutig zu reparieren:
+	#   Fenster = [juengstes Jahr in der Geschaeftsnummer, PDatum-Jahr bzw. laufendes Jahr]
+	#   Kandidaten = Jahr mit einer eingefuegten/entfernten/ersetzten Ziffer oder zwei
+	#   vertauschten Ziffern. Genau ein Kandidat im Fenster -> uebernehmen.
+	# Sonst wird EDatum verworfen; file_path/make_json fallen dann auf PDatum zurueck.
+	# Beides wird als ERROR geloggt, fuehrt aber nicht zum Abbruch und setzt
+	# spider.fehler bewusst NICHT: das wuerde den Lauf als nicht fehlerfrei markieren
+	# und damit alle Loeschungen (auch die der alten, fehlerhaften ID) blockieren.
+	# Die Korrekturen stehen zusaetzlich in den Scrapy-Stats und im Scrapelog.
+	DATUM_MIN_JAHR = 1800
+	reDatumPruefbar = re.compile(r'^(?P<Jahr>\d{1,5})(?P<Rest>-\d\d-\d\d)?$')
+	reJahrInNum = re.compile(r'(?<!\d)(?:18|19|20)\d\d(?!\d)')
+
+	@staticmethod
+	def jahr_plausibel(datum, akt_jahr):
+		# None = nicht pruefbar (anderes Format) -> wird nicht angetastet.
+		if not datum or datum == "nodate":
+			return None
+		match = PipelineHelper.reDatumPruefbar.match(datum)
+		if not match:
+			return None
+		return PipelineHelper.DATUM_MIN_JAHR <= int(match.group('Jahr')) <= akt_jahr
+
+	@staticmethod
+	def jahr_varianten(jahr):
+		# Alle Jahreszahlen, die sich durch genau einen Tippfehler von 'jahr' unterscheiden.
+		varianten = set()
+		for s in {jahr, jahr.lstrip('0') or '0'}:
+			for i in range(len(s) + 1):
+				for z in '0123456789':
+					varianten.add(s[:i] + z + s[i:])
+			for i in range(len(s)):
+				varianten.add(s[:i] + s[i + 1:])
+				for z in '0123456789':
+					varianten.add(s[:i] + z + s[i + 1:])
+			for i in range(len(s) - 1):
+				varianten.add(s[:i] + s[i + 1] + s[i] + s[i + 2:])
+		return {int(v) for v in varianten if len(v) == 4 and v[0] != '0'}
+
+	@staticmethod
+	def pruefe_edatum(item, spider=None):
+		try:
+			edatum = item.get('EDatum')
+			if not edatum or item.get('EDatumGeprueft') == edatum:
+				return
+		except Exception:
+			return
+		akt_jahr = datetime.date.today().year
+		if PipelineHelper.jahr_plausibel(edatum, akt_jahr) is not False:
+			PipelineHelper._setze(item, 'EDatumGeprueft', edatum)
+			return
+
+		num = str(item.get('Num') or '')
+		num_jahre = [int(j) for j in PipelineHelper.reJahrInNum.findall(num)]
+		unten = max(num_jahre) if num_jahre else PipelineHelper.DATUM_MIN_JAHR
+		oben = akt_jahr
+		pdatum = item.get('PDatum')
+		if PipelineHelper.jahr_plausibel(pdatum, akt_jahr):
+			oben = int(pdatum[:4])
+		match = PipelineHelper.reDatumPruefbar.match(edatum)
+		rest = match.group('Rest') or ''
+		kandidaten = sorted(k for k in PipelineHelper.jahr_varianten(match.group('Jahr')) if unten <= k <= oben)
+		name = spider.name if spider is not None else '?'
+
+		if len(kandidaten) == 1:
+			neu = str(kandidaten[0]) + rest
+			logger.error(f"{name}: Unplausibles Entscheiddatum {edatum} bei {num} auf {neu} korrigiert (Fenster {unten}-{oben}).")
+			PipelineHelper._setze(item, 'EDatum', neu)
+			aktion = 'korrigiert'
+		else:
+			neu = None
+			logger.error(f"{name}: Unplausibles Entscheiddatum {edatum} bei {num} nicht eindeutig korrigierbar (Fenster {unten}-{oben}, Kandidaten {kandidaten}) -> verworfen, Ersatz PDatum {pdatum!r}.")
+			try:
+				del item['EDatum']
+			except Exception:
+				pass
+			aktion = 'verworfen'
+		PipelineHelper._setze(item, 'EDatumOriginal', edatum)
+		PipelineHelper._setze(item, 'EDatumGeprueft', neu)
+		if spider is not None:
+			try:
+				spider.crawler.stats.inc_value('edatum/' + aktion)
+			except Exception:
+				pass
+			if not hasattr(spider, 'datumskorrekturen'):
+				spider.datumskorrekturen = []
+			spider.datumskorrekturen.append({'Num': num, 'original': edatum, 'neu': neu, 'aktion': aktion})
+
+	@staticmethod
+	def _setze(item, key, wert):
+		try:
+			item[key] = wert
+		except Exception:
+			pass
+
 	# Sprache des HTML erkennen, Header ggf. davor setzen und schreiben
 
 	WOERTER={ "de": ["der","die","das","ein","eine","einer","er","sie","ihn","hat","hatte","hätte","ist","war","sind"],"fr": ["le","lui","elle","je","on","vous","nous","leur","qui","quand","parce","que","faire","sont","vont"], "it": ["della","del","di","casi","una","al","questa","più","primo","grado","che","diritto","leggi","corte"]}
@@ -713,6 +815,7 @@ class PipelineHelper:
 	@staticmethod
 	def file_path(item, spider=None):
 		try:
+			PipelineHelper.pruefe_edatum(item, spider)
 			num=item['Num']
 			logger.info('Geschäftsnummer: '+num)
 			if 'forceID' in item and item['forceID']:
@@ -779,6 +882,7 @@ class PipelineHelper:
 
 	@staticmethod
 	def get_meta(item, spider,meta):
+		PipelineHelper.pruefe_edatum(item, spider)
 		meta['Spider']=spider.name
 		meta['ScrapyJob']=spider.scrapy_job
 		if 'Signatur' in item:
@@ -804,6 +908,7 @@ class PipelineHelper:
 
 	@staticmethod
 	def make_json(item,spider,pfad,zweitnum):
+		PipelineHelper.pruefe_edatum(item, spider)
 		eintrag={}
 		eintrag['Signatur']=item['Signatur']
 		eintrag['Spider']=spider.name
@@ -969,6 +1074,7 @@ class PipelineHelper:
 
 	@staticmethod
 	def make_xml(item,spider):
+		PipelineHelper.pruefe_edatum(item, spider)
 		root = etree.Element('Entscheid')
 		meta = etree.Element('Metainfos')
 		root.append(meta)
