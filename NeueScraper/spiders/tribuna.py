@@ -320,20 +320,67 @@ class TribunaSpider(BasisSpider):
 			if html_request:
 				yield html_request
 			
+	# GWT-RPC-Antwort: //OK[<Zahlen>,["String1","String2",...],<Flags>,<Version>]
+	# Die Strings sind JavaScript-Literale: Escapes (\xHH, \uHHHH, \", \\, \n ...) und
+	# Strings ueber ca. 64 KB werden in Stuecken geliefert und mit + verkettet ("a"+"b").
+	reGWTString = re.compile(r'"((?:[^"\\]|\\.)*)"', re.S)
+	reJSEscape = re.compile(r'\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|.)', re.S)
+	JS_ESCAPES = {'n': '\n', 't': '\t', 'r': '\r', 'b': '\b', 'f': '\f', 'v': '\v', '0': '\0'}
+
+	@classmethod
+	def js_unescape(cls, s):
+		def ersetze(m):
+			g = m.group(1)
+			if g[0] in 'xu' and len(g) > 1:
+				return chr(int(g[1:], 16))
+			return cls.JS_ESCAPES.get(g, g)
+		return cls.reJSEscape.sub(ersetze, s)
+
+	@classmethod
+	def gwt_stringtabelle(cls, antwort):
+		# Liefert die Stringtabelle einer GWT-RPC-Antwort als Liste dekodierter Strings.
+		# Vor der Tabelle stehen nur Zahlen, daher beginnt sie beim ersten '["'.
+		pos = antwort.index('["') + 1
+		werte = []
+		verkettet = False
+		while True:
+			match = cls.reGWTString.match(antwort, pos)
+			if not match:
+				break
+			wert = cls.js_unescape(match.group(1))
+			if verkettet:
+				werte[-1] += wert
+			else:
+				werte.append(wert)
+			pos = match.end()
+			if antwort.startswith('+', pos):
+				verkettet = True
+			elif antwort.startswith(',', pos):
+				verkettet = False
+			else:
+				break
+			pos += 1
+		return werte
+
 	def hole_html(self, response):
 		logger.info("HTML-Request: "+response.request.url)
 		item=response.meta['item']
-		content = self.reVor.sub('',response.text)
-		logger.info("HTMLseite: "+content)
-		werte=self.reAll.findall(content)
-		xhtml=[i for i,v in enumerate(werte) if v=="xhtml"]
-		if xhtml:
-			item['HTMLUrls']=[response.request.url]
-			html_string=werte[xhtml[0]+1]
-			html_string=self.reDecode.sub(lambda m: chr(int(m.group(1), 16)),html_string)
-			html_string=html_string.replace("\n","")
-			logger.info("html: "+html_string)
-			PH.write_html(html_string, item, self)
+		logger.info("HTMLseite: "+response.text)
+		# Das Item wird in jedem Fall weitergegeben (notfalls nur mit PDF), damit ein
+		# Fehler beim HTML nicht den ganzen Entscheid kostet.
+		try:
+			werte=self.gwt_stringtabelle(response.text)
+			if "xhtml" in werte:
+				html_string=werte[werte.index("xhtml")+1]
+				logger.info("html: "+str(len(html_string))+" Zeichen für "+item.get('Num', ''))
+				item['HTMLUrls']=[response.request.url]
+				PH.write_html(html_string, item, self)
+			else:
+				logger.warning("Kein HTML (xhtml) in der Antwort für "+item.get('Num', ''))
+		except Exception as e:
+			item.pop('HTMLUrls', None)
+			item.pop('HTMLFiles', None)
+			logger.error("HTML für "+item.get('Num', '')+" nicht lesbar ("+repr(e)+"), Entscheid wird nur mit PDF übernommen.")
 		yield item
 			
 
